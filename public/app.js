@@ -547,6 +547,15 @@
     const id = state.selectedId;
     try {
       const res = await fetch(`/api/history?id=${encodeURIComponent(id)}`, { cache: "no-store" });
+      if (res.status === 404 && s) {
+        // A new Pi session has a file name but writes the file only after the first reply.
+        if (id === state.selectedId && !state.history) {
+          transcriptEl.innerHTML = `<div class="placeholder">New session. Pi saves it after the first reply; it will show up here then.</div>`;
+        }
+        // Wait for the next change from Pi rather than retrying in a loop.
+        state.historyVersionLoaded = wanted;
+        return;
+      }
       if (!res.ok) throw new Error(`history ${res.status}`);
       const data = await res.json();
       if (id !== state.selectedId) return;

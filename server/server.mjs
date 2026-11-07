@@ -492,7 +492,9 @@ const server = createServer(async (req, res) => {
         sendJson(res, 413, { error: "Too long to paste (over 200,000 characters)." });
         return;
       }
-      const command = { cmdId: randomUUID(), type: "paste", text };
+      // The page picks the id before sending, so a reply that arrives before this response can't be missed.
+      const cmdId = /^[0-9a-f-]{36}$/i.test(String(body.cmdId ?? "")) ? String(body.cmdId) : randomUUID();
+      const command = { cmdId, type: "paste", text };
       enqueueCommand(id, command);
       sendJson(res, 202, { cmdId: command.cmdId });
       return;

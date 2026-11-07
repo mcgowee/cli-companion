@@ -208,8 +208,9 @@ export default function companionBridge(pi: ExtensionAPI): void {
   const runCommand = (ctx: ExtensionContext, command: { type?: string; text?: unknown }): string | undefined => {
     if (command.type !== "paste" || typeof command.text !== "string") return "Unknown command.";
     if (ctx.mode !== "tui") return "Only the Pi CLI (terminal) has an input box to paste into.";
-    const text = command.text;
     const before = ctx.ui.getEditorText();
+    // Something already typed: start the pasted text on a new line instead of gluing it on.
+    const text = before && !/\s$/.test(before) ? `\n${command.text}` : command.text;
     try {
       ctx.ui.pasteToEditor(text);
     } catch {
@@ -218,7 +219,7 @@ export default function companionBridge(pi: ExtensionAPI): void {
     }
     if (ctx.ui.getEditorText() === before) return "Pi's input box did not change (is a dialog open in Pi?).";
     // The paste does not redraw the terminal by itself; a notice does, and says where the text came from.
-    const lines = text.split("\n").length;
+    const lines = command.text.split("\n").length;
     ctx.ui.notify(`[companion] Pasted ${lines} line${lines === 1 ? "" : "s"} into the input. Press Enter to send.`, "info");
     return undefined;
   };

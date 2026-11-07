@@ -90,21 +90,35 @@
 
   /* ── send ────────────────────────────────────────────── */
 
+  const REPLY_TIMEOUT_MS = 30_000;
+
   async function send() {
     if (blocker() || !textEl.value.trim() || state.pending.size) return;
     const text = textEl.value;
+    // Register the send before the request: Pi can paste and report back before the
+    // server's response to this request arrives.
+    const cmdId = crypto.randomUUID();
+    state.pending.set(cmdId, text);
     setStatus("Sending to Pi…", "busy");
     sendEl.disabled = true;
+    // Never stay stuck: if no report comes back, say so and let the user try again.
+    setTimeout(() => {
+      if (!state.pending.has(cmdId)) return;
+      state.pending.delete(cmdId);
+      setStatus("No reply from Pi. Check the terminal; the text may already be in its input box.", "error", true);
+      renderTarget();
+    }, REPLY_TIMEOUT_MS);
     try {
       const res = await fetch("/api/send", {
         method: "POST",
         headers: { "content-type": "application/json", "x-pi-companion-page": "1" },
-        body: JSON.stringify({ id: state.selectedId, text }),
+        body: JSON.stringify({ id: state.selectedId, text, cmdId }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-      state.pending.set(body.cmdId, text);
     } catch (error) {
+      if (!state.pending.has(cmdId)) return;
+      state.pending.delete(cmdId);
       setStatus(`Not sent: ${error.message}`, "error", true);
       renderTarget();
     }
