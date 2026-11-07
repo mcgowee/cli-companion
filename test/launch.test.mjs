@@ -1,19 +1,25 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cliCommand, copyLine, LaunchError, openPlan, quotePath } from "../server/launch.mjs";
+import { checkSessionId, copyLine, LaunchError, openPlan, quotePath, resumeCommand, workspaceActions } from "../server/launch.mjs";
+import { createSources } from "../server/sources/index.mjs";
 
-test("cliCommand: fixed commands only, session ids checked", () => {
-  assert.equal(cliCommand("terminal"), "");
-  assert.equal(cliCommand("pi"), "pi");
-  assert.equal(cliCommand("pi-continue"), "pi -c");
-  assert.equal(cliCommand("claude"), "claude");
-  assert.equal(cliCommand("resume", { source: "pi", sessionId: "01a1b3c9-f58b-76d1" }), "pi --session 01a1b3c9-f58b-76d1");
+test("commands come from the sources' fixed lists; session ids are checked", () => {
+  const sources = createSources({ CLAUDE_CONFIG_DIR: "/nowhere/claude", PI_CODING_AGENT_DIR: "/nowhere/pi" });
+  const [pi, claude] = sources;
+  assert.deepEqual(
+    workspaceActions(sources).map((o) => [o.action, o.command]),
+    [["terminal", ""], ["pi", "pi"], ["pi-continue", "pi -c"], ["claude", "claude"]],
+  );
+  assert.equal(resumeCommand(pi, "01a1b3c9-f58b-76d1"), "pi --session 01a1b3c9-f58b-76d1");
   assert.equal(
-    cliCommand("resume", { source: "claude", sessionId: "c3b8dfaf-3d87-4732-8488-b5695e3b23d1" }),
+    resumeCommand(claude, "c3b8dfaf-3d87-4732-8488-b5695e3b23d1"),
     "claude --resume c3b8dfaf-3d87-4732-8488-b5695e3b23d1",
   );
-  assert.throws(() => cliCommand("resume", { source: "pi", sessionId: "x; rm -rf /" }), LaunchError);
-  assert.throws(() => cliCommand("rm"), LaunchError);
+  assert.throws(() => resumeCommand(pi, "x; rm -rf /"), LaunchError);
+  assert.throws(() => checkSessionId(""), LaunchError);
+  // A switched-off source drops out of the workspace menu.
+  const noClaude = createSources({ CLI_COMPANION_CLAUDE: "0" });
+  assert.deepEqual(workspaceActions(noClaude).map((o) => o.action), ["terminal", "pi", "pi-continue"]);
 });
 
 test("copyLine quotes the folder for PowerShell and POSIX shells", () => {

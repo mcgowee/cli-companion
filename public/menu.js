@@ -58,9 +58,19 @@
         ${row("Version", code(info.version))}
         ${row("Address", code(info.address))}
         ${row("Running Pi sessions", info.livePi === undefined ? "" : esc(String(info.livePi)))}
-        ${row("Running Claude Code", info.runningClaude === undefined ? "" : esc(String(info.runningClaude)))}
-        ${row("Pi sessions folder", code(info.piSessionsDir))}
-        ${row("Claude Code folder", info.claudeProjectsDir === null ? "off (CLI_COMPANION_CLAUDE=0)" : code(info.claudeProjectsDir))}
+        ${row("Other CLIs running", info.runningOther === undefined ? "" : esc(String(info.runningOther)))}
+        ${(info.sources ?? [])
+          .flatMap((source) =>
+            source.folders.map((folder) =>
+              row(
+                folder.label,
+                !source.enabled
+                  ? `off (CLI_COMPANION_${esc(source.id.toUpperCase())}=0)`
+                  : `${code(folder.path)}${source.installed ? "" : " <span class='muted'>(not found)</span>"}`,
+              ),
+            ),
+          )
+          .join("")}
         ${row("Node", code(info.node && `${info.node} · ${info.platform}`))}
         ${row("Started", info.startedAt ? esc(new Date(info.startedAt).toLocaleString()) : "")}
       </dl>

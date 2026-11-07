@@ -15,9 +15,11 @@
   --compact: #fff7e6;
   --compact-line: #f0d9a8;
   --claude: #c2603a;
-  /* Chart series (validated as a categorical pair, light and dark). */
+  --codex: #0b9a9e;
+  /* Chart series, one per CLI (validated as a categorical set, all pairs, light and dark). */
   --series-pi: #6d5dfc;
   --series-claude: #c2603a;
+  --series-codex: #0b9a9e;
   --radius: 10px;
   --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
   --sans: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
@@ -38,8 +40,10 @@
     --compact: #2b2414;
     --compact-line: #5a4a22;
     --claude: #e08a63;
+    --codex: #2bb3b3;
     --series-pi: #8174f2;
     --series-claude: #d37a52;
+    --series-codex: #1fa9ad;
   }
 }
 
@@ -136,12 +140,14 @@ a.dash-card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--li
 .legend .key, .tip span { display: inline-flex; align-items: center; gap: 6px; }
 .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
 .sw.pi { background: var(--series-pi); }
+.sw.codex { background: var(--series-codex); }
 .sw.claude { background: var(--series-claude); }
 .chart { position: relative; margin-top: 8px; }
 .chart svg { display: block; width: 100%; height: auto; }
 .chart .grid { stroke: var(--line); stroke-width: 1; }
 .chart .axis { fill: var(--muted); font-size: 11px; font-family: var(--sans); }
 .chart .m-pi { fill: var(--series-pi); }
+.chart .m-codex { fill: var(--series-codex); }
 .chart .m-claude { fill: var(--series-claude); }
 .chart .hit { fill: transparent; }
 .chart .hit.on { fill: color-mix(in srgb, var(--text) 6%, transparent); }
@@ -161,6 +167,7 @@ a.dash-card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--li
 .ws-bar i:first-child { border-radius: 0; }
 .ws-bar i:last-child { border-radius: 0 4px 4px 0; }
 .ws-bar .seg-pi { background: var(--series-pi); }
+.ws-bar .seg-codex { background: var(--series-codex); }
 .ws-bar .seg-claude { background: var(--series-claude); }
 .ws-row-num { text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; }
 .ws-row-sub { grid-column: 2 / 4; color: var(--muted); font-size: 11.5px; }
@@ -351,11 +358,15 @@ body.resizing { cursor: col-resize; user-select: none; }
 .sdot.running { background: var(--ok); animation: pulse 1.2s infinite; }
 .sdot.compacting { background: var(--warn); animation: pulse 0.8s infinite; }
 .sdot.ended { background: transparent; border: 1px solid var(--muted); }
-.sdot.claude-active { background: var(--claude); animation: pulse 1.6s infinite; }
-.sdot.claude-idle { background: var(--claude); }
+/* Each CLI's colour: --src on its rows and pill (Pi uses the accent). */
+[data-src] { --src: var(--accent); }
+[data-src="claude"] { --src: var(--claude); }
+[data-src="codex"] { --src: var(--codex); }
+.sdot.file-busy { background: var(--src); animation: pulse 1.6s infinite; }
+.sdot.file-idle { background: var(--src); }
 .src-tag { flex: none; font: 600 9.5px/1 var(--mono); letter-spacing: 0.04em; padding: 2px 4px; border-radius: 4px;
-  color: var(--claude); background: color-mix(in srgb, var(--claude) 14%, transparent); }
-.pill.claude { color: var(--claude); background: color-mix(in srgb, var(--claude) 14%, transparent); }
+  color: var(--src); background: color-mix(in srgb, var(--src) 14%, transparent); }
+.pill.file { color: var(--src); background: color-mix(in srgb, var(--src) 14%, transparent); }
 .hint { color: var(--muted); font-size: 12.5px; padding: 0 6px; }
 
 /* main */

@@ -20,25 +20,30 @@ function basename(path) {
 }
 
 /**
+ * Counts are per CLI source, as flat keys named by source id (daily[i].pi, daily[i].claude, …),
+ * listed in `sources`.
  * @param metas session index rows ({ source, cwd, created, mtimeMs, size })
- * @param opts { now, days, offsetMin }
+ * @param opts { now, days, offsetMin, sources: source ids to count (others are skipped) }
  */
-export function usageSummary(metas, { now = Date.now(), days = 30, offsetMin = 0 } = {}) {
+export function usageSummary(metas, { now = Date.now(), days = 30, offsetMin = 0, sources = ["pi", "claude"] } = {}) {
+  const zero = () => Object.fromEntries(sources.map((id) => [id, 0]));
+  const sum = (row) => sources.reduce((total, id) => total + (row[id] ?? 0), 0);
   const today = localDay(now, offsetMin);
   const firstDay = localDay(now - (days - 1) * DAY_MS, offsetMin);
   const prevFirstDay = localDay(now - (2 * days - 1) * DAY_MS, offsetMin);
 
   const perDay = new Map();
-  for (let i = days - 1; i >= 0; i--) perDay.set(localDay(now - i * DAY_MS, offsetMin), { pi: 0, claude: 0 });
+  for (let i = days - 1; i >= 0; i--) perDay.set(localDay(now - i * DAY_MS, offsetMin), zero());
 
   const workspaces = new Map();
   let inRange = 0;
   let previous = 0;
-  const totals = { sessions: 0, pi: 0, claude: 0, bytes: 0 };
+  const totals = { sessions: 0, ...zero(), bytes: 0 };
   const allWorkspaces = new Set();
 
   for (const meta of metas) {
-    const source = meta.source === "claude" ? "claude" : "pi";
+    const source = meta.source ?? "pi";
+    if (!sources.includes(source)) continue;
     totals.sessions += 1;
     totals[source] += 1;
     totals.bytes += meta.size ?? 0;
@@ -56,7 +61,7 @@ export function usageSummary(metas, { now = Date.now(), days = 30, offsetMin = 0
 
     let ws = workspaces.get(key);
     if (!ws) {
-      ws = { name: basename(meta.cwd) || "(unknown)", cwd: meta.cwd ?? "", pi: 0, claude: 0, lastActivity: 0, bytes: 0 };
+      ws = { name: basename(meta.cwd) || "(unknown)", cwd: meta.cwd ?? "", ...zero(), lastActivity: 0, bytes: 0 };
       workspaces.set(key, ws);
     }
     ws[source] += 1;
@@ -64,18 +69,19 @@ export function usageSummary(metas, { now = Date.now(), days = 30, offsetMin = 0
     ws.bytes += meta.size ?? 0;
   }
 
-  const daily = [...perDay].map(([date, c]) => ({ date, pi: c.pi, claude: c.claude }));
+  const daily = [...perDay].map(([date, counts]) => ({ date, ...counts }));
   return {
+    sources,
     days,
     firstDay,
     today,
     started: inRange,
     startedPrevious: previous,
-    activeDays: daily.filter((d) => d.pi + d.claude > 0).length,
+    activeDays: daily.filter((d) => sum(d) > 0).length,
     daily,
     workspacesUsed: workspaces.size,
     workspaces: [...workspaces.values()]
-      .sort((a, b) => b.pi + b.claude - (a.pi + a.claude) || b.lastActivity - a.lastActivity)
+      .sort((a, b) => sum(b) - sum(a) || b.lastActivity - a.lastActivity)
       .slice(0, 12),
     totals: { ...totals, workspaces: allWorkspaces.size },
   };

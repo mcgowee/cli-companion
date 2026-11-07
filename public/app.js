@@ -155,9 +155,14 @@
     return live && !live.ended ? live.status : undefined;
   }
 
-  /** Running Pi, or a running Claude Code (from its ~/.claude/sessions process file). */
+  /** Running: a live Pi, or another CLI the server reports running (e.g. Claude Code's process file). */
   function isActive(s) {
-    return Boolean(liveStatus(s.id)) || (s.source === "claude" && s.active);
+    return Boolean(liveStatus(s.id)) || (!cliSources.forRow(s).live && Boolean(s.active));
+  }
+
+  /** A CLI without a live bridge that is running and working (not idle). */
+  function fileBusy(s) {
+    return !cliSources.forRow(s).live && Boolean(s.active) && s.runStatus !== "idle";
   }
 
   function activityOf(s) {
@@ -168,14 +173,14 @@
   function sessionRow(s, wsName) {
     const status = liveStatus(s.id);
     const active = s.id === state.selectedId ? " active" : "";
-    const claude = s.source === "claude" || String(s.id).startsWith("claude:");
-    const claudeBusy = claude && s.active && s.claudeStatus !== "idle";
-    const dot = status ? esc(status) : claude && s.active ? (claudeBusy ? "claude-active" : "claude-idle") : "saved";
-    const ago = status && status !== "idle" ? statusLabel({ status }) : claudeBusy ? "Running" : fmtAgo(s.lastActivity);
-    const tip = `${claude ? "Claude Code" : "Pi"}: ${rowTitle(s)}${wsName ? ` · ${wsName}` : ""}`;
-    const row = `<button class="session${active}" data-id="${esc(s.id)}" title="${esc(tip)}">
+    const src = cliSources.forRow(s);
+    const busy = fileBusy(s);
+    const dot = status ? esc(status) : !src.live && s.active ? (busy ? "file-busy" : "file-idle") : "saved";
+    const ago = status && status !== "idle" ? statusLabel({ status }) : busy ? "Running" : fmtAgo(s.lastActivity);
+    const tip = `${src.label}: ${rowTitle(s)}${wsName ? ` · ${wsName}` : ""}`;
+    const row = `<button class="session${active}" data-id="${esc(s.id)}" data-src="${esc(src.id)}" title="${esc(tip)}">
       <span class="sdot ${dot}"></span>
-      ${claude ? `<span class="src-tag" aria-label="Claude Code">CC</span>` : ""}
+      ${src.tag ? `<span class="src-tag" aria-label="${esc(src.label)}">${esc(src.tag)}</span>` : ""}
       ${
         wsName
           ? `<span class="stext"><span class="sname">${esc(rowTitle(s))}</span><span class="sws">${esc(wsName)}</span></span>`
@@ -233,7 +238,7 @@
         // Solid while its sessions are idle; pulses while one of them is working.
         const anyBusy = ws.sessions.some((s) => {
           const status = liveStatus(s.id);
-          return status === "running" || status === "compacting" || (s.source === "claude" && s.active && s.claudeStatus !== "idle");
+          return status === "running" || status === "compacting" || fileBusy(s);
         });
         const showAll = state.showAll.has(ws.id) || Boolean(filter);
         const shown = showAll ? ws.sessions : ws.sessions.slice(0, SESSIONS_SHOWN);
@@ -371,41 +376,45 @@
       .join("<span class='sep'>·</span>");
     $("context").hidden = true;
     const pill = $("status-pill");
-    if (isClaude(state.selectedId)) {
+    const src = cliSources.forId(state.selectedId);
+    if (!src.live) {
       // /api/stat (every 2 s) is fresher than the sidebar row (every 10 s).
-      const fresh = state.claudeStatFor === state.selectedId;
-      const running = fresh ? state.claudeActive : found?.row.active;
-      const busy = running && (fresh ? state.claudeStatus : found?.row.claudeStatus) !== "idle";
-      pill.textContent = running ? `Claude Code · ${busy ? "Running" : "Idle"}` : "Claude Code";
-      pill.className = `pill claude${running ? " active" : ""}`;
+      const fresh = state.fileStatFor === state.selectedId;
+      const running = fresh ? state.fileActive : found?.row.active;
+      const busy = running && (fresh ? state.fileRunStatus : found?.row.runStatus) !== "idle";
+      pill.textContent = running ? `${src.label} · ${busy ? "Running" : "Idle"}` : src.label;
+      pill.className = `pill file${running ? " active" : ""}`;
+      pill.dataset.src = src.id;
     } else {
       pill.textContent = "Saved";
       pill.className = "pill saved";
     }
   }
 
-  function isClaude(id) {
-    return typeof id === "string" && id.startsWith("claude:");
-  }
+  // The server's list of CLIs arrives after the first render: redraw tags, labels and the pill.
+  window.addEventListener("sources-ready", () => {
+    renderSidebar();
+    renderHeader();
+  });
 
-  /* ── follow a Claude Code session while its file grows (no live bridge yet) ── */
+  /* ── follow a session without a live bridge (Claude Code, …) while its file grows ── */
 
-  let claudeStat = null;
+  let fileStat = null;
   setInterval(async () => {
     const id = state.selectedId;
-    if (!isClaude(id) || document.hidden) return;
+    if (!id || cliSources.forId(id).live || document.hidden) return;
     try {
       const res = await fetch(`/api/stat?id=${encodeURIComponent(id)}`, { cache: "no-store" });
       if (!res.ok || id !== state.selectedId) return;
       const s = await res.json();
       const key = `${s.size}:${s.mtimeMs}`;
-      const changed = claudeStat && claudeStat.id === id && claudeStat.key !== key;
+      const changed = fileStat && fileStat.id === id && fileStat.key !== key;
       const activeChanged =
-        state.claudeStatFor !== id || state.claudeActive !== s.active || state.claudeStatus !== s.claudeStatus;
-      claudeStat = { id, key };
-      state.claudeStatFor = id;
-      state.claudeActive = s.active;
-      state.claudeStatus = s.claudeStatus;
+        state.fileStatFor !== id || state.fileActive !== s.active || state.fileRunStatus !== s.runStatus;
+      fileStat = { id, key };
+      state.fileStatFor = id;
+      state.fileActive = s.active;
+      state.fileRunStatus = s.runStatus;
       if (changed) loadHistory(true);
       if (activeChanged) renderHeader();
     } catch {
@@ -543,7 +552,7 @@
         const err = item.errorMessage ? `<div class="err">${esc(item.errorMessage)}</div>` : "";
         const tools = item.toolCalls?.length ? `<div class="tools">${item.toolCalls.map(toolHtml).join("")}</div>` : "";
         if (!item.text && !thinking && !tools && !err) return "";
-        return `<article class="msg assistant${dim}"><div class="who">${state.history?.source === "claude" ? "Claude" : "Pi"} <time>${fmtTime(item.timestamp)}</time>${msgTools(item.id, item.text)}</div>
+        return `<article class="msg assistant${dim}"><div class="who">${esc(cliSources.get(state.history?.source).assistant)} <time>${fmtTime(item.timestamp)}</time>${msgTools(item.id, item.text)}</div>
           ${thinking}${item.text ? `<div class="prose">${md(item.text)}</div>` : ""}${err}${tools}</article>`;
       }
       case "compaction": {
@@ -664,7 +673,7 @@
   function select(id) {
     if (state.selectedId !== id) {
       state.selectedId = id;
-      state.claudeActive = undefined;
+      state.fileActive = undefined;
       state.history = null;
       state.historyVersionLoaded = -1;
       state.stickToBottom = true;

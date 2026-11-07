@@ -13,7 +13,7 @@
     {
       id: "usage",
       name: "Usage overview",
-      description: "Sessions started per day in Pi and Claude Code, active days, and your busiest workspaces.",
+      description: "Sessions started per day in each CLI, active days, and your busiest workspaces.",
       href: "#/dashboards/usage",
     },
   ];
@@ -197,9 +197,19 @@
     return `<span class="tile-delta">${pct > 0 ? "▲" : "▼"} ${Math.abs(pct)}% vs the ${state.usageDays} days before</span>`;
   }
 
+  /** The CLIs to chart: those with any sessions on disk (Pi at least), in the server's order. */
+  function seriesOf(u) {
+    const ids = (u.sources ?? ["pi", "claude"]).filter((id) => (u.totals[id] ?? 0) > 0);
+    return (ids.length ? ids : ["pi"]).map((id) => ({ id, label: cliSources.get(id).label, tag: cliSources.get(id).tag || cliSources.get(id).label }));
+  }
+  const total = (row, series) => series.reduce((sum, s) => sum + (row[s.id] ?? 0), 0);
+  const legend = (series) =>
+    `<div class="legend">${series.map((s) => `<span class="key"><i class="sw ${esc(s.id)}"></i>${esc(s.label)}</span>`).join("")}</div>`;
+
   function renderUsage() {
     root.className = "page";
     const u = state.usage;
+    const series = u ? seriesOf(u) : [];
     const ranges = [7, 30, 90]
       .map((d) => `<button class="seg${d === state.usageDays ? " on" : ""}" type="button" data-days="${d}" aria-pressed="${d === state.usageDays}">${d} days</button>`)
       .join("");
@@ -217,18 +227,18 @@
         <div class="tile"><span class="tile-label">Active days</span><span class="tile-value">${u.activeDays} <small>of ${u.days}</small></span></div>
         <div class="tile"><span class="tile-label">Workspaces used</span><span class="tile-value">${fmtInt(u.workspacesUsed)}</span></div>
         <div class="tile"><span class="tile-label">All sessions on disk</span><span class="tile-value">${fmtInt(u.totals.sessions)}</span>
-          <span class="tile-delta">${fmtInt(u.totals.pi)} Pi · ${fmtInt(u.totals.claude)} Claude Code · ${fmtBytes(u.totals.bytes)}</span></div>
+          <span class="tile-delta">${series.map((x) => `${fmtInt(u.totals[x.id])} ${esc(x.label)}`).join(" · ")} · ${fmtBytes(u.totals.bytes)}</span></div>
       </div>
 
       <section class="chart-card">
         <div class="chart-head">
           <h2>Sessions started per day</h2>
-          <div class="legend"><span class="key"><i class="sw pi"></i>Pi</span><span class="key"><i class="sw claude"></i>Claude Code</span></div>
+          ${legend(series)}
         </div>
         <div class="chart" id="usage-chart"></div>
         <details class="chart-table"><summary>Show as a table</summary>
-          <table><thead><tr><th>Day</th><th>Pi</th><th>Claude Code</th><th>Total</th></tr></thead><tbody>
-          ${[...u.daily].reverse().map((d) => `<tr><td>${esc(fmtDay(d.date, true))}</td><td>${d.pi}</td><td>${d.claude}</td><td>${d.pi + d.claude}</td></tr>`).join("")}
+          <table><thead><tr><th>Day</th>${series.map((x) => `<th>${esc(x.label)}</th>`).join("")}<th>Total</th></tr></thead><tbody>
+          ${[...u.daily].reverse().map((d) => `<tr><td>${esc(fmtDay(d.date, true))}</td>${series.map((x) => `<td>${d[x.id] ?? 0}</td>`).join("")}<td>${total(d, series)}</td></tr>`).join("")}
           </tbody></table>
         </details>
       </section>
@@ -236,9 +246,9 @@
       <section class="chart-card">
         <div class="chart-head">
           <h2>Busiest workspaces${u.workspacesUsed > u.workspaces.length ? ` <span class="h2-note">top ${u.workspaces.length} of ${u.workspacesUsed}</span>` : ""}</h2>
-          <div class="legend"><span class="key"><i class="sw pi"></i>Pi</span><span class="key"><i class="sw claude"></i>Claude Code</span></div>
+          ${legend(series)}
         </div>
-        ${workspaceRows(u)}
+        ${workspaceRows(u, series)}
       </section>
       <p class="dash-file">Counted from the session files on disk: a session counts on the day it started; a workspace counts every session started or active in the range.</p>`
       }
@@ -250,30 +260,30 @@
         renderUsage();
       });
     }
-    if (u) drawDaily(u.daily);
+    if (u) drawDaily(u.daily, series);
   }
 
-  function workspaceRows(u) {
+  function workspaceRows(u, series) {
     if (!u.workspaces.length) return `<p class="page-lead">No sessions in this range.</p>`;
-    const max = Math.max(...u.workspaces.map((w) => w.pi + w.claude), 1);
+    const max = Math.max(...u.workspaces.map((w) => total(w, series)), 1);
     return `<div class="ws-rows">${u.workspaces
       .map((w) => {
-        const total = w.pi + w.claude;
+        const sum = total(w, series);
         const pct = (n) => `${((n / max) * 100).toFixed(2)}%`;
         return `<div class="ws-row" title="${esc(w.cwd)}">
           <span class="ws-row-name">${esc(w.name)}</span>
           <span class="ws-bar" aria-hidden="true">
-            ${w.pi ? `<i class="seg-pi" style="width:${pct(w.pi)}"></i>` : ""}${w.claude ? `<i class="seg-claude" style="width:${pct(w.claude)}"></i>` : ""}
+            ${series.map((x) => (w[x.id] ? `<i class="seg-${esc(x.id)}" style="width:${pct(w[x.id])}"></i>` : "")).join("")}
           </span>
-          <span class="ws-row-num">${total}</span>
-          <span class="ws-row-sub">${w.pi} Pi · ${w.claude} CC · ${esc(fmtAgo(w.lastActivity))}</span>
+          <span class="ws-row-num">${sum}</span>
+          <span class="ws-row-sub">${series.map((x) => `${w[x.id] ?? 0} ${esc(x.tag)}`).join(" · ")} · ${esc(fmtAgo(w.lastActivity))}</span>
         </div>`;
       })
       .join("")}</div>`;
   }
 
-  /** Stacked columns (Pi below, Claude Code above), one per day, with a hover tooltip. */
-  function drawDaily(daily) {
+  /** Stacked columns (one segment per CLI, in series order from the baseline), with a hover tooltip. */
+  function drawDaily(daily, series) {
     const box = root.querySelector("#usage-chart");
     if (!box) return;
     const W = Math.max(320, box.clientWidth);
@@ -281,7 +291,7 @@
     const pad = { l: 34, r: 8, t: 10, b: 26 };
     const iw = W - pad.l - pad.r;
     const ih = H - pad.t - pad.b;
-    const maxTotal = Math.max(...daily.map((d) => d.pi + d.claude), 1);
+    const maxTotal = Math.max(...daily.map((d) => total(d, series)), 1);
     const step = maxTotal <= 4 ? 1 : maxTotal <= 10 ? 2 : maxTotal <= 25 ? 5 : maxTotal <= 50 ? 10 : 25;
     const top = Math.ceil(maxTotal / step) * step;
     const y = (v) => pad.t + ih - (v / top) * ih;
@@ -313,20 +323,22 @@
 
     let bars = "";
     daily.forEach((d, i) => {
-      const x = pad.l + band * i + (band - barW) / 2;
-      const hPi = (d.pi / top) * ih;
-      const hCl = (d.claude / top) * ih;
-      const base = pad.t + ih;
-      if (d.pi) bars += `<path class="m-pi" d="${(d.claude ? square : topRounded)(x, base - hPi, barW, hPi)}"/>`;
-      if (d.claude) {
-        const yTop = base - hPi - (d.pi ? GAP : 0) - hCl;
-        bars += `<path class="m-claude" d="${topRounded(x, yTop, barW, hCl)}"/>`;
-      }
+      const x0 = pad.l + band * i + (band - barW) / 2;
+      // Segments stack up from the baseline with a 2px gap; only the top one gets the rounded end.
+      const present = series.filter((x) => d[x.id]);
+      let yBase = pad.t + ih;
+      present.forEach((x, k) => {
+        const h = (d[x.id] / top) * ih;
+        const yTop = yBase - h;
+        const shape = k === present.length - 1 ? topRounded : square;
+        bars += `<path class="m-${esc(x.id)}" d="${shape(x0, yTop, barW, h)}"/>`;
+        yBase = yTop - GAP;
+      });
       bars += `<rect class="hit" data-i="${i}" x="${pad.l + band * i}" y="${pad.t}" width="${band}" height="${ih}"/>`;
     });
 
     box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img"
-        aria-label="Sessions started per day, Pi and Claude Code, stacked">${grid}${bars}${xLabels}</svg>
+        aria-label="Sessions started per day, ${esc(series.map((x) => x.label).join(", "))}, stacked">${grid}${bars}${xLabels}</svg>
       <div class="tip" hidden></div>`;
     const tip = box.querySelector(".tip");
     const svg = box.querySelector("svg");
@@ -337,9 +349,8 @@
       for (const h of svg.querySelectorAll(".hit.on")) h.classList.remove("on");
       hit.classList.add("on");
       tip.innerHTML = `<b>${esc(fmtDay(d.date, true))}</b>
-        <span><i class="sw pi"></i>Pi <b>${d.pi}</b></span>
-        <span><i class="sw claude"></i>Claude Code <b>${d.claude}</b></span>
-        <span class="muted">Total ${d.pi + d.claude}</span>`;
+        ${series.map((x) => `<span><i class="sw ${esc(x.id)}"></i>${esc(x.label)} <b>${d[x.id] ?? 0}</b></span>`).join("")}
+        <span class="muted">Total ${total(d, series)}</span>`;
       tip.hidden = false;
       const rect = box.getBoundingClientRect();
       const left = Math.min(event.clientX - rect.left + 12, rect.width - tip.offsetWidth - 4);

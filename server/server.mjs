@@ -1,44 +1,38 @@
-// CLI Companion server: a live view of Pi CLI sessions, plus read-only Claude Code sessions.
+// CLI Companion server: a live view of coding-agent CLI sessions (Pi live, others read-only).
 //
 // - The bridge extension (extension/companion.ts) POSTs event batches to /ingest
 //   and long-polls /bridge/inbox for text the page sends. Pi stays the source of truth.
 // - The page subscribes to /events (Server-Sent Events) and fetches history from the
 //   session JSONL through /api/history.
-// - Claude Code transcripts (~/.claude/projects) are listed and read, never written;
-//   with no live bridge, the page polls /api/stat to follow a session that is growing.
+// - Each CLI is a "source" (server/sources/): where its sessions are, how to read one, whether
+//   it's running, and its start/resume commands. Sources without a live bridge (Claude Code)
+//   are listed and read, never written; the page polls /api/stat to follow a growing one.
 //
-// Rules: bind 127.0.0.1 only, Node built-ins only, never write Pi's or Claude Code's files.
+// Rules: bind 127.0.0.1 only, Node built-ins only, never write any CLI's files.
 
 import { commandFromRequest } from "./commands.mjs";
 import { createServer } from "node:http";
-import { open, readdir, readFile, stat } from "node:fs/promises";
-import { homedir } from "node:os";
-import { extname, join, resolve, sep } from "node:path";
-import { StringDecoder } from "node:string_decoder";
+import { readFile, stat } from "node:fs/promises";
+import { extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { claudeTranscriptItems, findClaudeImage, parseClaudeLines } from "./claude-file.mjs";
-import { findImage, parseEntries, transcriptItems } from "./session-file.mjs";
-import { CLAUDE_PREFIX, groupByWorkspace, scanClaudeSessions, scanSessions, workspaceKey } from "./session-index.mjs";
+import { groupByWorkspace, workspaceKey } from "./session-index.mjs";
 import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard } from "./dashboards.mjs";
 import { usageSummary } from "./usage.mjs";
-import { cliCommand, copyLine, LaunchError, openPlan } from "./launch.mjs";
+import { copyLine, LaunchError, openPlan, resumeCommand, workspaceActions } from "./launch.mjs";
 import { execFileSync, spawn } from "node:child_process";
-import { CLAUDE_BUILTINS, claudeCustomCommands, mergeCommands, PI_BUILTINS } from "./slash-commands.mjs";
+import { isProcessAlive } from "./fsutil.mjs";
+import { createSources, describeSources, nativeId, sourceForId } from "./sources/index.mjs";
 import { APP_ID, companionPort, migrateStateFile, stateDir } from "./start.mjs";
 import { listDir, readFileForView, reviewDiff, reviewStatus, WorkbenchError } from "./workbench.mjs";
 
 const HOST = "127.0.0.1";
 const PORT = companionPort();
-const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
-const SESSIONS_DIR = resolve(AGENT_DIR, "sessions");
-// Claude Code transcripts (read-only). CLI_COMPANION_CLAUDE=0 turns this source off.
-const CLAUDE_DIR =
-  (process.env.CLI_COMPANION_CLAUDE ?? process.env.PI_COMPANION_CLAUDE) === "0"
-    ? undefined
-    : resolve(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "projects");
-const CLAUDE_ACTIVE_MS = 2 * 60_000;
-// Claude Code writes one <pid>.json per running session here (sessionId, cwd, status busy/idle).
-const CLAUDE_RUNNING_DIR = CLAUDE_DIR ? resolve(CLAUDE_DIR, "..", "sessions") : undefined;
+// The CLIs the companion reads (server/sources/): Pi, Claude Code, …
+const SOURCES = createSources();
+const PI = SOURCES.find((s) => s.id === "pi");
+const sourceById = (id) => SOURCES.find((s) => s.id === id) ?? PI;
+// With no running/idle signal from a CLI, a transcript written this recently counts as running.
+const ACTIVE_FALLBACK_MS = 2 * 60_000;
 const PUBLIC_DIR = fileURLToPath(new URL("../public/", import.meta.url));
 const MAX_BODY = 4 * 1024 * 1024;
 const SERVER_STARTED_AT = Date.now();
@@ -53,29 +47,6 @@ const clients = new Set();
 
 function now() {
   return Date.now();
-}
-
-function isProcessAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return true;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return error.code === "EPERM";
-  }
-}
-
-function isUnderDir(dir, file) {
-  if (typeof file !== "string" || !dir) return false;
-  const absolute = resolve(file);
-  const root = dir.endsWith(sep) ? dir : dir + sep;
-  return process.platform === "win32"
-    ? absolute.toLowerCase().startsWith(root.toLowerCase())
-    : absolute.startsWith(root);
-}
-
-function isUnderSessionsDir(file) {
-  return isUnderDir(SESSIONS_DIR, file);
 }
 
 function newSession(id) {
@@ -110,7 +81,7 @@ function applyBatch(batch) {
     sessions.set(id, session);
   }
   session.pid = Number.isInteger(batch.pid) ? batch.pid : session.pid;
-  if (isUnderSessionsDir(batch.sessionFile)) session.sessionFile = batch.sessionFile;
+  if (PI.owns(batch.sessionFile)) session.sessionFile = batch.sessionFile;
   if (typeof batch.cwd === "string") session.cwd = batch.cwd;
   if (typeof batch.name === "string") session.name = batch.name;
   if (typeof batch.model === "string") session.model = batch.model;
@@ -340,65 +311,6 @@ function readBody(req) {
   });
 }
 
-/**
- * Claude Code transcripts grow by appending, and can be hundreds of MB: read each file once,
- * then only the bytes added since (a StringDecoder keeps multi-byte characters split across
- * reads intact). A file that shrank is read again from the start.
- */
-const claudeCache = new Map();
-async function readClaudeEntries(file) {
-  if (!isUnderDir(CLAUDE_DIR, file)) return undefined;
-  try {
-    const stats = await stat(file);
-    let c = claudeCache.get(file);
-    if (c && c.size === stats.size && c.mtimeMs === stats.mtimeMs) return c.entries;
-    if (!c || stats.size < c.offset) c = { offset: 0, carry: "", entries: [], decoder: new StringDecoder("utf8") };
-    const handle = await open(file, "r");
-    try {
-      const CHUNK = 8 * 1024 * 1024;
-      const buffer = Buffer.alloc(CHUNK);
-      while (c.offset < stats.size) {
-        const { bytesRead } = await handle.read(buffer, 0, Math.min(CHUNK, stats.size - c.offset), c.offset);
-        if (!bytesRead) break;
-        c.offset += bytesRead;
-        const text = c.carry + c.decoder.write(buffer.subarray(0, bytesRead));
-        const cut = text.lastIndexOf("\n");
-        c.carry = cut < 0 ? text : text.slice(cut + 1);
-        if (cut >= 0) for (const entry of parseClaudeLines(text.slice(0, cut))) c.entries.push(entry);
-      }
-    } finally {
-      await handle.close();
-    }
-    c.size = stats.size;
-    c.mtimeMs = stats.mtimeMs;
-    claudeCache.delete(file);
-    claudeCache.set(file, c);
-    while (claudeCache.size > 3) claudeCache.delete(claudeCache.keys().next().value);
-    return c.entries;
-  } catch {
-    return undefined;
-  }
-}
-
-/** Parsed entries of the few most recently opened session files, reused until the file changes. */
-const entriesCache = new Map();
-async function readEntries(file, source = "pi") {
-  if (source === "claude") return readClaudeEntries(file);
-  if (!isUnderSessionsDir(file)) return undefined;
-  try {
-    const stats = await stat(file);
-    const cached = entriesCache.get(file);
-    if (cached && cached.mtimeMs === stats.mtimeMs && cached.size === stats.size) return cached.entries;
-    const entries = parseEntries(await readFile(file, "utf8"));
-    entriesCache.delete(file);
-    entriesCache.set(file, { mtimeMs: stats.mtimeMs, size: stats.size, entries });
-    while (entriesCache.size > 4) entriesCache.delete(entriesCache.keys().next().value);
-    return entries;
-  } catch {
-    return undefined;
-  }
-}
-
 /* ── saved sessions (from disk) ───────────────────────── */
 
 /** id -> metadata of the latest scan */
@@ -408,9 +320,9 @@ let scanInFlight;
 async function refreshSaved() {
   if (Date.now() - lastScanAt < 2000) return;
   if (!scanInFlight) {
-    scanInFlight = Promise.all([SESSIONS_DIR ? scanSessions(SESSIONS_DIR) : [], CLAUDE_DIR ? scanClaudeSessions(CLAUDE_DIR) : []])
-      .then(([pi, claude]) => {
-        const metas = [...pi, ...claude];
+    scanInFlight = Promise.all(SOURCES.filter((source) => source.enabled).map((source) => source.scan()))
+      .then((lists) => {
+        const metas = lists.flat();
         savedById = new Map(metas.map((meta) => [meta.id, meta]));
         lastScanAt = Date.now();
       })
@@ -424,9 +336,9 @@ async function refreshSaved() {
 /** Where a session's history lives: a live session first, else the saved index. */
 function locate(id) {
   const live = sessions.get(id);
-  if (live?.sessionFile) return { file: live.sessionFile, leafId: live.leafId, historyVersion: live.historyVersion, source: "pi" };
+  if (live?.sessionFile) return { file: live.sessionFile, leafId: live.leafId, historyVersion: live.historyVersion, source: PI };
   const saved = savedById.get(id);
-  if (saved) return { file: saved.file, leafId: undefined, historyVersion: 0, source: saved.source ?? "pi" };
+  if (saved) return { file: saved.file, leafId: undefined, historyVersion: 0, source: sourceById(saved.source) };
   return undefined;
 }
 
@@ -439,42 +351,27 @@ async function workspaceRootFor(id) {
 }
 
 /**
- * Running Claude Code sessions: "claude:<sessionId>" -> "busy" | "idle", from the <pid>.json
- * files Claude Code keeps in ~/.claude/sessions while it runs (only those whose process is
- * alive). Only the .json files are read. Cached for 3 s. Empty if the folder isn't there.
+ * Running or idle, for sessions without a live bridge: "<source>:<id>" -> "busy" | "idle", from
+ * every enabled source that can tell (each caches its own). .supported = the sources that can.
  */
-let claudeRunningCache = { at: 0, map: new Map() };
-async function claudeRunning() {
-  if (!CLAUDE_RUNNING_DIR) return claudeRunningCache.map;
-  if (now() - claudeRunningCache.at < 3000) return claudeRunningCache.map;
-  const map = new Map();
-  map.supported = false;
-  try {
-    map.supported = (await stat(CLAUDE_RUNNING_DIR)).isDirectory();
-    for (const name of await readdir(CLAUDE_RUNNING_DIR)) {
-      if (!/^\d+\.json$/.test(name)) continue;
-      try {
-        const info = JSON.parse(await readFile(join(CLAUDE_RUNNING_DIR, name), "utf8"));
-        if (typeof info.sessionId !== "string" || !Number.isInteger(info.pid) || !isProcessAlive(info.pid)) continue;
-        // The same session can be open in two processes (CLI and desktop app): busy wins.
-        const id = `${CLAUDE_PREFIX}${info.sessionId}`;
-        if (map.get(id) !== "busy") map.set(id, info.status === "busy" ? "busy" : "idle");
-      } catch {
-        // Half-written or unreadable: skip it this time.
-      }
-    }
-  } catch {
-    // No sessions folder (older Claude Code): fall back to transcript activity.
+async function runningMap() {
+  const merged = new Map();
+  merged.supported = new Set();
+  for (const source of SOURCES) {
+    if (!source.enabled || !source.running) continue;
+    const map = await source.running();
+    for (const [id, status] of map) merged.set(id, status);
+    if (map.supported) merged.supported.add(source.id);
   }
-  claudeRunningCache = { at: now(), map };
-  return map;
+  return merged;
 }
 
-/** Is this Claude Code session running? Process file first, recent transcript write as fallback. */
-function claudeActivity(id, mtimeMs, running) {
+/** Is a session without a bridge running? Its CLI's own signal first, else a recent transcript write. */
+function fileActivity(source, id, mtimeMs, running) {
+  if (source.live) return {};
   const status = running.get(id);
-  if (status) return { active: true, claudeStatus: status };
-  return { active: !running.supported && now() - mtimeMs < CLAUDE_ACTIVE_MS ? true : undefined };
+  if (status) return { active: true, runStatus: status };
+  return { active: !running.supported.has(source.id) && now() - mtimeMs < ACTIVE_FALLBACK_MS ? true : undefined };
 }
 
 /* ── terminal menu: open a workspace or saved session ── */
@@ -485,10 +382,9 @@ async function launchTarget(kind, id) {
   if (kind === "session") {
     const meta = savedById.get(id);
     if (!meta?.cwd) throw new LaunchError("Unknown session.");
-    const source = meta.source === "claude" ? "claude" : "pi";
-    const sessionId = source === "claude" ? id.slice(CLAUDE_PREFIX.length) : id;
-    const running =
-      source === "claude" ? (await claudeRunning()).has(id) : Boolean(sessions.get(id) && !sessions.get(id).ended);
+    const source = sourceById(meta.source);
+    const sessionId = nativeId(source, id);
+    const running = source.live ? Boolean(sessions.get(id) && !sessions.get(id).ended) : (await runningMap()).has(id);
     return { kind, cwd: await existingDir(meta.cwd), source, sessionId, running };
   }
   if (kind === "workspace") {
@@ -511,21 +407,19 @@ async function existingDir(dir) {
 }
 
 function launchOptions(target) {
-  const make = (action, label, extra = {}) => {
-    const command = cliCommand(action, extra);
-    return { action, label, command, copy: copyLine(target.cwd, command), ...(extra.disabled ? { disabled: extra.disabled } : {}) };
-  };
+  const make = ({ action, label, command }, disabled) => ({
+    action,
+    label,
+    command,
+    copy: copyLine(target.cwd, command),
+    ...(disabled ? { disabled } : {}),
+  });
   if (target.kind === "session") {
-    const label = target.source === "claude" ? "Resume in Claude Code" : "Resume in Pi";
     const disabled = target.running ? "This session is already running. Use its open terminal." : undefined;
-    return [make("resume", label, { source: target.source, sessionId: target.sessionId, disabled })];
+    const command = resumeCommand(target.source, target.sessionId);
+    return [make({ action: "resume", label: `Resume in ${target.source.label}`, command }, disabled)];
   }
-  return [
-    make("terminal", "Terminal here"),
-    make("pi", "Start Pi"),
-    make("pi-continue", "Continue last Pi session"),
-    make("claude", "Start Claude Code"),
-  ];
+  return workspaceActions(SOURCES).map((option) => make(option));
 }
 
 let shellName;
@@ -563,7 +457,7 @@ async function openTerminal(cwd, command) {
 
 async function workspaceTree() {
   await refreshSaved();
-  const running = await claudeRunning();
+  const running = await runningMap();
   const rows = new Map();
   for (const meta of savedById.values()) {
     rows.set(meta.id, {
@@ -575,12 +469,13 @@ async function workspaceTree() {
       created: meta.created,
       lastActivity: meta.mtimeMs,
       live: undefined,
-      ...(meta.source === "claude" ? claudeActivity(meta.id, meta.mtimeMs, running) : {}),
+      ...fileActivity(sourceById(meta.source), meta.id, meta.mtimeMs, running),
     });
   }
   for (const live of sessions.values()) {
     const row = rows.get(live.id) ?? {
       id: live.id,
+      source: "pi",
       cwd: live.cwd ?? "",
       name: undefined,
       preview: "",
@@ -754,46 +649,39 @@ const server = createServer(async (req, res) => {
       const id = url.searchParams.get("id") ?? "";
       if (!sessions.has(id) && !savedById.has(id)) await refreshSaved();
       const where = locate(id);
-      const entries = where ? await readEntries(where.file, where.source) : undefined;
+      const entries = where ? await where.source.readEntries(where.file) : undefined;
       if (!entries) {
         sendJson(res, 404, { error: "no history for that session" });
         return;
       }
-      const transcript = where.source === "claude" ? claudeTranscriptItems(entries) : transcriptItems(entries, where.leafId);
-      sendJson(res, 200, { ...transcript, source: where.source, historyVersion: where.historyVersion });
+      const transcript = where.source.transcript(entries, { leafId: where.leafId });
+      sendJson(res, 200, { ...transcript, source: where.source.id, historyVersion: where.historyVersion });
       return;
     }
 
     if (url.pathname === "/api/commands") {
       // Slash commands for the composer's "/" lookup, for the selected session's CLI.
       const id = url.searchParams.get("id") ?? "";
-      if (id.startsWith(CLAUDE_PREFIX)) {
-        if (!savedById.has(id)) await refreshSaved();
-        const cwd = savedById.get(id)?.cwd;
-        const claudeHome = resolve(CLAUDE_DIR ?? join(homedir(), ".claude", "projects"), "..");
-        const [project, user] = await Promise.all([
-          cwd ? claudeCustomCommands(join(cwd, ".claude"), "project") : [],
-          claudeCustomCommands(claudeHome, "user"),
-        ]);
-        sendJson(res, 200, { cli: "claude", commands: mergeCommands(project, user, CLAUDE_BUILTINS) });
-      } else {
-        const reported = sessions.get(id)?.commands ?? [];
-        sendJson(res, 200, { cli: "pi", commands: mergeCommands(PI_BUILTINS, reported) });
-      }
+      const source = sourceForId(SOURCES, id);
+      if (!sessions.has(id) && !savedById.has(id)) await refreshSaved();
+      const live = sessions.get(id);
+      const cwd = live?.cwd ?? savedById.get(id)?.cwd;
+      sendJson(res, 200, { cli: source.id, commands: await source.slashCommands({ cwd, live }) });
       return;
     }
 
     if (url.pathname === "/api/stat") {
       // Cheap change check for sessions without a live bridge (Claude Code): size + mtime only.
-      const where = locate(url.searchParams.get("id") ?? "");
+      const id = url.searchParams.get("id") ?? "";
+      const where = locate(id);
       if (!where) {
         sendJson(res, 404, { error: "unknown session" });
         return;
       }
       try {
         const s = await stat(where.file);
-        const activity = claudeActivity(url.searchParams.get("id") ?? "", s.mtimeMs, await claudeRunning());
-        sendJson(res, 200, { size: s.size, mtimeMs: s.mtimeMs, active: Boolean(activity.active), claudeStatus: activity.claudeStatus });
+        const activity = fileActivity(where.source, id, s.mtimeMs, await runningMap());
+        sendJson(res, 200, { size: s.size, mtimeMs: s.mtimeMs, active: Boolean(activity.active), runStatus: activity.runStatus });
       } catch {
         sendJson(res, 404, { error: "file not found" });
       }
@@ -802,9 +690,9 @@ const server = createServer(async (req, res) => {
 
     if (url.pathname === "/api/image") {
       const where = locate(url.searchParams.get("id") ?? "");
-      const entries = where ? await readEntries(where.file, where.source) : undefined;
+      const entries = where ? await where.source.readEntries(where.file) : undefined;
       const ref = url.searchParams.get("ref");
-      const image = entries ? (where.source === "claude" ? findClaudeImage(entries, ref) : findImage(entries, ref)) : undefined;
+      const image = entries ? where.source.findImage(entries, ref) : undefined;
       if (!image) {
         res.writeHead(404).end();
         return;
@@ -844,6 +732,12 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (url.pathname === "/api/sources") {
+      // Which CLIs this server reads, and what the page can do with each.
+      sendJson(res, 200, { sources: describeSources(SOURCES) });
+      return;
+    }
+
     if (url.pathname === "/healthz") {
       sendJson(res, 200, { ok: true, app: APP_ID, sessions: sessions.size, clients: clients.size });
       return;
@@ -878,7 +772,8 @@ const server = createServer(async (req, res) => {
       await refreshSaved();
       const days = [7, 30, 90].includes(Number(url.searchParams.get("days"))) ? Number(url.searchParams.get("days")) : 30;
       const offsetMin = Math.max(-840, Math.min(840, Number.parseInt(url.searchParams.get("tz") ?? "0", 10) || 0));
-      sendJson(res, 200, usageSummary([...savedById.values()], { days, offsetMin }));
+      const ids = SOURCES.filter((source) => source.enabled).map((source) => source.id);
+      sendJson(res, 200, usageSummary([...savedById.values()], { days, offsetMin, sources: ids }));
       return;
     }
 
@@ -929,17 +824,16 @@ const server = createServer(async (req, res) => {
       } catch {
         version = undefined;
       }
-      const running = await claudeRunning();
+      const running = await runningMap();
       sendJson(res, 200, {
         version,
         address: `http://${HOST}:${PORT}`,
         node: process.version,
         platform: process.platform,
-        piSessionsDir: SESSIONS_DIR,
-        claudeProjectsDir: CLAUDE_DIR ?? null,
+        sources: describeSources(SOURCES),
         dashboardsFile: DASHBOARDS_FILE,
-        livePi: [...sessions.values()].filter((s) => s.source !== "claude" && !s.ended).length,
-        runningClaude: running.size,
+        livePi: [...sessions.values()].filter((s) => !s.ended).length,
+        runningOther: running.size,
         startedAt: SERVER_STARTED_AT,
       });
       return;
@@ -962,5 +856,5 @@ server.on("error", (error) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`[companion] listening on http://${HOST}:${PORT} (sessions: ${SESSIONS_DIR})`);
+  console.log(`[companion] listening on http://${HOST}:${PORT} (reading: ${SOURCES.filter((source) => source.enabled).map((source) => source.label).join(", ")})`);
 });

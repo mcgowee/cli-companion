@@ -1,7 +1,7 @@
 // Bottom composer: write or collect text and put it into the running Pi's input box (you press
 // Enter in the terminal; Ctrl+Shift+Enter also sends it). The bridge extension does the work
 // inside Pi: paste — add text to the input box; submit — send the input box, like Enter.
-// For a Claude Code session it copies the text instead (nothing can type into Claude's prompt).
+// For a CLI the page can't type into (Claude Code, …) it copies the text instead.
 // Also handles every Copy / Add button on the page.
 (function () {
   const $ = (id) => document.getElementById(id);
@@ -68,9 +68,9 @@
   function blocker() {
     const s = state.session;
     if (!state.selectedId) return "Pick a session first.";
-    // Claude Code: nothing can type into its prompt, so the composer copies instead. Any
-    // Claude session, running or saved, is fine.
-    if (isClaude()) return undefined;
+    // CLIs the page can't type into (Claude Code, …): the composer copies instead. Any
+    // session, running or saved, is fine.
+    if (copyOnly()) return undefined;
     if (!s || s.ended) return "This is a saved session. Open it in Pi (pi -r) to send to it.";
     if (s.mode && s.mode !== "tui") return "This Pi has no terminal input box (pi-gui or RPC). Use Copy instead.";
     if (s.listening === false) return "Pi isn't listening yet. Run /reload in that Pi to load the latest companion extension.";
@@ -81,8 +81,14 @@
     return state.pending.size > 0;
   }
 
-  function isClaude() {
-    return typeof state.selectedId === "string" && state.selectedId.startsWith("claude:");
+  /** The selected session's CLI. */
+  function src() {
+    return cliSources.forId(state.selectedId);
+  }
+
+  /** Can't type into this CLI's prompt, so the button copies the text instead. */
+  function copyOnly() {
+    return Boolean(state.selectedId) && !src().canType;
   }
 
   const sendLabelEl = sendEl.firstChild; // the text node before <kbd>
@@ -91,14 +97,14 @@
     const s = state.session;
     const name = s ? (s.name && !["New thread", "New session"].includes(s.name) ? s.name : (s.cwd ?? "").split(/[\\/]/).pop()) : "";
     const why = blocker();
-    $("composer-title").textContent = !state.selectedId ? "Composer" : isClaude() ? "To Claude Code" : "To Pi";
-    targetEl.textContent = why || isClaude() ? "" : `→ ${name || "Pi"}`;
+    $("composer-title").textContent = !state.selectedId ? "Composer" : `To ${src().label}`;
+    targetEl.textContent = why || copyOnly() ? "" : `→ ${name || "Pi"}`;
     sendEl.disabled = Boolean(why) || !textEl.value.trim() || busy();
-    sendLabelEl.textContent = isClaude() ? "Copy for Claude " : "Put in Pi's input ";
+    sendLabelEl.textContent = copyOnly() ? `Copy for ${src().assistant} ` : "Put in Pi's input ";
     sendEl.title =
       why ??
-      (isClaude()
-        ? "Copy this text, then paste it into Claude Code with Ctrl+V or right-click (Ctrl+Enter)"
+      (copyOnly()
+        ? `Copy this text, then paste it into ${src().label} with Ctrl+V or right-click (Ctrl+Enter)`
         : "Put this text in Pi's input box (Ctrl+Enter). Ctrl+Shift+Enter also presses Enter for you.");
     if (why && !busy() && !statusEl.dataset.sticky) setStatus(why, "muted");
     else if (!why && statusEl.dataset.kind === "muted") setStatus("");
@@ -152,7 +158,7 @@
   /** Put the composer text in Pi's input box; with `andEnter`, also send it. */
   async function put(andEnter = false) {
     if (blocker() || !textEl.value.trim() || busy()) return;
-    if (isClaude()) {
+    if (copyOnly()) {
       const text = textEl.value;
       if (!(await copyText(text))) {
         setStatus("Copy failed. Select the text and press Ctrl+C.", "error", true);
@@ -164,7 +170,7 @@
         savePref("pi-companion.draft", "");
         autoSize();
       }
-      statusEl.innerHTML = `Copied ✓ Paste it into Claude Code (Ctrl+V or right-click), then press Enter. <button type="button" class="link" data-restore>Bring text back</button>`;
+      statusEl.innerHTML = `Copied ✓ Paste it into ${window.escapeHtml(src().label)} (Ctrl+V or right-click), then press Enter. <button type="button" class="link" data-restore>Bring text back</button>`;
       statusEl.dataset.kind = "ok";
       statusEl.dataset.sticky = "1";
       renderControls();
