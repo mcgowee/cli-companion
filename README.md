@@ -25,7 +25,8 @@ next to it:
   messages that were summarized are dimmed.
 - **Context meter** and a status pill (Idle, Running, Compacting).
 - **Active and Workspaces**: the sidebar starts with **Active**, a flat list of every running
-  session with its folder name under the title. Below it, **Workspaces** lists every workspace
+  session with its folder name under the title. Sessions waiting for you come first, the one
+  that finished most recently on top, then the ones still working. Below it, **Workspaces** lists every workspace
   (project folder) you have used Pi in, newest first and collapsed, with its sessions
   underneath (running ones keep their live dot there too), including past sessions you can
   open and read. Only the folder of the open session expands by itself; what you open or
