@@ -80,23 +80,26 @@
     }
   });
 
-  $("wb-resize").addEventListener("pointerdown", (event) => {
-    event.preventDefault();
-    const startX = event.clientX;
-    const startW = wb.width;
-    const move = (e) => {
-      wb.width = Math.round(Math.min(Math.max(startW + (startX - e.clientX), 300), Math.max(320, window.innerWidth - 420)));
-      appEl.style.setProperty("--bench-size", `${wb.width}px`);
-    };
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      document.body.classList.remove("resizing");
-      savePref("pi-companion.wbWidth", wb.width);
-    };
-    document.body.classList.add("resizing");
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+  const BENCH_DEFAULT = 460;
+  // Keep at least 360 px for the transcript between the two panels.
+  const clampBench = (w) => {
+    const side = document.querySelector(".sidebar");
+    const sideWidth = side && !appEl.classList.contains("sidebar-hidden") ? side.offsetWidth : 0;
+    const max = Math.max(300, window.innerWidth - sideWidth - 360);
+    return Math.round(Math.min(Math.max(w, 300), max));
+  };
+  function setBenchWidth(w, save = true) {
+    wb.width = clampBench(w);
+    appEl.style.setProperty("--bench-size", `${wb.width}px`);
+    $("wb-resize").setAttribute("aria-valuenow", String(wb.width));
+    if (save) savePref("pi-companion.wbWidth", wb.width);
+  }
+  setBenchWidth(Number(wb.width) || BENCH_DEFAULT, false);
+  window.makeResizeHandle($("wb-resize"), {
+    get: () => wb.width,
+    set: setBenchWidth,
+    direction: -1,
+    reset: () => setBenchWidth(BENCH_DEFAULT),
   });
 
   for (const tab of document.querySelectorAll(".wb-tab")) {

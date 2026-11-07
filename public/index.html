@@ -33,6 +33,9 @@
       <p class="hint" id="empty-hint">No Pi sessions found yet. Start <code>pi</code> in a terminal; running sessions show up here within 15&nbsp;seconds.</p>
     </aside>
 
+    <div class="panel-resize side-resize" id="side-resize" role="separator" aria-orientation="vertical"
+      aria-label="Resize left panel" tabindex="0" title="Drag to resize · double-click to reset"></div>
+
     <button class="icon-btn sidebar-show" id="sidebar-show" type="button" aria-label="Show sidebar" title="Show sidebar (Ctrl+B)">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9.5 4v16"/></svg>
     </button>
@@ -74,7 +77,8 @@
     </main>
 
     <aside class="workbench" id="workbench" aria-label="Files and review" hidden>
-      <div class="wb-resize" id="wb-resize" title="Drag to resize"></div>
+      <div class="panel-resize wb-resize" id="wb-resize" role="separator" aria-orientation="vertical"
+        aria-label="Resize right panel" tabindex="0" title="Drag to resize · double-click to reset"></div>
       <div class="wb-tabs" role="tablist">
         <button class="wb-tab" type="button" role="tab" data-tool="files">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5z"/><path d="M14 3.5v5h5"/></svg>
@@ -94,6 +98,7 @@
     </aside>
   </div>
   <script src="markdown.js"></script>
+  <script src="resize.js"></script>
   <script src="app.js"></script>
   <script src="workbench.js"></script>
 </body>

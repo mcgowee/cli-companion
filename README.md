@@ -29,9 +29,11 @@ next to it:
   sessions get a live dot and float to the top; a filter box searches folder names and
   session titles. The window follows the most recently active session unless you pick one.
   The left panel can be hidden with its button or **Ctrl+B** (⌘B on macOS).
+- **Resizable panels**: drag the inner edge of the left or right panel (or focus it and use
+  ←/→; Shift for bigger steps). Double-click an edge to reset its width. Widths are
+  remembered, and the transcript always keeps at least 360 px.
 - **Right panel (Files and Review)**, like pi-gui's workbench, for the selected session's
-  folder. Toggle it with the button at the top right or **Ctrl+Alt+B**; drag its edge to
-  resize.
+  folder. Toggle it with the button at the top right or **Ctrl+Alt+B**.
   - **Files**: browse the folder tree and read files with line numbers. Markdown is
     rendered (with a Source toggle) and images are shown.
   - **Review**: git changes, either **Uncommitted** (including untracked files) or

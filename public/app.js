@@ -268,6 +268,31 @@
     savePref("pi-companion.sidebarHidden", hidden);
   }
   setSidebarHidden(loadPref("pi-companion.sidebarHidden", false) === true);
+
+  /* ── left panel: resize ──────────────────────────────── */
+
+  const SIDE_DEFAULT = 270;
+  // Keep at least 360 px for the transcript between the two panels.
+  const clampSide = (w) => {
+    const bench = document.getElementById("workbench");
+    const benchWidth = bench && !bench.hidden ? bench.offsetWidth : 0;
+    const max = Math.max(200, Math.min(560, window.innerWidth - benchWidth - 360));
+    return Math.round(Math.min(Math.max(w, 200), max));
+  };
+  let sideWidth = clampSide(Number(loadPref("pi-companion.sideWidth", SIDE_DEFAULT)) || SIDE_DEFAULT);
+  function setSideWidth(w, save = true) {
+    sideWidth = clampSide(w);
+    appEl.style.setProperty("--side-size", `${sideWidth}px`);
+    $("side-resize").setAttribute("aria-valuenow", String(sideWidth));
+    if (save) savePref("pi-companion.sideWidth", sideWidth);
+  }
+  setSideWidth(sideWidth, false);
+  window.makeResizeHandle($("side-resize"), {
+    get: () => sideWidth,
+    set: setSideWidth,
+    direction: 1,
+    reset: () => setSideWidth(SIDE_DEFAULT),
+  });
   $("sidebar-hide").addEventListener("click", () => setSidebarHidden(true));
   $("sidebar-show").addEventListener("click", () => setSidebarHidden(false));
   document.addEventListener("keydown", (event) => {
