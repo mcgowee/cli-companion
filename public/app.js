@@ -296,6 +296,30 @@
     </button>`;
   }
 
+  let sidebarHtml = ""; // what the list shows now
+  let sidebarPointerDown = false;
+  let sidebarPending = false;
+  let sidebarPointerTimer;
+  function releaseSidebar() {
+    clearTimeout(sidebarPointerTimer);
+    if (!sidebarPointerDown) return;
+    sidebarPointerDown = false;
+    // Let the click land on the rows it started on, then catch up.
+    setTimeout(() => {
+      if (sidebarPending && !sidebarPointerDown) {
+        sidebarPending = false;
+        renderSidebar();
+      }
+    }, 0);
+  }
+  $("session-list").addEventListener("pointerdown", () => {
+    sidebarPointerDown = true;
+    clearTimeout(sidebarPointerTimer);
+    sidebarPointerTimer = setTimeout(releaseSidebar, 2000); // never hold updates for long
+  });
+  window.addEventListener("pointerup", releaseSidebar);
+  window.addEventListener("pointercancel", releaseSidebar);
+
   function renderSidebar() {
     const list = $("session-list");
     const filter = state.filter.trim().toLowerCase();
@@ -372,7 +396,7 @@
           }</div>
         </section>`;
     };
-    list.innerHTML = activeHtml + byCli(groups)
+    const html = activeHtml + byCli(groups)
       .map(({ src, workspaces }) => {
         const sessions = workspaces.flatMap((ws) => ws.sessions);
         const open = isOpen(state.cliOpen, src.id, sessions);
@@ -388,6 +412,19 @@
         </section>`;
       })
       .join("");
+    // A working session streams many updates a second, and each one comes here. Replacing the rows
+    // between a mouse press and release loses the click, so: leave the rows alone when nothing on
+    // them changed, and while a button is held down over the list, wait until it's released.
+    if (html === sidebarHtml) {
+      considerSuggest();
+      return;
+    }
+    if (sidebarPointerDown) {
+      sidebarPending = true;
+      return;
+    }
+    sidebarHtml = html;
+    list.innerHTML = html;
 
     for (const button of list.querySelectorAll(".row-fav")) {
       button.addEventListener("click", (event) => {
