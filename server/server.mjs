@@ -18,9 +18,11 @@ import { StringDecoder } from "node:string_decoder";
 import { fileURLToPath } from "node:url";
 import { claudeTranscriptItems, findClaudeImage, parseClaudeLines } from "./claude-file.mjs";
 import { findImage, parseEntries, transcriptItems } from "./session-file.mjs";
-import { CLAUDE_PREFIX, groupByWorkspace, scanClaudeSessions, scanSessions } from "./session-index.mjs";
+import { CLAUDE_PREFIX, groupByWorkspace, scanClaudeSessions, scanSessions, workspaceKey } from "./session-index.mjs";
 import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard } from "./dashboards.mjs";
 import { usageSummary } from "./usage.mjs";
+import { cliCommand, copyLine, LaunchError, openPlan } from "./launch.mjs";
+import { execFileSync, spawn } from "node:child_process";
 import { CLAUDE_BUILTINS, claudeCustomCommands, mergeCommands, PI_BUILTINS } from "./slash-commands.mjs";
 import { listDir, readFileForView, reviewDiff, reviewStatus, WorkbenchError } from "./workbench.mjs";
 
@@ -473,6 +475,90 @@ function claudeActivity(id, mtimeMs, running) {
   return { active: !running.supported && now() - mtimeMs < CLAUDE_ACTIVE_MS ? true : undefined };
 }
 
+/* ── terminal menu: open a workspace or saved session ── */
+
+/** The folder (and session) a menu is for; only folders and sessions from the index. */
+async function launchTarget(kind, id) {
+  await refreshSaved();
+  if (kind === "session") {
+    const meta = savedById.get(id);
+    if (!meta?.cwd) throw new LaunchError("Unknown session.");
+    const source = meta.source === "claude" ? "claude" : "pi";
+    const sessionId = source === "claude" ? id.slice(CLAUDE_PREFIX.length) : id;
+    const running =
+      source === "claude" ? (await claudeRunning()).has(id) : Boolean(sessions.get(id) && !sessions.get(id).ended);
+    return { kind, cwd: await existingDir(meta.cwd), source, sessionId, running };
+  }
+  if (kind === "workspace") {
+    const meta = [...savedById.values()].find((m) => workspaceKey(m.cwd) === id);
+    const live = [...sessions.values()].find((s) => workspaceKey(s.cwd) === id);
+    const cwd = meta?.cwd ?? live?.cwd;
+    if (!cwd) throw new LaunchError("Unknown workspace.");
+    return { kind, cwd: await existingDir(cwd) };
+  }
+  throw new LaunchError("Unknown kind.");
+}
+
+async function existingDir(dir) {
+  try {
+    if ((await stat(dir)).isDirectory()) return dir;
+  } catch {
+    // fall through
+  }
+  throw new LaunchError(`The folder ${dir} doesn't exist any more.`);
+}
+
+function launchOptions(target) {
+  const make = (action, label, extra = {}) => {
+    const command = cliCommand(action, extra);
+    return { action, label, command, copy: copyLine(target.cwd, command), ...(extra.disabled ? { disabled: extra.disabled } : {}) };
+  };
+  if (target.kind === "session") {
+    const label = target.source === "claude" ? "Resume in Claude Code" : "Resume in Pi";
+    const disabled = target.running ? "This session is already running. Use its open terminal." : undefined;
+    return [make("resume", label, { source: target.source, sessionId: target.sessionId, disabled })];
+  }
+  return [
+    make("terminal", "Terminal here"),
+    make("pi", "Start Pi"),
+    make("pi-continue", "Continue last Pi session"),
+    make("claude", "Start Claude Code"),
+  ];
+}
+
+let shellName;
+function preferredShell() {
+  if (shellName) return shellName;
+  try {
+    execFileSync("where.exe", ["pwsh"], { stdio: "ignore", windowsHide: true });
+    shellName = "pwsh";
+  } catch {
+    shellName = "powershell.exe";
+  }
+  return shellName;
+}
+
+function spawnDetached(file, args, options = {}) {
+  return new Promise((resolveSpawn, reject) => {
+    const child = spawn(file, args, { detached: true, stdio: "ignore", windowsHide: false, ...options });
+    child.once("error", reject);
+    child.once("spawn", () => {
+      child.unref();
+      resolveSpawn();
+    });
+  });
+}
+
+async function openTerminal(cwd, command) {
+  const plan = openPlan(cwd, command, { shell: preferredShell() });
+  if (!plan) throw new LaunchError("Opening a terminal works on Windows only for now. Use Copy.");
+  try {
+    await spawnDetached(plan.terminal.file, plan.terminal.args);
+  } catch {
+    await spawnDetached(plan.fallback.file, plan.fallback.args, { cwd: plan.fallback.cwd });
+  }
+}
+
 async function workspaceTree() {
   await refreshSaved();
   const running = await claudeRunning();
@@ -631,7 +717,7 @@ const server = createServer(async (req, res) => {
     }
 
     // Everything below is read-only, except adding/removing custom dashboard links.
-    if (req.method !== "GET" && url.pathname !== "/api/dashboards") {
+    if (req.method !== "GET" && url.pathname !== "/api/dashboards" && url.pathname !== "/api/launch") {
       res.writeHead(405).end();
       return;
     }
@@ -758,6 +844,31 @@ const server = createServer(async (req, res) => {
 
     if (url.pathname === "/healthz") {
       sendJson(res, 200, { ok: true, sessions: sessions.size, clients: clients.size });
+      return;
+    }
+
+    if (url.pathname === "/api/launch") {
+      // Terminal menu for a workspace or saved session: GET lists the options (with the line to
+      // copy); POST opens one in a new terminal window (page header required).
+      if (req.method === "POST" && req.headers["x-pi-companion-page"] !== "1") {
+        res.writeHead(403).end();
+        return;
+      }
+      const params = req.method === "POST" ? JSON.parse(await readBody(req)) : Object.fromEntries(url.searchParams);
+      try {
+        const target = await launchTarget(String(params.kind ?? ""), String(params.id ?? ""));
+        if (req.method === "GET") {
+          sendJson(res, 200, { cwd: target.cwd, canOpen: process.platform === "win32", options: launchOptions(target) });
+          return;
+        }
+        const option = launchOptions(target).find((o) => o.action === params.action);
+        if (!option) throw new LaunchError("That isn't available here.");
+        if (option.disabled) throw new LaunchError(option.disabled);
+        await openTerminal(target.cwd, option.command);
+        sendJson(res, 200, { ok: true, opened: option.label });
+      } catch (error) {
+        sendJson(res, error instanceof LaunchError ? 400 : 500, { error: error.message });
+      }
       return;
     }
 

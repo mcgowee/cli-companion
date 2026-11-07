@@ -173,7 +173,7 @@
     const dot = status ? esc(status) : claude && s.active ? (claudeBusy ? "claude-active" : "claude-idle") : "saved";
     const ago = status && status !== "idle" ? statusLabel({ status }) : claudeBusy ? "Running" : fmtAgo(s.lastActivity);
     const tip = `${claude ? "Claude Code" : "Pi"}: ${rowTitle(s)}${wsName ? ` · ${wsName}` : ""}`;
-    return `<button class="session${active}" data-id="${esc(s.id)}" title="${esc(tip)}">
+    const row = `<button class="session${active}" data-id="${esc(s.id)}" title="${esc(tip)}">
       <span class="sdot ${dot}"></span>
       ${claude ? `<span class="src-tag" aria-label="Claude Code">CC</span>` : ""}
       ${
@@ -182,6 +182,16 @@
           : `<span class="sname">${esc(rowTitle(s))}</span>`
       }
       <span class="sago">${esc(ago)}</span>
+    </button>`;
+    // Saved (not running) sessions in the tree get the terminal icon: resume in a new terminal.
+    if (wsName || isActive(s)) return row;
+    return `<div class="row-wrap">${row}${termButton("session", s.id, `Resume ${rowTitle(s)} in a terminal`)}</div>`;
+  }
+
+  /** The small terminal icon that opens the Open / Copy menu (public/launch.js). */
+  function termButton(kind, id, label) {
+    return `<button class="row-term" type="button" data-launch-kind="${kind}" data-launch-id="${esc(id)}" aria-label="${esc(label)}" title="${esc(label)}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M7 10l3 2.2L7 14.4M12.5 15h4.5"/></svg>
     </button>`;
   }
 
@@ -233,6 +243,7 @@
         const hidden = ws.sessions.length - shown.length;
         const rows = shown.map((s) => sessionRow(s)).join("");
         return `<section class="ws${open ? " open" : ""}">
+          <div class="row-wrap ws-row-wrap">
           <button class="ws-head" data-ws="${esc(ws.id)}" title="${esc(ws.cwd)}" aria-expanded="${open}">
             <svg class="ws-icon closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.6l2 2h7.4a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>
             <svg class="ws-icon opened" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 17.5V7.5a2 2 0 0 1 2-2h3.6l2 2h6.4a2 2 0 0 1 2 2v1"/><path d="M3.5 17.5l2.3-5.6a2 2 0 0 1 1.9-1.3H21a1 1 0 0 1 .9 1.4l-2.2 5.3a2 2 0 0 1-1.9 1.2H5.5a2 2 0 0 1-2-1z"/></svg>
@@ -240,6 +251,8 @@
             ${anyLive ? `<span class="ws-live${anyBusy ? " busy" : ""}"></span>` : ""}
             <span class="ws-count">${ws.sessions.length}</span>
           </button>
+          ${termButton("workspace", ws.id, `Open ${ws.name} in a terminal`)}
+          </div>
           <div class="ws-sessions">${rows}${
             hidden > 0 ? `<button class="ws-more" data-more="${esc(ws.id)}">Show ${hidden} more</button>` : ""
           }</div>
@@ -255,7 +268,7 @@
     }
     for (const head of list.querySelectorAll(".ws-head")) {
       head.addEventListener("click", () => {
-        const section = head.parentElement;
+        const section = head.closest(".ws");
         const open = !section.classList.contains("open");
         state.wsOpen[head.dataset.ws] = open;
         savePref("pi-companion.wsOpen", state.wsOpen);

@@ -32,6 +32,15 @@ next to it:
   close is remembered. Nothing to add by hand: they come from Pi's own sessions folder. A
   filter box searches folder names and session titles in both lists. The window follows the most recently active session unless you pick one.
   The left panel can be hidden with its button or **Ctrl+B** (⌘B on macOS).
+- **Open in a terminal**: the small terminal icon beside a workspace or a saved session
+  opens a menu. For a workspace: **Terminal here**, **Start Pi**, **Continue last Pi
+  session** (`pi -c`), **Start Claude Code**, and **Copy folder path**. For a saved session:
+  **Resume in Pi** (`pi --session <id>`) or **Resume in Claude Code** (`claude --resume <id>`).
+  Running sessions have no icon, since their terminal is already open. Each option has **Copy**
+  (a PowerShell line such as `cd 'C:\AI\pi'; pi -c` to paste yourself) and, on Windows,
+  **Open** (a new Windows Terminal window in that folder running the command, or PowerShell
+  if Windows Terminal isn't installed). The commands come from a fixed list in the server;
+  the page only picks one.
 - **Claude Code sessions too (read-only)**: sessions from Claude Code (CLI or desktop app)
   appear in the same folders, tagged **CC**, read from `~/.claude/projects`. Open one to read
   the transcript (replies, thinking, tool calls with results, compactions, images); a running
@@ -66,7 +75,7 @@ next to it:
     **Branch** (everything since the branch split from main/master), with +/− counts and
     a coloured diff per file. **Changed in this session** lists the files Pi edited or
     wrote in the open session.
-  - Read-only by design: no editing and no terminal (your terminal is where Pi runs).
+  - Read-only by design: no editing and no terminal inside the page (your terminal is where Pi runs).
 - **Menu bar: Home, Dashboards, About.** Home is the session view.
   - **Dashboards** has built-in dashboards and your own. **Usage overview** shows sessions
     started per day in Pi and Claude Code (7, 30 or 90 days, with a table view), active days

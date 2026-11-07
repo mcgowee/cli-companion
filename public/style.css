@@ -312,6 +312,32 @@ body.resizing { cursor: col-resize; user-select: none; }
 .sname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
 .session.active .sname { font-weight: 600; }
 .sago { color: var(--muted); font-size: 11.5px; flex: none; }
+/* A sidebar row with its terminal icon beside it (a button can't hold another button). */
+.row-wrap { display: flex; align-items: center; gap: 2px; }
+.row-wrap > .session, .row-wrap > .ws-head { flex: 1; min-width: 0; }
+.row-term { all: unset; box-sizing: border-box; flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px;
+  border-radius: 6px; color: color-mix(in srgb, var(--muted) 70%, transparent); cursor: pointer; }
+.row-term svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.row-term:hover, .row-term.open { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.row-term:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); }
+/* The Open / Copy menu */
+.launch-menu { position: fixed; z-index: 50; width: min(380px, calc(100vw - 16px)); padding: 6px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--panel); box-shadow: 0 10px 30px rgb(0 0 0 / 0.28); font-size: 12.5px; }
+.launch-head { display: flex; flex-direction: column; gap: 2px; padding: 4px 8px 8px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.launch-head span { font-weight: 650; }
+.launch-head code { color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.launch-item { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 7px; }
+.launch-item:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.launch-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.launch-label { font-weight: 600; }
+.launch-cmd { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.launch-item.disabled .launch-cmd { white-space: normal; }
+.launch-item .btn.small { padding: 3px 10px; font-size: 12px; }
+.launch-path { all: unset; cursor: pointer; display: block; padding: 6px 8px; color: var(--accent); font-size: 12px; }
+.launch-msg { padding: 2px 8px 4px; color: var(--muted); font-size: 12px; min-height: 0; }
+.launch-msg:empty { display: none; }
+.launch-msg.ok { color: var(--ok); }
+.launch-msg.error { color: var(--bad); }
 /* Active list: the workspace name on a second, smaller line under the title. */
 .stext { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .sws { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

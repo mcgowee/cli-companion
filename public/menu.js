@@ -48,6 +48,9 @@
         <dt>Claude Code</dt><dd>Transcripts from <code>~/.claude/projects</code>, followed while they grow;
           running or idle from the files Claude Code keeps in <code>~/.claude/sessions</code>.
           <b>Copy for Claude</b> copies text to paste into its prompt.</dd>
+        <dt>Terminals</dt><dd>The terminal icon beside a workspace or saved session copies a PowerShell
+          line to start or resume Pi or Claude Code there, or (on Windows) opens it in a new
+          Windows Terminal window.</dd>
       </dl>
 
       <h2>This server</h2>
@@ -75,7 +78,9 @@
       <p>Everything stays on this computer: the server listens on 127.0.0.1 only and reads your session
       files read-only. The one file it writes is your list of custom dashboards
       (<code>~/.pi/agent/companion/dashboards.json</code>). Its only requests are the online check for
-      dashboards on this computer; it never contacts anything outside it.</p>
+      dashboards on this computer; it never contacts anything outside it. It starts a program only when
+      you click <b>Open</b> in a terminal menu, and only one of a fixed set of commands
+      (a shell, <code>pi</code>, <code>pi -c</code>, <code>claude</code>, or resuming a listed session).</p>
 
       <h2>Project</h2>
       <p><a href="https://github.com/mcgowee/pi-companion" target="_blank" rel="noopener">github.com/mcgowee/pi-companion</a>
