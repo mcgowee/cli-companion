@@ -1,4 +1,4 @@
-// Pi Companion page: live sessions from /events, history from /api/history.
+// CLI Companion page: live sessions from /events, history from /api/history.
 (function () {
   const $ = (id) => document.getElementById(id);
   const md = window.renderMarkdown;
@@ -155,7 +155,7 @@
     return live && !live.ended ? live.status : undefined;
   }
 
-  /** Running Pi, or a Claude Code transcript written to in the last couple of minutes. */
+  /** Running Pi, or a running Claude Code (from its ~/.claude/sessions process file). */
   function isActive(s) {
     return Boolean(liveStatus(s.id)) || (s.source === "claude" && s.active);
   }
@@ -169,7 +169,9 @@
     const status = liveStatus(s.id);
     const active = s.id === state.selectedId ? " active" : "";
     const claude = s.source === "claude" || String(s.id).startsWith("claude:");
-    const dot = status ? esc(status) : claude && s.active ? "claude-active" : "saved";
+    const claudeBusy = claude && s.active && s.claudeStatus !== "idle";
+    const dot = status ? esc(status) : claude && s.active ? (claudeBusy ? "claude-active" : "claude-idle") : "saved";
+    const ago = status && status !== "idle" ? statusLabel({ status }) : claudeBusy ? "Running" : fmtAgo(s.lastActivity);
     const tip = `${claude ? "Claude Code" : "Pi"}: ${rowTitle(s)}${wsName ? ` · ${wsName}` : ""}`;
     return `<button class="session${active}" data-id="${esc(s.id)}" title="${esc(tip)}">
       <span class="sdot ${dot}"></span>
@@ -179,7 +181,7 @@
           ? `<span class="stext"><span class="sname">${esc(rowTitle(s))}</span><span class="sws">${esc(wsName)}</span></span>`
           : `<span class="sname">${esc(rowTitle(s))}</span>`
       }
-      <span class="sago">${status && status !== "idle" ? esc(statusLabel({ status })) : esc(fmtAgo(s.lastActivity))}</span>
+      <span class="sago">${esc(ago)}</span>
     </button>`;
   }
 
@@ -283,7 +285,7 @@
     workspacesTimer = setTimeout(loadWorkspaces, delay);
   }
 
-  setInterval(loadWorkspaces, 20_000);
+  setInterval(loadWorkspaces, 10_000);
 
   /* ── left panel: hide / show ─────────────────────────── */
 
@@ -352,9 +354,12 @@
     $("context").hidden = true;
     const pill = $("status-pill");
     if (isClaude(state.selectedId)) {
-      const recent = found?.row.active || state.claudeActive;
-      pill.textContent = recent ? "Claude Code · active" : "Claude Code";
-      pill.className = `pill claude${recent ? " active" : ""}`;
+      // /api/stat (every 2 s) is fresher than the sidebar row (every 10 s).
+      const fresh = state.claudeStatFor === state.selectedId;
+      const running = fresh ? state.claudeActive : found?.row.active;
+      const busy = running && (fresh ? state.claudeStatus : found?.row.claudeStatus) !== "idle";
+      pill.textContent = running ? `Claude Code · ${busy ? "Running" : "Idle"}` : "Claude Code";
+      pill.className = `pill claude${running ? " active" : ""}`;
     } else {
       pill.textContent = "Saved";
       pill.className = "pill saved";
@@ -377,9 +382,12 @@
       const s = await res.json();
       const key = `${s.size}:${s.mtimeMs}`;
       const changed = claudeStat && claudeStat.id === id && claudeStat.key !== key;
-      const activeChanged = state.claudeActive !== s.active;
+      const activeChanged =
+        state.claudeStatFor !== id || state.claudeActive !== s.active || state.claudeStatus !== s.claudeStatus;
       claudeStat = { id, key };
+      state.claudeStatFor = id;
       state.claudeActive = s.active;
+      state.claudeStatus = s.claudeStatus;
       if (changed) loadHistory(true);
       if (activeChanged) renderHeader();
     } catch {

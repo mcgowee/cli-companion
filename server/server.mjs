@@ -11,14 +11,14 @@
 
 import { commandFromRequest } from "./commands.mjs";
 import { createServer } from "node:http";
-import { open, readFile, stat } from "node:fs/promises";
+import { open, readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { extname, join, resolve, sep } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { fileURLToPath } from "node:url";
 import { claudeTranscriptItems, findClaudeImage, parseClaudeLines } from "./claude-file.mjs";
 import { findImage, parseEntries, transcriptItems } from "./session-file.mjs";
-import { groupByWorkspace, scanClaudeSessions, scanSessions } from "./session-index.mjs";
+import { CLAUDE_PREFIX, groupByWorkspace, scanClaudeSessions, scanSessions } from "./session-index.mjs";
 import { listDir, readFileForView, reviewDiff, reviewStatus, WorkbenchError } from "./workbench.mjs";
 
 const HOST = "127.0.0.1";
@@ -31,6 +31,8 @@ const CLAUDE_DIR =
     ? undefined
     : resolve(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "projects");
 const CLAUDE_ACTIVE_MS = 2 * 60_000;
+// Claude Code writes one <pid>.json per running session here (sessionId, cwd, status busy/idle).
+const CLAUDE_RUNNING_DIR = CLAUDE_DIR ? resolve(CLAUDE_DIR, "..", "sessions") : undefined;
 const PUBLIC_DIR = fileURLToPath(new URL("../public/", import.meta.url));
 const MAX_BODY = 4 * 1024 * 1024;
 
@@ -417,8 +419,48 @@ async function workspaceRootFor(id) {
   return root;
 }
 
+/**
+ * Running Claude Code sessions: "claude:<sessionId>" -> "busy" | "idle", from the <pid>.json
+ * files Claude Code keeps in ~/.claude/sessions while it runs (only those whose process is
+ * alive). Only the .json files are read. Cached for 3 s. Empty if the folder isn't there.
+ */
+let claudeRunningCache = { at: 0, map: new Map() };
+async function claudeRunning() {
+  if (!CLAUDE_RUNNING_DIR) return claudeRunningCache.map;
+  if (now() - claudeRunningCache.at < 3000) return claudeRunningCache.map;
+  const map = new Map();
+  map.supported = false;
+  try {
+    map.supported = (await stat(CLAUDE_RUNNING_DIR)).isDirectory();
+    for (const name of await readdir(CLAUDE_RUNNING_DIR)) {
+      if (!/^\d+\.json$/.test(name)) continue;
+      try {
+        const info = JSON.parse(await readFile(join(CLAUDE_RUNNING_DIR, name), "utf8"));
+        if (typeof info.sessionId !== "string" || !Number.isInteger(info.pid) || !isProcessAlive(info.pid)) continue;
+        // The same session can be open in two processes (CLI and desktop app): busy wins.
+        const id = `${CLAUDE_PREFIX}${info.sessionId}`;
+        if (map.get(id) !== "busy") map.set(id, info.status === "busy" ? "busy" : "idle");
+      } catch {
+        // Half-written or unreadable: skip it this time.
+      }
+    }
+  } catch {
+    // No sessions folder (older Claude Code): fall back to transcript activity.
+  }
+  claudeRunningCache = { at: now(), map };
+  return map;
+}
+
+/** Is this Claude Code session running? Process file first, recent transcript write as fallback. */
+function claudeActivity(id, mtimeMs, running) {
+  const status = running.get(id);
+  if (status) return { active: true, claudeStatus: status };
+  return { active: !running.supported && now() - mtimeMs < CLAUDE_ACTIVE_MS ? true : undefined };
+}
+
 async function workspaceTree() {
   await refreshSaved();
+  const running = await claudeRunning();
   const rows = new Map();
   for (const meta of savedById.values()) {
     rows.set(meta.id, {
@@ -430,8 +472,7 @@ async function workspaceTree() {
       created: meta.created,
       lastActivity: meta.mtimeMs,
       live: undefined,
-      // Claude Code has no live bridge yet: a file written in the last 2 minutes counts as active.
-      active: meta.source === "claude" && Date.now() - meta.mtimeMs < CLAUDE_ACTIVE_MS ? true : undefined,
+      ...(meta.source === "claude" ? claudeActivity(meta.id, meta.mtimeMs, running) : {}),
     });
   }
   for (const live of sessions.values()) {
@@ -628,7 +669,8 @@ const server = createServer(async (req, res) => {
       }
       try {
         const s = await stat(where.file);
-        sendJson(res, 200, { size: s.size, mtimeMs: s.mtimeMs, active: Date.now() - s.mtimeMs < CLAUDE_ACTIVE_MS });
+        const activity = claudeActivity(url.searchParams.get("id") ?? "", s.mtimeMs, await claudeRunning());
+        sendJson(res, 200, { size: s.size, mtimeMs: s.mtimeMs, active: Boolean(activity.active), claudeStatus: activity.claudeStatus });
       } catch {
         sendJson(res, 404, { error: "file not found" });
       }

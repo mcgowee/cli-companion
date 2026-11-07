@@ -1,8 +1,7 @@
-// Bottom composer: write or collect text, put it into the running Pi's input box, check what
-// is there, and press Enter for Pi from here. The bridge extension does the work inside Pi:
-//   paste  — add text to the input box      peek   — report what the input box holds
-//   clear  — empty the input box            submit — send the input box, like pressing Enter
-// Every command comes back with the input box's text, so the window can show and verify it.
+// Bottom composer: write or collect text and put it into the running Pi's input box (you press
+// Enter in the terminal; Ctrl+Shift+Enter also sends it). The bridge extension does the work
+// inside Pi: paste — add text to the input box; submit — send the input box, like Enter.
+// For a Claude Code session it copies the text instead (nothing can type into Claude's prompt).
 // Also handles every Copy / Add button on the page.
 (function () {
   const $ = (id) => document.getElementById(id);
@@ -11,12 +10,6 @@
   const statusEl = $("composer-status");
   const targetEl = $("composer-target");
   const composerEl = $("composer");
-  const piInputEl = $("pi-input");
-  const piInputText = $("pi-input-text");
-  const piInputMeta = $("pi-input-meta");
-  const enterEl = $("pi-input-enter");
-  const piClearEl = $("pi-input-clear");
-  const piRefreshEl = $("pi-input-refresh");
 
   /** id -> raw text for messages (filled by app.js when it renders them). */
   const textRefs = new Map();
@@ -28,9 +21,6 @@
     selectedId: null,
     pending: new Map(), // cmdId -> { type, text, resolve }
     lastSent: "",
-    editor: null, // text in Pi's input box (null = not known yet)
-    editorFor: null, // session id that `editor` belongs to
-    verifiedText: "", // last pasted text, to check the input box against
   };
 
   function loadPref(key, fallback) {
@@ -111,37 +101,6 @@
         : "Put this text in Pi's input box (Ctrl+Enter). Ctrl+Shift+Enter also presses Enter for you.");
     if (why && !busy() && !statusEl.dataset.sticky) setStatus(why, "muted");
     else if (!why && statusEl.dataset.kind === "muted") setStatus("");
-    if (isClaude()) piInputEl.hidden = true;
-    else renderPiInput();
-  }
-
-  /** The "Pi's input box" strip: what is in the box now, with Enter / Clear / Refresh. */
-  function renderPiInput() {
-    const why = blocker();
-    const known = state.editorFor === state.selectedId && state.editor !== null;
-    piInputEl.hidden = Boolean(why);
-    if (why) return;
-    const text = known ? state.editor : "";
-    const empty = known && !text.trim();
-    piInputEl.classList.toggle("empty", !known || empty);
-    if (!known) {
-      piInputMeta.textContent = "not checked yet";
-      piInputText.textContent = "";
-    } else if (empty) {
-      piInputMeta.textContent = "empty";
-      piInputText.textContent = "";
-    } else {
-      const lines = text.split("\n").length;
-      const verified = state.verifiedText && text.includes(state.verifiedText.trim());
-      piInputMeta.innerHTML = `${lines} line${lines === 1 ? "" : "s"}${verified ? ` · <span class="ok">✓ matches what you sent</span>` : ""}`;
-      piInputText.textContent = text;
-    }
-    enterEl.disabled = busy() || !known || empty;
-    piClearEl.disabled = busy() || !known || empty;
-    piRefreshEl.disabled = busy();
-    enterEl.title = state.session?.status === "running" || state.session?.status === "compacting"
-      ? "Pi is busy: the message waits until it finishes"
-      : "Send what's in Pi's input box, like pressing Enter in the terminal";
   }
 
   function setStatus(text, kind = "", sticky = false) {
@@ -155,7 +114,7 @@
 
   /**
    * Send one command to the selected Pi and wait for its report.
-   * Resolves to { ok, error, editor, detail }; never rejects.
+   * Resolves to { ok, error, detail }; never rejects.
    */
   function command(type, text) {
     const sessionId = state.selectedId;
@@ -189,13 +148,6 @@
     });
   }
 
-  function noteEditor(result, sessionId) {
-    if (typeof result.editor === "string" && sessionId === state.selectedId) {
-      state.editor = result.editor;
-      state.editorFor = sessionId;
-    }
-  }
-
   /** Put the composer text in Pi's input box; with `andEnter`, also send it. */
   async function put(andEnter = false) {
     if (blocker() || !textEl.value.trim() || busy()) return;
@@ -210,17 +162,14 @@
       return;
     }
     const text = textEl.value;
-    const sessionId = state.selectedId;
     setStatus("Putting it in Pi's input…", "busy");
     const result = await command("paste", text);
-    noteEditor(result, sessionId);
     if (!result.ok) {
       setStatus(`Not delivered: ${result.error || "unknown error"}`, "error", true);
       renderControls();
       return;
     }
     state.lastSent = text;
-    state.verifiedText = text;
     if (textEl.value === text) {
       textEl.value = "";
       savePref("pi-companion.draft", "");
@@ -230,7 +179,7 @@
       await enter();
       return;
     }
-    statusEl.innerHTML = `In Pi's input. Press ⏎ Enter (here or in the terminal) to send it. <button type="button" class="link" data-restore>Bring text back</button>`;
+    statusEl.innerHTML = `In Pi's input ✓ Press Enter in the terminal to send it. <button type="button" class="link" data-restore>Bring text back</button>`;
     statusEl.dataset.kind = "ok";
     statusEl.dataset.sticky = "1";
     renderControls();
@@ -239,12 +188,9 @@
   /** Send what is in Pi's input box, as if Enter was pressed in the terminal. */
   async function enter() {
     if (blocker() || busy()) return;
-    const sessionId = state.selectedId;
     setStatus("Sending to Pi…", "busy");
     const result = await command("submit");
-    noteEditor(result, sessionId);
     if (result.ok) {
-      state.verifiedText = "";
       setStatus(result.detail === "queued" ? "Sent. Pi is busy, so it will read it when it finishes." : "Sent to Pi ✓", "ok", true);
     } else {
       setStatus(`Not sent: ${result.error || "unknown error"}`, "error", true);
@@ -252,29 +198,7 @@
     renderControls();
   }
 
-  async function peek(quiet = false) {
-    if (blocker() || busy()) return;
-    const sessionId = state.selectedId;
-    const result = await command("peek");
-    noteEditor(result, sessionId);
-    if (!result.ok && !quiet) setStatus(`Couldn't check: ${result.error}`, "error", true);
-    renderControls();
-  }
-
-  async function clearPi() {
-    if (blocker() || busy()) return;
-    const sessionId = state.selectedId;
-    const result = await command("clear");
-    noteEditor(result, sessionId);
-    state.verifiedText = "";
-    setStatus(result.ok ? "Cleared Pi's input box." : `Couldn't clear: ${result.error}`, result.ok ? "" : "error", !result.ok);
-    renderControls();
-  }
-
   sendEl.addEventListener("click", () => put(false));
-  enterEl.addEventListener("click", () => enter());
-  piClearEl.addEventListener("click", () => clearPi());
-  piRefreshEl.addEventListener("click", () => peek(false));
   textEl.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
@@ -396,28 +320,17 @@
     fenced,
     /** The selected session changed or its live state updated. */
     update({ selectedId, session }) {
-      const changed = selectedId !== state.selectedId;
-      const wasBlocked = Boolean(blocker());
+      if (selectedId !== state.selectedId) delete statusEl.dataset.sticky;
       state.selectedId = selectedId;
       state.session = session ?? null;
-      if (changed) {
-        delete statusEl.dataset.sticky;
-        state.verifiedText = "";
-      }
       renderControls();
-      // Look at Pi's input box once when a session becomes reachable (not on every update).
-      if (blocker() || isClaude()) state.peekedFor = null;
-      else if ((changed || wasBlocked) && state.peekedFor !== selectedId) {
-        state.peekedFor = selectedId;
-        peek(true);
-      }
     },
     /** The bridge reported back on a command. */
     delivered(msg) {
       const pending = state.pending.get(msg.cmdId);
       if (!pending) return;
       state.pending.delete(msg.cmdId);
-      pending.resolve({ ok: msg.ok, error: msg.error, editor: msg.editor, detail: msg.detail });
+      pending.resolve({ ok: msg.ok, error: msg.error, detail: msg.detail });
     },
   };
 

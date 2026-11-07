@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pi Companion</title>
+  <title>CLI Companion</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%237c6cff'/%3E%3Ctext x='16' y='23' font-family='Georgia' font-size='20' text-anchor='middle' fill='white'%3E%CF%80%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -11,7 +11,7 @@
   <div class="app">
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-top">
-        <div class="brand"><span class="logo">π</span> Companion</div>
+        <div class="brand"><span class="logo">&gt;_</span> CLI Companion</div>
         <button class="icon-btn" id="sidebar-hide" type="button" aria-label="Hide sidebar" title="Hide sidebar (Ctrl+B)">
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9.5 4v16"/></svg>
         </button>
@@ -83,18 +83,6 @@
           <span class="composer-status" id="composer-status" role="status" aria-live="polite"></span>
         </div>
         <div class="composer-body" id="composer-body">
-          <div class="pi-input empty" id="pi-input" hidden>
-            <div class="pi-input-head">
-              <span class="pi-input-label">Pi's input box</span>
-              <span class="pi-input-meta" id="pi-input-meta"></span>
-              <span class="pi-input-actions">
-                <button class="mini" id="pi-input-refresh" type="button" title="Check what's in Pi's input box now">Refresh</button>
-                <button class="mini" id="pi-input-clear" type="button" title="Empty Pi's input box">Clear</button>
-                <button class="btn primary small" id="pi-input-enter" type="button">⏎ Enter</button>
-              </span>
-            </div>
-            <pre class="pi-input-text" id="pi-input-text"></pre>
-          </div>
           <textarea id="composer-text" rows="3" spellcheck="false" aria-label="Text for Pi"
             placeholder="Write or paste here, or click Add on code, messages, files and diffs. Ctrl+Enter puts it in Pi's input box; Ctrl+Shift+Enter also sends it."></textarea>
           <div class="composer-actions">

@@ -1,12 +1,13 @@
-# Pi Companion
+# CLI Companion
 
-A live side window for [Pi](https://pi.dev) coding agent sessions. Keep working in the
-terminal; the companion shows the same session with formatted markdown, tool calls and
-their output, images, thinking, context usage, and **compaction as it happens**.
+A live side window for [Pi](https://pi.dev) coding agent sessions, and for Claude Code
+sessions too. Keep working in the terminal; the companion shows the same session with
+formatted markdown, tool calls and their output, images, thinking, context usage, and
+**compaction as it happens**. (Installed as the Pi package `pi-companion`.)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
-  <img alt="Pi Companion showing a session with a compaction in progress" src="docs/screenshot-light.png">
+  <img alt="CLI Companion showing a session with a compaction in progress" src="docs/screenshot-light.png">
 </picture>
 
 ## Why
@@ -33,16 +34,16 @@ next to it:
   The left panel can be hidden with its button or **Ctrl+B** (⌘B on macOS).
 - **Claude Code sessions too (read-only)**: sessions from Claude Code (CLI or desktop app)
   appear in the same folders, tagged **CC**, read from `~/.claude/projects`. Open one to read
-  the transcript (replies, thinking, tool calls with results, compactions, images); a session
-  that is being written to is marked *active* and the open transcript follows it within
-  about 2 seconds. Files and Review work for them as well. Claude Code has no way for
+  the transcript (replies, thinking, tool calls with results, compactions, images); a running
+  Claude Code (found from the small per-process files it keeps in `~/.claude/sessions`) is
+  listed under Active as running or idle, and the open transcript follows it within about
+  2 seconds. Files and Review work for them as well. Claude Code has no way for
   another program to type into its prompt, so for a Claude Code session the composer's button
   is **Copy for Claude**: it copies the text for you to paste into Claude Code.
 - **Send text to Pi (bottom composer)**: write or collect text, then **Put in Pi's input**
   (**Ctrl+Enter**). It lands in the running Pi CLI's prompt box, with a short notice in the
-  terminal. The **Pi's input box** strip above the composer shows what that box holds right
-  now (✓ when it matches what you sent), with **⏎ Enter** to send it from the window,
-  **Clear** and **Refresh**. **Ctrl+Shift+Enter** puts the text in and sends it in one go. If
+  terminal; press Enter there to send it. **Ctrl+Shift+Enter** puts the text in and sends it
+  in one go. If
   Pi is busy, the message waits until it finishes. `/` commands and `!` shell lines are left
   for you to send from the terminal.
   Every code block, message, tool input/output, file (Files tab) and diff (Review tab) has
