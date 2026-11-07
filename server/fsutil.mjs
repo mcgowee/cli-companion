@@ -1,5 +1,6 @@
 // Small file and process helpers shared by the server and the CLI sources.
 
+import { execFile } from "node:child_process";
 import { open, stat } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import { StringDecoder } from "node:string_decoder";
@@ -21,6 +22,44 @@ export function isProcessAlive(pid) {
   } catch (error) {
     return error.code === "EPERM";
   }
+}
+
+/**
+ * The command lines of running processes: on Windows those with one of the given executable names
+ * (e.g. "claude"), elsewhere all of them;
+ * refreshed in the background at most every `maxAgeMs`: the first call waits, later calls return
+ * the last answer at once. null when it can't be told.
+ */
+export function processCommandLines(names, maxAgeMs = 10_000) {
+  let last = { at: 0, lines: null };
+  let pending = null;
+  const refresh = () =>
+    (pending ??= new Promise((done) => {
+      const [file, args] =
+        process.platform === "win32"
+          ? [
+              "powershell.exe",
+              [
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                `Get-CimInstance Win32_Process -Filter "${names.map((n) => `Name='${n}.exe'`).join(" or ")}" | ForEach-Object CommandLine`,
+              ],
+            ]
+          : ["ps", ["-A", "-o", "command="]];
+      execFile(file, args, { timeout: 8000, windowsHide: true, maxBuffer: 16 * 1024 * 1024 }, (error, stdout) => {
+        // Elsewhere ps lists every process; callers match the lines they care about.
+        const lines = error ? null : stdout.split(/\r?\n/).filter(Boolean);
+        last = { at: Date.now(), lines };
+        pending = null;
+        done(lines);
+      });
+    }));
+  return async () => {
+    if (!last.at) return refresh();
+    if (Date.now() - last.at > maxAgeMs) refresh();
+    return last.lines;
+  };
 }
 
 /**

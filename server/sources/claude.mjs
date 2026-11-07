@@ -1,12 +1,25 @@
 // Claude Code (CLI or desktop app), read-only: transcripts from ~/.claude/projects, running or
-// idle from the <pid>.json files it keeps in ~/.claude/sessions while a session runs.
+// idle from the <pid>.json files it keeps in ~/.claude/sessions while a session runs. Some
+// `claude --resume <id>` runs don't write that file (seen with a desktop-app session resumed in the
+// CLI, Claude Code 2.1.319), so a running process with that command line also counts, as idle.
+
+/** Session ids named by `--resume <id>` / `-r <id>` in Claude Code command lines. */
+export function resumedIds(lines) {
+  const ids = new Set();
+  for (const line of lines ?? []) {
+    if (!/claude/i.test(line)) continue;
+    const match = line.match(/(?:^|\s)(?:--resume|-r)(?:\s+|=)"?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/i);
+    if (match) ids.add(match[1].toLowerCase());
+  }
+  return ids;
+}
 
 import { existsSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { claudeTranscriptItems, findClaudeImage, parseClaudeLines } from "../claude-file.mjs";
-import { appendingJsonlReader, isProcessAlive, isUnderDir } from "../fsutil.mjs";
+import { appendingJsonlReader, isProcessAlive, isUnderDir, processCommandLines } from "../fsutil.mjs";
 import { CLAUDE_PREFIX, scanClaudeSessions } from "../session-index.mjs";
 import { CLAUDE_BUILTINS, claudeCustomCommands, mergeCommands } from "../slash-commands.mjs";
 
@@ -19,6 +32,7 @@ export function claudeSource(env = process.env) {
 
   const read = appendingJsonlReader(parseClaudeLines);
 
+  const commandLines = processCommandLines(["claude", "node"]);
   let runningCache = { at: 0, map: new Map() };
   async function running() {
     if (Date.now() - runningCache.at < 3000) return runningCache.map;
@@ -40,6 +54,11 @@ export function claudeSource(env = process.env) {
       }
     } catch {
       // No sessions folder (older Claude Code): the server falls back to transcript activity.
+    }
+    if (map.supported) {
+      for (const id of resumedIds(await commandLines())) {
+        if (!map.has(`${CLAUDE_PREFIX}${id}`)) map.set(`${CLAUDE_PREFIX}${id}`, "idle");
+      }
     }
     runningCache = { at: Date.now(), map };
     return map;

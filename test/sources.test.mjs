@@ -63,3 +63,18 @@ test("Codex: loaded sessions without a window don't count as running", async () 
   assert.deepEqual(ids(null), ["old", "new", "work"]); // count unknown: every loaded session
   assert.deepEqual(pickRunning(loaded.slice(0, 2), 1).map((s) => s.id), ["new"]);
 });
+
+test("Claude: sessions resumed from a command line are found by id", async () => {
+  const { resumedIds } = await import("../server/sources/claude.mjs");
+  const id = "b529eedc-f0be-476d-9244-4b63721bb428";
+  const ids = resumedIds([
+    `"C:\npm\node_modules\@anthropic-ai\claude-code\bin\claude.exe" --resume ${id}`,
+    `node /usr/lib/node_modules/@anthropic-ai/claude-code/cli.js -r ${id.toUpperCase()}`,
+    `claude --resume=${id}`,
+    `"C:\Program Files\WindowsApps\Claude\app\claude.exe" --type=gpu-process`,
+    `codex resume ${id}`,
+    `claude --resume`,
+  ]);
+  assert.deepEqual([...ids], [id]);
+  assert.equal(resumedIds(null).size, 0);
+});
