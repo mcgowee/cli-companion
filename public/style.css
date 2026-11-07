@@ -163,6 +163,16 @@ a.dash-card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--li
 .set-status { margin-right: auto; font-size: 13px; }
 .set-status.ok { color: var(--ok); }
 .set-status.error { color: var(--bad); }
+.phone-card { margin-top: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); max-width: 620px; }
+.phone-card .set-check { margin-top: 0; }
+.phone-card .set-check + .phone-url, .phone-card .set-hint + .set-check { margin-top: 12px; }
+.phone-url { margin: 10px 0 0; font-size: 13px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; overflow-wrap: anywhere; }
+.phone-card .set-status:empty { display: none; }
+.phone-card .set-status { margin-top: 8px; }
+/* Open on the phone (Tailscale): hide what only works on the computer; the server refuses it anyway. */
+.remote-view .row-term, .remote-view .row-fav, .remote-view #about-restart, .remote-view .hm-item[data-do="continue"],
+.remote-view .ft-add, .remote-view .ft-newbtn, .remote-view .app-pin, .remote-view #dash-add, .remote-view [data-remove],
+.remote-view:not(.remote-reply) #composer { display: none !important; }
 .sc-list { display: grid; gap: 6px; margin-top: 10px; max-width: 460px; }
 .sc-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
 .sc-row small { color: var(--muted); margin-left: 6px; }
@@ -788,5 +798,14 @@ kbd { font: 11px var(--mono); padding: 1px 5px; border-radius: 4px; background: 
   .transcript, .live, .topbar { padding-left: 16px; padding-right: 16px; }
   .banner { margin: 12px 16px 0; }
   .context-bar { width: 60px; }
+  /* Phone width: logo only, a tighter menu that scrolls sideways if it must, and a header whose
+     status row wraps under the title instead of running off the edge. */
+  .menubar { gap: 8px; padding: 0 8px; overflow-x: auto; scrollbar-width: none; }
+  .menubar .brand { font-size: 0; gap: 0; }
+  .menubar .brand .logo { font-size: 13px; }
+  .menu-item { padding: 0 7px; }
+  .status-block { flex: 1 1 100%; flex-wrap: wrap; gap: 8px 10px; }
+  .title-block { flex-basis: 100%; }
+  .sidebar-show { top: calc(var(--menubar-h) + 8px); left: auto; right: 12px; }
 }
 .about-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 12px 0 0; }

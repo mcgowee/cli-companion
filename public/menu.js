@@ -137,7 +137,10 @@
       <b>Add</b> under Settings → Shortcut. Its only requests are the online check for
       dashboards on this computer and, if you switch on suggested replies, the Ollama on this computer
       (only local models; the last message of the session you're viewing goes to it). It never contacts
-      anything outside this computer. It starts a program only when
+      anything outside this computer. If you switch on <b>Phone access</b> (Settings), Tailscale's own proxy
+      (<code>tailscale serve</code>) makes it reachable over HTTPS from devices signed in to your Tailscale account only;
+      from there it can be read, and, if you allow it, reply to Pi, nothing else. Its settings are in
+      <code>~/.cli-companion/remote.json</code>. It starts a program only when
       you click <b>Open</b> in a terminal menu or <b>Continue in …</b>, and only one of a fixed set of commands
       (a shell, <code>pi</code>, <code>pi -c</code>, <code>claude</code>, <code>codex</code>, resuming a listed
       session, or one of those CLIs told to read a handoff brief), or a fresh copy of itself when you click <b>Restart server</b>.</p>

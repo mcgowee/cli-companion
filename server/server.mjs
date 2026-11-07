@@ -27,6 +27,7 @@ import { createSearchIndex } from "./search.mjs";
 import { copyLine, LaunchError, openPlan, quotePath, resumeCommand, terminalsFor, workspaceActions } from "./launch.mjs";
 import { handoffBrief, handoffFileName, saveHandoff, sessionMarkdown } from "./handoff.mjs";
 import { PLACES, setShortcut, shortcutStatus } from "./shortcut.mjs";
+import { classifyRequest, loadRemote, remoteAllowed, saveRemote, serveOff, serveOn, serving, tailscaleSelf } from "./remote.mjs";
 import { loadSettings, saveSettings, SettingsError, sourceEnv, validateSettings } from "./settings.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import { isProcessAlive } from "./fsutil.mjs";
@@ -39,6 +40,9 @@ const PORT = companionPort();
 // Your settings (the Settings page): which CLIs to read, their folders, the terminal for Open.
 const SETTINGS_FILE = join(stateDir(), "settings.json");
 let settings = await loadSettings(SETTINGS_FILE);
+// Phone access over Tailscale (server/remote.mjs): off unless switched on in Settings.
+const REMOTE_FILE = join(stateDir(), "remote.json");
+let remote = await loadRemote(REMOTE_FILE);
 
 // The CLIs the companion reads (server/sources/): Pi, Claude Code, Codex. Rebuilt when settings change.
 let SOURCES = createSources(sourceEnv(settings));
@@ -660,10 +664,15 @@ async function serveStatic(res, pathname) {
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${HOST}:${PORT}`);
-  // DNS-rebinding guard: only answer requests addressed to this machine by its loopback name.
-  const host = String(req.headers.host ?? "").toLowerCase();
-  if (host !== `127.0.0.1:${PORT}` && host !== `localhost:${PORT}`) {
-    res.writeHead(421, { "content-type": "text/plain" }).end("wrong host");
+  // DNS-rebinding guard: only answer requests addressed to this machine by its loopback name, or,
+  // with phone access on, to its Tailscale name from your own Tailscale account (server/remote.mjs).
+  const who = classifyRequest({ host: req.headers.host, headers: req.headers }, { port: PORT, remote });
+  if (!who.ok) {
+    res.writeHead(who.status, { "content-type": "text/plain" }).end(who.reason);
+    return;
+  }
+  if (who.remote && !remoteAllowed(req.method, url.pathname, remote)) {
+    sendJson(res, 403, { error: "Not available from your phone. Use the companion on the computer." });
     return;
   }
   try {
@@ -775,7 +784,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (req.method !== "GET" && !["/api/dashboards", "/api/favorites", "/api/folder", "/api/handoff", "/api/launch", "/api/settings", "/api/shortcut"].includes(url.pathname)) {
+    if (req.method !== "GET" && !["/api/dashboards", "/api/favorites", "/api/folder", "/api/handoff", "/api/launch", "/api/remote", "/api/settings", "/api/shortcut"].includes(url.pathname)) {
       res.writeHead(405).end();
       return;
     }
@@ -1027,6 +1036,46 @@ const server = createServer(async (req, res) => {
       } catch (error) {
         if (error instanceof WorkbenchError) sendJson(res, error.status, { error: error.message });
         else throw error;
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/remote") {
+      // GET: phone access state, and whether this request is from the phone. POST (this computer,
+      // page header) { enabled, reply }: turn tailscale serve on or off and save remote.json.
+      try {
+        if (req.method === "POST") {
+          if (req.headers["x-pi-companion-page"] !== "1") {
+            res.writeHead(403).end();
+            return;
+          }
+          const body = JSON.parse(await readBody(req));
+          const wantOn = body.enabled === true;
+          const reply = body.reply === true;
+          if (wantOn) {
+            const me = await serveOn(PORT);
+            remote = { enabled: true, reply, host: me.host, login: me.login };
+          } else {
+            if (remote.enabled) await serveOff(PORT);
+            remote = { ...remote, enabled: false, reply };
+          }
+          await saveRemote(REMOTE_FILE, remote);
+        }
+        let me = null;
+        let error = "";
+        if (!who.remote) me = await tailscaleSelf().catch((e) => ((error = e.message), null));
+        const on = remote.enabled && (who.remote || (await serving(PORT, remote.host).catch(() => false)));
+        sendJson(res, 200, {
+          you: { remote: who.remote },
+          enabled: remote.enabled,
+          serving: Boolean(on),
+          reply: remote.reply,
+          url: remote.host ? `https://${remote.host}/` : me?.host ? `https://${me.host}/` : "",
+          login: remote.login || me?.login || "",
+          tailscale: who.remote ? undefined : { installed: !/isn't installed/.test(error), running: Boolean(me?.running), error },
+        });
+      } catch (error) {
+        sendJson(res, error instanceof SyntaxError ? 400 : 500, { error: error.message });
       }
       return;
     }

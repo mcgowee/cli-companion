@@ -164,6 +164,19 @@ next to it:
     for git branch and changes. For text size, use the browser zoom.
     **Shortcut**: add or remove a **CLI Companion** shortcut in the Start menu or on the desktop
     (see Install).
+    **Phone access** (off by default): open the companion on your phone through
+    [Tailscale](https://tailscale.com). Switching it on runs `tailscale serve`, which forwards
+    `https://<this computer>.<your tailnet>.ts.net` to the companion; the server itself still listens
+    on 127.0.0.1 only. A request from the phone is accepted only when phone access is on, it is
+    addressed to this computer's Tailscale name, and Tailscale says it comes from the account that
+    owns this computer's Tailscale (your own devices); no token to type. From the phone you can read
+    sessions, search, use dashboards and copy or download a handoff brief. **Allow replies to Pi**
+    (off by default) also lets the composer put text in, or send it to, a running Pi session.
+    Never from the phone: terminals, Continue in…, settings, shortcuts, favorites, dashboards,
+    new folders, restart. Switching it off removes the `tailscale serve` entry (only if it points
+    at the companion; an existing serve entry for something else is left alone and blocks turning
+    it on). Needs Tailscale on both devices, signed in to the same account, with HTTPS certificates
+    on for the tailnet.
   - **About** shows the version, this server's address and folders, shortcuts and privacy,
     and has **Restart server** (picks up new code; open sessions stay open).
 

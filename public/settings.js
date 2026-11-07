@@ -1,6 +1,6 @@
 // Settings page (#/settings): which CLIs to show and where their folders are, which terminal
 // Open uses, and suggested replies (a local Ollama model). Saved by the server in
-// ~/.cli-companion/settings.json. Also the Shortcut buttons (Start menu / desktop), which act at once.
+// ~/.cli-companion/settings.json. Also Phone access (Tailscale) and the Shortcut buttons, which act at once.
 (function () {
   const esc = window.escapeHtml;
   const root = document.getElementById("page-settings");
@@ -8,6 +8,9 @@
   let models = null; // GET /api/suggest/models: { url, models } or { error }
   let status = { text: "", kind: "" };
   let shortcut = null; // GET /api/shortcut
+  let phone = null; // GET /api/remote
+  let phoneBusy = false;
+  let phoneNote = { text: "", kind: "" };
 
   async function load() {
     try {
@@ -28,6 +31,63 @@
     } catch {
       shortcut = null;
     }
+    try {
+      const res = await fetch("/api/remote", { cache: "no-store" });
+      phone = res.ok ? await res.json() : null;
+    } catch {
+      phone = null;
+    }
+  }
+
+  // Phone access over Tailscale: switches that act at once (not part of Save).
+  function phoneHtml() {
+    if (!phone) return "";
+    const ts = phone.tailscale ?? {};
+    const head = `<h2>Phone access</h2>
+      <p class="set-hint">Open the companion on your phone through <b>Tailscale</b>: only your own devices, signed in to your
+        Tailscale account, can reach it, over HTTPS. The phone can read sessions and search; it can't open terminals,
+        hand off, or change settings.</p>`;
+    if (!ts.installed) return `${head}<p class="set-hint">Tailscale isn't installed on this computer. Install it from tailscale.com, sign in, then come back.</p>`;
+    if (!ts.running && !phone.enabled) return `${head}<p class="set-hint">Tailscale isn't connected. Open Tailscale and sign in, then reload this page.${ts.error ? ` (${esc(ts.error)})` : ""}</p>`;
+    const on = phone.enabled;
+    const state = on ? (phone.serving ? "On" : "On, but Tailscale isn't serving it right now") : "Off";
+    return `${head}
+      <div class="phone-card">
+        <label class="switch set-check"><input type="checkbox" data-phone="enabled" ${on ? "checked" : ""} ${phoneBusy ? "disabled" : ""}>
+          <span>Phone access: <b>${esc(state)}</b></span></label>
+        ${
+          on
+            ? `<p class="phone-url">On your phone, with Tailscale on, open <a href="${esc(phone.url)}" target="_blank" rel="noopener">${esc(phone.url)}</a>
+                <button class="btn small" type="button" data-phone-copy>Copy</button></p>
+               <p class="set-hint">Only <b>${esc(phone.login)}</b> gets in.</p>`
+            : `<p class="set-hint">Turning it on runs <code>tailscale serve</code> for ${esc(phone.url || "this computer")}; turning it off removes it.</p>`
+        }
+        <label class="switch set-check"><input type="checkbox" data-phone="reply" ${phone.reply ? "checked" : ""} ${phoneBusy ? "disabled" : ""}>
+          <span>Allow replies to Pi from the phone</span></label>
+        <p class="set-hint">The composer then works on the phone for running Pi sessions (it puts text in Pi's input, or sends it).</p>
+        <p class="set-status ${esc(phoneNote.kind)}" role="status">${esc(phoneNote.text)}</p>
+      </div>`;
+  }
+
+  async function setPhone(next) {
+    phoneBusy = true;
+    phoneNote = { text: next.enabled && !phone.enabled ? "Turning on (Tailscale may take a few seconds)…" : "Saving…", kind: "" };
+    render();
+    try {
+      const res = await fetch("/api/remote", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-pi-companion-page": "1" },
+        body: JSON.stringify(next),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `HTTP ${res.status}`);
+      phone = out;
+      phoneNote = { text: out.enabled ? "Phone access is on ✓" : "Phone access is off ✓", kind: "ok" };
+    } catch (error) {
+      phoneNote = { text: error.message, kind: "error" };
+    }
+    phoneBusy = false;
+    render();
   }
 
   // Shortcut: buttons that act at once (not part of Save).
@@ -164,6 +224,11 @@
       root.innerHTML = `<div class="page-inner"><h1>Settings</h1><p class="page-lead">Couldn't load settings. Is the companion server running?</p></div>`;
       return;
     }
+    if (phone?.you?.remote) {
+      root.innerHTML = `<div class="page-inner"><h1>Settings</h1>
+        <p class="page-lead">You're on your phone. Settings can only be changed on the computer running the companion.</p></div>`;
+      return;
+    }
     const terminals = [{ id: "auto", label: autoLabel() }, ...data.terminals];
     root.innerHTML = `<div class="page-inner">
       <h1>Settings</h1>
@@ -194,8 +259,18 @@
           <button class="btn primary" type="submit">Save</button>
         </div>
       </form>
+      ${phoneHtml()}
       ${shortcutHtml()}
     </div>`;
+    for (const box of root.querySelectorAll("[data-phone]")) {
+      box.addEventListener("change", () => {
+        const next = { enabled: phone.enabled, reply: phone.reply, [box.dataset.phone]: box.checked };
+        void setPhone(next);
+      });
+    }
+    root.querySelector("[data-phone-copy]")?.addEventListener("click", (event) => {
+      navigator.clipboard?.writeText(phone.url).then(() => (event.target.textContent = "Copied ✓"), () => {});
+    });
     for (const b of root.querySelectorAll("[data-shortcut]")) b.addEventListener("click", () => toggleShortcut(b));
     root.querySelector("#settings-reset").addEventListener("click", () => {
       status = { text: "", kind: "" };
