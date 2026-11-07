@@ -17,6 +17,8 @@
     wsOpen: loadPref("pi-companion.wsOpen", {}),
     showAll: new Set(),
     filter: "",
+    /** Favorite session ids, most recently added first (kept by the server in favorites.json). */
+    favorites: [],
   };
 
   function loadPref(key, fallback) {
@@ -201,6 +203,44 @@
     return `<div class="row-wrap">${row}${termButton("session", s.id, label)}</div>`;
   }
 
+  /** The star beside a row in Active and Favorites: adds the session to Favorites or removes it. */
+  function favButton(s) {
+    const on = state.favorites.includes(s.id);
+    const label = on ? `Remove ${rowTitle(s)} from Favorites` : `Add ${rowTitle(s)} to Favorites`;
+    return `<button class="row-fav${on ? " on" : ""}" type="button" data-fav="${esc(s.id)}" aria-pressed="${on}" aria-label="${esc(label)}" title="${esc(label)}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg>
+    </button>`;
+  }
+
+  async function loadFavorites() {
+    try {
+      const res = await fetch("/api/favorites", { cache: "no-store" });
+      if (!res.ok) return;
+      state.favorites = (await res.json()).favorites ?? [];
+      renderSidebar();
+    } catch {
+      // Server restarting: the SSE hello reloads them.
+    }
+  }
+
+  async function toggleFavorite(id) {
+    const on = state.favorites.includes(id);
+    // Show it at once; the server's answer (and its broadcast to other windows) settles it.
+    state.favorites = on ? state.favorites.filter((other) => other !== id) : [id, ...state.favorites];
+    renderSidebar();
+    try {
+      const res = await fetch(on ? `/api/favorites?id=${encodeURIComponent(id)}` : "/api/favorites", {
+        method: on ? "DELETE" : "POST",
+        headers: { "content-type": "application/json", "x-pi-companion-page": "1" },
+        body: on ? undefined : JSON.stringify({ id }),
+      });
+      if (res.ok) state.favorites = (await res.json()).favorites ?? state.favorites;
+    } catch {
+      // Keep what is shown; the next load corrects it.
+    }
+    renderSidebar();
+  }
+
   /** The small terminal icon that opens the Open / Copy menu (public/launch.js). */
   function termButton(kind, id, label) {
     return `<button class="row-term" type="button" data-launch-kind="${kind}" data-launch-id="${esc(id)}" aria-label="${esc(label)}" title="${esc(label)}">
@@ -232,11 +272,23 @@
     const activeRows = groups
       .flatMap((ws) => ws.sessions.filter(isActive).map((s) => ({ s, ws })))
       .sort((a, b) => isWorking(a.s) - isWorking(b.s) || activityOf(b.s) - activityOf(a.s));
+    // Favorites: in the order they were added, newest first; running or not. Ids whose session is
+    // gone (or hidden by the filter) are left out.
+    const byId = new Map(groups.flatMap((ws) => ws.sessions.map((s) => [s.id, { s, ws }])));
+    const favRows = state.favorites.map((id) => byId.get(id)).filter(Boolean);
     const activeHtml = `<div class="section-head side-section">Active${activeRows.length ? ` <span class="ws-count">${activeRows.length}</span>` : ""}</div>
       <div class="active-list">${
         activeRows.length
-          ? activeRows.map(({ s, ws }) => sessionRow(s, ws.name)).join("")
+          ? activeRows.map(({ s, ws }) => `<div class="row-wrap">${sessionRow(s, ws.name)}${favButton(s)}</div>`).join("")
           : `<p class="hint">${filter ? "No running sessions match." : "No running sessions."}</p>`
+      }</div>
+      <div class="section-head side-section">Favorites${favRows.length ? ` <span class="ws-count">${favRows.length}</span>` : ""}</div>
+      <div class="fav-list">${
+        favRows.length
+          ? favRows
+              .map(({ s, ws }) => `<div class="row-wrap">${sessionRow(s, ws.name)}${termButton("session", s.id, isActive(s) ? `Open a terminal for ${rowTitle(s)}` : `Resume ${rowTitle(s)} in a terminal`)}${favButton(s)}</div>`)
+              .join("")
+          : `<p class="hint">${filter && state.favorites.length ? "No favorites match." : "Click the star beside a session under Active to keep it here."}</p>`
       }</div>
       <div class="section-head side-section">Workspaces</div>`;
 
@@ -280,6 +332,12 @@
       })
       .join("");
 
+    for (const button of list.querySelectorAll(".row-fav")) {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        void toggleFavorite(button.dataset.fav);
+      });
+    }
     for (const button of list.querySelectorAll(".session")) {
       button.addEventListener("click", () => {
         state.pinnedByUser = true;
@@ -791,6 +849,10 @@
         renderLive();
         notifyComposer();
         loadHistory(true);
+      } else if (msg.type === "favorites") {
+        // Changed here or in another window.
+        state.favorites = msg.favorites ?? [];
+        renderSidebar();
       } else if (msg.type === "sources") {
         // Settings changed which CLIs are read: refresh the list, then the sidebar.
         cliSources.reload().then(loadWorkspaces);
@@ -814,5 +876,6 @@
   }
 
   loadWorkspaces();
+  loadFavorites();
   connect();
 })();

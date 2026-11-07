@@ -127,7 +127,7 @@
 
       <h2>Privacy</h2>
       <p>Everything stays on this computer: the server listens on 127.0.0.1 only and reads your session
-      files read-only. The only files it writes are its own, in <code>~/.cli-companion</code>: your settings and
+      files read-only. The only files it writes are its own, in <code>~/.cli-companion</code>: your settings, favorites and
       your list of custom dashboards (<code>${esc(info.dashboardsFile || "~/.cli-companion/dashboards.json")}</code>). Its only requests are the online check for
       dashboards on this computer; it never contacts anything outside it. It starts a program only when
       you click <b>Open</b> in a terminal menu, and only one of a fixed set of commands

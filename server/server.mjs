@@ -16,6 +16,7 @@ import { readFile, stat } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { groupByWorkspace, workspaceKey } from "./session-index.mjs";
+import { addFavorite, FavoriteError, loadFavorites, removeFavorite } from "./favorites.mjs";
 import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard } from "./dashboards.mjs";
 import { usageSummary } from "./usage.mjs";
 import { copyLine, LaunchError, openPlan, resumeCommand, terminalsFor, workspaceActions } from "./launch.mjs";
@@ -44,6 +45,7 @@ const SERVER_STARTED_AT = Date.now();
 // The companion's own files (it writes nothing else): your custom dashboard links, and settings below.
 migrateStateFile("dashboards.json");
 const DASHBOARDS_FILE = join(stateDir(), "dashboards.json");
+const FAVORITES_FILE = join(stateDir(), "favorites.json");
 
 /** Live sessions keyed by Pi session id. */
 const sessions = new Map();
@@ -665,7 +667,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (req.method !== "GET" && !["/api/dashboards", "/api/launch", "/api/settings"].includes(url.pathname)) {
+    if (req.method !== "GET" && !["/api/dashboards", "/api/favorites", "/api/launch", "/api/settings"].includes(url.pathname)) {
       res.writeHead(405).end();
       return;
     }
@@ -855,6 +857,32 @@ const server = createServer(async (req, res) => {
       const offsetMin = Math.max(-840, Math.min(840, Number.parseInt(url.searchParams.get("tz") ?? "0", 10) || 0));
       const ids = SOURCES.filter((source) => source.enabled).map((source) => source.id);
       sendJson(res, 200, usageSummary([...savedById.values()], { days, offsetMin, sources: ids }));
+      return;
+    }
+
+    if (url.pathname === "/api/favorites") {
+      // Favorite session ids for the sidebar. Changes need the page header; every window hears them.
+      if (req.method === "GET") {
+        sendJson(res, 200, { favorites: await loadFavorites(FAVORITES_FILE) });
+        return;
+      }
+      if (req.headers["x-pi-companion-page"] !== "1") {
+        res.writeHead(403).end();
+        return;
+      }
+      try {
+        let favorites;
+        if (req.method === "POST") favorites = await addFavorite(FAVORITES_FILE, JSON.parse(await readBody(req))?.id);
+        else if (req.method === "DELETE") favorites = await removeFavorite(FAVORITES_FILE, url.searchParams.get("id") ?? "");
+        else {
+          res.writeHead(405).end();
+          return;
+        }
+        broadcast({ type: "favorites", favorites });
+        sendJson(res, 200, { favorites });
+      } catch (error) {
+        sendJson(res, error instanceof FavoriteError || error instanceof SyntaxError ? 400 : 500, { error: error.message });
+      }
       return;
     }
 
