@@ -267,6 +267,7 @@
   }
 
   async function refreshGit(force = false) {
+    if (window.companionPrefs?.showGit === false) return;
     const ids = [...new Set([...gitWanted, state.selectedId].filter(Boolean))];
     const key = ids.join(",");
     if (!ids.length || (!force && key === gitAsked)) return;
@@ -291,6 +292,13 @@
   setInterval(() => {
     if (!document.hidden) refreshGit(true);
   }, 20_000);
+  // Settings changed (git info or cost switched on/off): redraw, and fetch git info if it's back on.
+  window.addEventListener("prefs-changed", () => {
+    if (window.companionPrefs?.showGit === false) gitById.clear();
+    gitAsked = "";
+    renderSidebar();
+    renderHeader();
+  });
 
   /** One session row; `wsName` adds the workspace name (used in the Active list). */
   function sessionRow(s, wsName) {
@@ -752,7 +760,8 @@
     const limit = u.rateLimits?.length ? u.rateLimits.reduce((a, b) => (b.usedPercent > a.usedPercent ? b : a)) : undefined;
     const approx = u.costKind === "claude-estimate" ? "~" : "";
     const chip = [`${fmtCount(usageTotal(u))} tokens`];
-    if (u.costUsd) chip.push(`${approx}${fmtUsd(u.costUsd)}`);
+    const showCost = window.companionPrefs?.showCost !== false;
+    if (u.costUsd && showCost) chip.push(`${approx}${fmtUsd(u.costUsd)}`);
     else if (limit) chip.push(`${limit.label.replace(" limit", "")} ${Math.round(limit.usedPercent)}%`);
     $("usage-chip").textContent = chip.join(" · ");
 
@@ -790,7 +799,7 @@
       const value = u.context.window ? `${fmtCount(u.context.tokens)} / ${fmtCount(u.context.window)}` : fmtCount(u.context.tokens);
       parts.push(row("Context", value, "at the last reply"));
     }
-    if (u.costUsd) {
+    if (u.costUsd && showCost) {
       const note =
         u.costKind === "claude-estimate"
           ? `Claude Code's own estimate at API prices${u.costAt ? `, last saved ${timeOf(u.costAt)}` : ""}. A Pro or Max plan isn't billed this.`

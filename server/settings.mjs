@@ -8,6 +8,7 @@
 // - terminal: what Open uses ("auto" or an id from TERMINALS for this platform).
 // - suggest: { enabled, model } suggested replies in the composer from a LOCAL Ollama model
 //   (off by default; cloud models are refused).
+// - appearance: { theme: "system" | "light" | "dark", showCost, showGit } how the page looks.
 //
 // Settings become environment overrides for createSources(), so environment variables and
 // settings work the same way. CLI_COMPANION_<ID>=0 in the real environment always wins.
@@ -23,8 +24,10 @@ export class SettingsError extends Error {}
 export const FOLDER_ENV = { pi: "PI_CODING_AGENT_DIR", claude: "CLAUDE_CONFIG_DIR", codex: "CODEX_HOME" };
 
 export function defaultSettings() {
-  return { sources: {}, terminal: "auto", suggest: { enabled: false, model: "" } };
+  return { sources: {}, terminal: "auto", suggest: { enabled: false, model: "" }, appearance: { theme: "system", showCost: true, showGit: true } };
 }
+
+const THEMES = ["system", "light", "dark"];
 
 export async function loadSettings(file) {
   try {
@@ -69,6 +72,13 @@ export function validateSettings(input, { platform = process.platform, lenient =
       if (model && (!/^[\w./:-]{1,200}$/.test(model) || isCloudModel(model))) fail("Pick a local Ollama model for suggested replies.");
       else out.suggest.model = model;
     }
+  }
+  const look = input?.appearance;
+  if (look && typeof look === "object") {
+    if (THEMES.includes(look.theme)) out.appearance.theme = look.theme;
+    else if (look.theme !== undefined) fail("Unknown theme.");
+    if (typeof look.showCost === "boolean") out.appearance.showCost = look.showCost;
+    if (typeof look.showGit === "boolean") out.appearance.showGit = look.showGit;
   }
   if (out.suggest.enabled && !out.suggest.model) {
     fail("Pick a model for suggested replies, or switch them off.");

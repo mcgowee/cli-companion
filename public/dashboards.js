@@ -410,7 +410,8 @@
       (a, b) => ({ input: a.input + b.input, output: a.output + b.output, cacheRead: a.cacheRead + b.cacheRead, cacheWrite: a.cacheWrite + b.cacheWrite, turns: a.turns + b.turns }),
       { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, turns: 0 },
     );
-    const costs = series.filter((x) => t.bySource[x.id].costUsd > 0);
+    const showCost = window.companionPrefs?.showCost !== false;
+    const costs = showCost ? series.filter((x) => t.bySource[x.id].costUsd > 0) : [];
     const scanning = t.scanning
       ? `<p class="scan-note" role="status">Reading session files for token counts… ${t.scanning.done} of ${t.scanning.total}. The first time takes a few seconds; after that only new lines are read.</p>`
       : "";
@@ -425,7 +426,7 @@
             <i class="sw ${esc(s.source)}" aria-hidden="true"></i>
             <span class="top-name">${esc(s.name || "(untitled)")}</span>
             <span class="top-sub">${esc(cliSources.get(s.source).label)}${s.model ? ` · ${esc(s.model)}` : ""}</span>
-            <span class="top-num">${fmtCount(s.tokens)}${s.costUsd ? ` · ${fmtUsd(s.costUsd)}` : ""}</span>
+            <span class="top-num">${fmtCount(s.tokens)}${s.costUsd && showCost ? ` · ${fmtUsd(s.costUsd)}` : ""}</span>
           </button>`,
           )
           .join("")}</div>`

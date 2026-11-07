@@ -26,8 +26,33 @@
   --sans: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
 }
 
+/* Dark: follows the system unless Settings picks Light or Dark (html[data-theme]). The same
+   values twice: once for the system preference, once for an explicit choice. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #15151b;
+  --panel: #1c1c24;
+  --sidebar: #111117;
+  --text: #e8e8ef;
+  --muted: #9696a6;
+  --line: #2c2c38;
+  --accent: #8f83ff;
+  --fav: #f2b84b;
+  --accent-soft: #29264a;
+  --user: #222543;
+  --code: #24242e;
+  --compact: #2b2414;
+  --compact-line: #5a4a22;
+  --claude: #e08a63;
+  --codex: #2bb3b3;
+  --series-pi: #8174f2;
+  --series-claude: #d37a52;
+  --series-codex: #1fa9ad;
+}
+:root[data-theme="light"] { color-scheme: light; }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
     --bg: #15151b;
     --panel: #1c1c24;
     --sidebar: #111117;
@@ -216,6 +241,9 @@ a.dash-card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--li
 .palette-foot kbd { font: 11px var(--mono); padding: 0 4px; border: 1px solid var(--line); border-radius: 4px; margin-right: 3px; }
 .palette-note { margin-left: auto; color: var(--text); }
 .palette-btn { margin-right: auto; }
+/* Settings: a switch on its own line */
+.set-check { display: flex; align-items: center; gap: 8px; margin-top: 12px; cursor: pointer; font-weight: 600; }
+.set-check input { width: 16px; height: 16px; accent-color: var(--accent); margin: 0; }
 /* Search page */
 .search-form input { box-sizing: border-box; width: 100%; padding: 10px 14px; font: inherit; font-size: 15px; color: var(--text); background: var(--panel);
   border: 1px solid var(--line); border-radius: 10px; }

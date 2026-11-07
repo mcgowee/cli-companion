@@ -23,6 +23,26 @@
     }
   }
 
+  function appearanceHtml() {
+    const look = { theme: "system", showCost: true, showGit: true, ...(data.settings.appearance ?? {}) };
+    const themes = [
+      ["system", "Match this computer"],
+      ["light", "Light"],
+      ["dark", "Dark"],
+    ];
+    return `<label class="set-field narrow">Theme
+        <select name="theme">${themes.map(([id, label]) => `<option value="${id}" ${id === look.theme ? "selected" : ""}>${label}</option>`).join("")}</select>
+      </label>
+      <label class="switch set-check"><input type="checkbox" name="show-cost" ${look.showCost ? "checked" : ""}>
+        <span>Show cost estimates</span></label>
+      <p class="set-hint">In the session header and Usage overview. Token counts always show. Turn off if you're on a
+        subscription and the API-price estimates are just noise.</p>
+      <label class="switch set-check"><input type="checkbox" name="show-git" ${look.showGit ? "checked" : ""}>
+        <span>Show git branch and changes</span></label>
+      <p class="set-hint">On Active and Favorites rows and in the session header (runs <code>git status</code> in those folders every 20 seconds).
+        Text size: use your browser's zoom (Ctrl + plus / minus).</p>`;
+  }
+
   function suggestCard() {
     const current = data.settings.suggest ?? { enabled: false, model: "" };
     const list = models?.models ?? [];
@@ -91,6 +111,9 @@
       <h1>Settings</h1>
       <p class="page-lead">Saved in <code>${esc(data.file)}</code>.</p>
       <form id="settings-form" autocomplete="off">
+        <h2>Appearance</h2>
+        ${appearanceHtml()}
+
         <h2>CLIs</h2>
         <div class="set-cards">${data.sources.map(sourceCard).join("")}</div>
         <p class="set-hint">Leave a folder empty to use the usual place. Pi's live view comes from its extension and
@@ -147,6 +170,11 @@
     const body = {
       sources,
       terminal: form.querySelector('[name="terminal"]').value,
+      appearance: {
+        theme: form.querySelector('[name="theme"]').value,
+        showCost: form.querySelector('[name="show-cost"]').checked,
+        showGit: form.querySelector('[name="show-git"]').checked,
+      },
       suggest: {
         enabled: form.querySelector('[name="suggest-enabled"]').checked,
         model: form.querySelector('[name="suggest-model"]').value,
@@ -163,6 +191,7 @@
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || `HTTP ${res.status}`);
       data = out;
+      window.applyPrefs?.(out.settings?.appearance);
       status = { text: "Saved ✓", kind: "ok" };
     } catch (error) {
       status = { text: error.message, kind: "error" };

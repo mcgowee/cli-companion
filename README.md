@@ -150,6 +150,8 @@ next to it:
   - **Settings**: show or hide each CLI (Pi, Claude Code, Codex), change where its folder is,
     pick the terminal **Open** uses, and switch on suggested replies with a local Ollama model.
     Saved in `~/.cli-companion/settings.json`; changes apply at once.
+    **Appearance**: theme (match this computer, light or dark), and switches for cost estimates and
+    for git branch and changes. For text size, use the browser zoom.
   - **About** shows the version, this server's address and folders, shortcuts and privacy,
     and has **Restart server** (picks up new code; open sessions stay open).
 
