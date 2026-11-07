@@ -128,6 +128,16 @@
     return undefined;
   }
 
+  /** Tell the suggested-replies row (public/suggest.js) what the selected session is doing. */
+  function considerSuggest() {
+    const id = state.selectedId;
+    if (!id || !window.suggest) return;
+    const live = state.sessions.get(id);
+    const row = rowFor(id)?.row ?? { id };
+    const running = live ? !live.ended : isActive(row);
+    window.suggest.consider({ id, items: state.history?.items, running, working: running && isWorking(row) });
+  }
+
   /** Live sessions the tree has not picked up yet (no file on disk at the last scan). */
   function treeWithLive() {
     const known = new Set(state.workspaces.flatMap((ws) => ws.sessions.map((s) => s.id)));
@@ -360,6 +370,7 @@
         renderSidebar();
       });
     }
+    considerSuggest();
   }
 
   /** First run (no sessions anywhere yet): which CLIs were found, where we looked, how to start. */
@@ -752,6 +763,7 @@
       state.history = data;
       state.historyVersionLoaded = wanted;
       renderTranscript();
+      considerSuggest();
       if (!s) renderHeader();
       if (stick) scrollToBottom();
       notifyWorkbench(true);
@@ -854,7 +866,8 @@
         state.favorites = msg.favorites ?? [];
         renderSidebar();
       } else if (msg.type === "sources") {
-        // Settings changed which CLIs are read: refresh the list, then the sidebar.
+        // Settings changed (which CLIs are read, suggested replies): refresh the list, then the sidebar.
+        window.suggest?.reset();
         cliSources.reload().then(loadWorkspaces);
       } else if (msg.type === "session") {
         upsert(msg.session);

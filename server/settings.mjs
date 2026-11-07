@@ -6,6 +6,8 @@
 // - sources.<id>.folder: the CLI's own folder (~/.pi/agent, ~/.claude, ~/.codex) if it isn't
 //   in the usual place.
 // - terminal: what Open uses ("auto" or an id from TERMINALS for this platform).
+// - suggest: { enabled, model } suggested replies in the composer from a LOCAL Ollama model
+//   (off by default; cloud models are refused).
 //
 // Settings become environment overrides for createSources(), so environment variables and
 // settings work the same way. CLI_COMPANION_<ID>=0 in the real environment always wins.
@@ -13,6 +15,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute } from "node:path";
 import { terminalsFor } from "./launch.mjs";
+import { isCloudModel } from "./suggest.mjs";
 
 export class SettingsError extends Error {}
 
@@ -20,7 +23,7 @@ export class SettingsError extends Error {}
 export const FOLDER_ENV = { pi: "PI_CODING_AGENT_DIR", claude: "CLAUDE_CONFIG_DIR", codex: "CODEX_HOME" };
 
 export function defaultSettings() {
-  return { sources: {}, terminal: "auto" };
+  return { sources: {}, terminal: "auto", suggest: { enabled: false, model: "" } };
 }
 
 export async function loadSettings(file) {
@@ -57,6 +60,19 @@ export function validateSettings(input, { platform = process.platform, lenient =
     const ok = input.terminal === "auto" || terminalsFor(platform).some((t) => t.id === input.terminal);
     if (ok) out.terminal = input.terminal;
     else fail("Unknown terminal.");
+  }
+  const suggest = input?.suggest;
+  if (suggest && typeof suggest === "object") {
+    if (typeof suggest.enabled === "boolean") out.suggest.enabled = suggest.enabled;
+    if (typeof suggest.model === "string") {
+      const model = suggest.model.trim();
+      if (model && (!/^[\w./:-]{1,200}$/.test(model) || isCloudModel(model))) fail("Pick a local Ollama model for suggested replies.");
+      else out.suggest.model = model;
+    }
+  }
+  if (out.suggest.enabled && !out.suggest.model) {
+    fail("Pick a model for suggested replies, or switch them off.");
+    out.suggest.enabled = false;
   }
   return out;
 }

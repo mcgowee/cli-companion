@@ -1,9 +1,11 @@
-// Settings page (#/settings): which CLIs to show and where their folders are, and which
-// terminal Open uses. Saved by the server in ~/.cli-companion/settings.json.
+// Settings page (#/settings): which CLIs to show and where their folders are, which terminal
+// Open uses, and suggested replies (a local Ollama model). Saved by the server in
+// ~/.cli-companion/settings.json.
 (function () {
   const esc = window.escapeHtml;
   const root = document.getElementById("page-settings");
   let data = null; // GET /api/settings
+  let models = null; // GET /api/suggest/models: { url, models } or { error }
   let status = { text: "", kind: "" };
 
   async function load() {
@@ -13,6 +15,43 @@
     } catch {
       data = null;
     }
+    try {
+      const res = await fetch("/api/suggest/models", { cache: "no-store", headers: { "x-pi-companion-page": "1" } });
+      models = await res.json();
+    } catch {
+      models = { error: "Couldn't ask the companion server." };
+    }
+  }
+
+  function suggestCard() {
+    const current = data.settings.suggest ?? { enabled: false, model: "" };
+    const list = models?.models ?? [];
+    const known = list.some((m) => m.name === current.model);
+    const options = [
+      `<option value="">${list.length ? "Choose a model…" : "No local models found"}</option>`,
+      ...(current.model && !known ? [`<option value="${esc(current.model)}" selected>${esc(current.model)} (not found)</option>`] : []),
+      ...list.map(
+        (m) =>
+          `<option value="${esc(m.name)}" ${m.name === current.model ? "selected" : ""}>${esc(m.name)}${m.parameters ? ` · ${esc(m.parameters)}` : ""} · ${(m.size / 1e9).toFixed(1)} GB</option>`,
+      ),
+    ].join("");
+    return `<fieldset class="set-card${current.enabled ? "" : " off"}" id="suggest-card">
+      <legend class="sr-only">Suggested replies</legend>
+      <div class="set-card-head">
+        <label class="switch"><input type="checkbox" name="suggest-enabled" ${current.enabled ? "checked" : ""}>
+          <span class="set-name">Suggested replies</span></label>
+        <span class="set-state ${models?.error ? "warn" : "muted"}">${models?.error ? "Ollama not found" : `Ollama at ${esc(models?.url ?? "")}`}</span>
+      </div>
+      <p class="set-note">When a running session you're viewing finishes, a model on this computer's Ollama
+        suggests replies above the composer text. If the CLI asked you to choose, they're the choices. Click one to
+        put it in the composer. Only local models are listed: the conversation never leaves this computer.</p>
+      ${models?.error ? `<p class="set-note warn">${esc(models.error)}</p>` : ""}
+      <label class="set-field">Model
+        <select name="suggest-model">${options}</select>
+      </label>
+      <p class="set-hint">A small model answers fastest. The first suggestion after a while waits for the model to load
+        (seconds to a minute); after that it's about a second.</p>
+    </fieldset>`;
   }
 
   function sourceCard(source) {
@@ -65,6 +104,9 @@
         </label>
         <p class="set-hint">For the terminal icon beside a workspace or session. Copy always works.</p>
 
+        <h2>Composer</h2>
+        <div class="set-cards">${suggestCard()}</div>
+
         <div class="set-foot">
           <span class="set-status ${esc(status.kind)}" role="status">${esc(status.text)}</span>
           <button class="btn" type="button" id="settings-reset">Undo changes</button>
@@ -77,7 +119,9 @@
       render();
     });
     root.querySelector("#settings-form").addEventListener("change", (event) => {
-      if (event.target.name === "enabled") event.target.closest(".set-card").classList.toggle("off", !event.target.checked);
+      if (event.target.name === "enabled" || event.target.name === "suggest-enabled") {
+        event.target.closest(".set-card").classList.toggle("off", !event.target.checked);
+      }
     });
     root.querySelector("#settings-form").addEventListener("submit", save);
   }
@@ -95,12 +139,19 @@
     event.preventDefault();
     const form = event.currentTarget;
     const sources = {};
-    for (const card of form.querySelectorAll(".set-card")) {
+    for (const card of form.querySelectorAll(".set-card[data-source]")) {
       const enabled = card.querySelector('[name="enabled"]').checked;
       const folder = card.querySelector('[name="folder"]').value.trim();
       sources[card.dataset.source] = { ...(enabled ? {} : { enabled: false }), ...(folder ? { folder } : {}) };
     }
-    const body = { sources, terminal: form.querySelector('[name="terminal"]').value };
+    const body = {
+      sources,
+      terminal: form.querySelector('[name="terminal"]').value,
+      suggest: {
+        enabled: form.querySelector('[name="suggest-enabled"]').checked,
+        model: form.querySelector('[name="suggest-model"]').value,
+      },
+    };
     const button = form.querySelector('[type="submit"]');
     button.disabled = true;
     try {

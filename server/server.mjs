@@ -16,6 +16,7 @@ import { readFile, stat } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { groupByWorkspace, workspaceKey } from "./session-index.mjs";
+import { lastExchange, localModels, ollamaUrl, SuggestError, suggestionCache, suggestReplies } from "./suggest.mjs";
 import { addFavorite, FavoriteError, loadFavorites, removeFavorite } from "./favorites.mjs";
 import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard } from "./dashboards.mjs";
 import { usageSummary } from "./usage.mjs";
@@ -46,6 +47,8 @@ const SERVER_STARTED_AT = Date.now();
 migrateStateFile("dashboards.json");
 const DASHBOARDS_FILE = join(stateDir(), "dashboards.json");
 const FAVORITES_FILE = join(stateDir(), "favorites.json");
+const OLLAMA_URL = ollamaUrl();
+const suggestions = suggestionCache();
 
 /** Live sessions keyed by Pi session id. */
 const sessions = new Map();
@@ -857,6 +860,46 @@ const server = createServer(async (req, res) => {
       const offsetMin = Math.max(-840, Math.min(840, Number.parseInt(url.searchParams.get("tz") ?? "0", 10) || 0));
       const ids = SOURCES.filter((source) => source.enabled).map((source) => source.id);
       sendJson(res, 200, usageSummary([...savedById.values()], { days, offsetMin, sources: ids }));
+      return;
+    }
+
+    if (url.pathname === "/api/suggest" || url.pathname === "/api/suggest/models") {
+      // Suggested replies from a local Ollama model (Settings). Page header required: these
+      // run a model, and a cross-site page can't send the header without a preflight.
+      if (req.headers["x-pi-companion-page"] !== "1") {
+        res.writeHead(403).end();
+        return;
+      }
+      try {
+        if (url.pathname === "/api/suggest/models") {
+          sendJson(res, 200, { url: OLLAMA_URL, models: await localModels(OLLAMA_URL) });
+          return;
+        }
+        const { enabled, model } = settings.suggest ?? {};
+        if (!enabled || !model) {
+          sendJson(res, 200, { enabled: false });
+          return;
+        }
+        const id = url.searchParams.get("id") ?? "";
+        if (!sessions.has(id) && !savedById.has(id)) await refreshSaved();
+        const where = locate(id);
+        const entries = where ? await where.source.readEntries(where.file) : undefined;
+        if (!entries) {
+          sendJson(res, 404, { enabled: true, error: "no history for that session" });
+          return;
+        }
+        const exchange = lastExchange(where.source.transcript(entries, { leafId: where.leafId }).items);
+        if (!exchange) {
+          sendJson(res, 200, { enabled: true, model, suggestions: [] });
+          return;
+        }
+        const list = await suggestions.get(`${id} ${exchange.id} ${model}`, () =>
+          suggestReplies({ baseUrl: OLLAMA_URL, model, exchange }),
+        );
+        sendJson(res, 200, { enabled: true, model, for: exchange.id, suggestions: list });
+      } catch (error) {
+        sendJson(res, error instanceof SuggestError ? 502 : 500, { enabled: true, error: error.message });
+      }
       return;
     }
 

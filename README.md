@@ -65,6 +65,12 @@ next to it:
   service keeps a session loaded for a while after its window quits), as running or idle from its
   last task event. The composer's
   button is **Copy for Codex**. Tested with Codex CLI 0.166.
+- **Suggested replies** (off until you switch them on in Settings): when a running session
+  you're viewing finishes a turn, a model on this computer's Ollama suggests a few replies,
+  shown as buttons above the composer text. If the CLI asked you to choose (numbered options,
+  "A or B?", yes or no), the buttons are those choices. Click one to put it in the composer,
+  then send or copy it as usual. Only local models can be picked, so the conversation never
+  leaves the computer. The first suggestion after a while waits for the model to load.
 - **Send text to Pi (bottom composer)**: write or collect text, then **Put in Pi's input**
   (**Ctrl+Enter**). It lands in the running Pi CLI's prompt box, with a short notice in the
   terminal; press Enter there to send it. **Ctrl+Shift+Enter** puts the text in and sends it
@@ -101,8 +107,8 @@ next to it:
     form, open them inside the companion or in a new tab. Ones on this computer show online
     or offline. The list is kept in `~/.cli-companion/dashboards.json`.
   - **Settings**: show or hide each CLI (Pi, Claude Code, Codex), change where its folder is,
-    and pick the terminal **Open** uses. Saved in `~/.cli-companion/settings.json`; changes
-    apply at once.
+    pick the terminal **Open** uses, and switch on suggested replies with a local Ollama model.
+    Saved in `~/.cli-companion/settings.json`; changes apply at once.
   - **About** shows the version, this server's address and folders, shortcuts and privacy,
     and has **Restart server** (picks up new code; open sessions stay open).
 

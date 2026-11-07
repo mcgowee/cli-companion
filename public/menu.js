@@ -129,7 +129,9 @@
       <p>Everything stays on this computer: the server listens on 127.0.0.1 only and reads your session
       files read-only. The only files it writes are its own, in <code>~/.cli-companion</code>: your settings, favorites and
       your list of custom dashboards (<code>${esc(info.dashboardsFile || "~/.cli-companion/dashboards.json")}</code>). Its only requests are the online check for
-      dashboards on this computer; it never contacts anything outside it. It starts a program only when
+      dashboards on this computer and, if you switch on suggested replies, the Ollama on this computer
+      (only local models; the last message of the session you're viewing goes to it). It never contacts
+      anything outside this computer. It starts a program only when
       you click <b>Open</b> in a terminal menu, and only one of a fixed set of commands
       (a shell, <code>pi</code>, <code>pi -c</code>, <code>claude</code>, <code>codex</code>, or resuming a listed
       session), or a fresh copy of itself when you click <b>Restart server</b>.</p>

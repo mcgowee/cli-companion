@@ -12,13 +12,22 @@ test("validateSettings keeps known CLIs and terminals, rejects bad values", () =
   assert.deepEqual(validateSettings({ sources: { claude: { enabled: false, folder: ` ${abs} ` }, nope: { enabled: false } }, terminal: "console" }, { platform: "win32" }), {
     sources: { claude: { enabled: false, folder: abs } },
     terminal: "console",
+    suggest: { enabled: false, model: "" },
   });
   assert.throws(() => validateSettings({ sources: { codex: { folder: "relative/path" } } }), SettingsError);
   assert.throws(() => validateSettings({ terminal: "iterm" }, { platform: "win32" }), SettingsError);
   assert.deepEqual(validateSettings({ terminal: "iterm", sources: { codex: { folder: "x" } } }, { platform: "win32", lenient: true }), {
     sources: {},
     terminal: "auto",
+    suggest: { enabled: false, model: "" },
   });
+  // Suggested replies: a local model only, and on needs a model.
+  assert.deepEqual(validateSettings({ suggest: { enabled: true, model: "qwen3.8:27b" } }).suggest, { enabled: true, model: "qwen3.8:27b" });
+  assert.throws(() => validateSettings({ suggest: { enabled: true, model: "glm-5.3:cloud" } }), SettingsError);
+  assert.throws(() => validateSettings({ suggest: { enabled: true, model: "gemma4:31b-cloud" } }), SettingsError);
+  assert.throws(() => validateSettings({ suggest: { enabled: true, model: "" } }), SettingsError);
+  assert.throws(() => validateSettings({ suggest: { model: "x; rm -rf /" } }), SettingsError);
+  assert.deepEqual(validateSettings({ suggest: { enabled: true, model: "kimi-k3:cloud" } }, { lenient: true }).suggest, { enabled: false, model: "" });
 });
 
 test("settings become the environment the sources read; a real CLI_COMPANION_X=0 still wins", () => {
@@ -37,5 +46,5 @@ test("save and load round-trip; a broken file loads as defaults", async () => {
   assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).sources, { codex: { enabled: false } });
   assert.deepEqual((await loadSettings(file)).sources, { codex: { enabled: false } });
   writeFileSync(file, "{ not json");
-  assert.deepEqual(await loadSettings(file), { sources: {}, terminal: "auto" });
+  assert.deepEqual(await loadSettings(file), { sources: {}, terminal: "auto", suggest: { enabled: false, model: "" } });
 });
