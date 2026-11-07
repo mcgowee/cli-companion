@@ -40,5 +40,5 @@ test("windowAppId: Chrome's id for the companion window; none for Edge or no bro
   const { windowAppId } = await import("../server/shortcut.mjs");
   assert.equal(windowAppId("C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"), "Chrome.127.0.0.1_/.browserprole.Default");
   assert.equal(windowAppId("C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"), "");
-  assert.equal(windowAppId(undefined), "");
+  assert.equal(windowAppId(null), "");
 });
