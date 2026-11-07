@@ -15,6 +15,7 @@ import { extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findImage, parseEntries, transcriptItems } from "./session-file.mjs";
 import { groupByWorkspace, scanSessions } from "./session-index.mjs";
+import { listDir, readFileForView, reviewDiff, reviewStatus, WorkbenchError } from "./workbench.mjs";
 
 const HOST = "127.0.0.1";
 const PORT = Number.parseInt(process.env.PI_COMPANION_PORT ?? "30143", 10);
@@ -304,6 +305,14 @@ function locate(id) {
   return undefined;
 }
 
+/** The workspace folder of a session (live or saved). Only these folders are ever browsed. */
+async function workspaceRootFor(id) {
+  if (!sessions.has(id) && !savedById.has(id)) await refreshSaved();
+  const root = sessions.get(id)?.cwd ?? savedById.get(id)?.cwd;
+  if (!root) throw new WorkbenchError(404, "unknown session");
+  return root;
+}
+
 async function workspaceTree() {
   await refreshSaved();
   const rows = new Map();
@@ -360,6 +369,12 @@ async function serveStatic(res, pathname) {
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${HOST}:${PORT}`);
+  // DNS-rebinding guard: only answer requests addressed to this machine by its loopback name.
+  const host = String(req.headers.host ?? "").toLowerCase();
+  if (host !== `127.0.0.1:${PORT}` && host !== `localhost:${PORT}`) {
+    res.writeHead(421, { "content-type": "text/plain" }).end("wrong host");
+    return;
+  }
   try {
     if (url.pathname === "/ingest") {
       // A custom header forces a CORS preflight, which this server never answers,
@@ -429,6 +444,36 @@ const server = createServer(async (req, res) => {
       }
       res.writeHead(200, { "content-type": image.mimeType, "cache-control": "private, max-age=3600" });
       res.end(image.data);
+      return;
+    }
+
+    if (url.pathname.startsWith("/api/files") || url.pathname.startsWith("/api/file") || url.pathname.startsWith("/api/review")) {
+      try {
+        const root = await workspaceRootFor(url.searchParams.get("id") ?? "");
+        const path = url.searchParams.get("path") ?? "";
+        const scope = url.searchParams.get("scope") === "branch" ? "branch" : "uncommitted";
+        if (url.pathname === "/api/files") {
+          sendJson(res, 200, { root, entries: await listDir(root, path) });
+        } else if (url.pathname === "/api/file") {
+          const view = await readFileForView(root, path);
+          if (view.kind === "image" && url.searchParams.get("raw") === "1") {
+            res.writeHead(200, { "content-type": view.mimeType, "cache-control": "no-cache" });
+            res.end(await readFile(view.file));
+          } else {
+            const { file, ...rest } = view;
+            sendJson(res, 200, rest);
+          }
+        } else if (url.pathname === "/api/review") {
+          sendJson(res, 200, await reviewStatus(root, scope));
+        } else if (url.pathname === "/api/review/diff") {
+          sendJson(res, 200, await reviewDiff(root, scope, path));
+        } else {
+          res.writeHead(404).end();
+        }
+      } catch (error) {
+        if (error instanceof WorkbenchError) sendJson(res, error.status, { error: error.message });
+        else throw error;
+      }
       return;
     }
 

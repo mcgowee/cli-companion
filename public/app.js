@@ -524,6 +524,7 @@
       renderTranscript();
       if (!s) renderHeader();
       if (stick) scrollToBottom();
+      notifyWorkbench(true);
     } catch (error) {
       console.warn(error);
       if (id === state.selectedId && !state.history) {
@@ -547,7 +548,15 @@
     renderSidebar();
     renderHeader();
     renderLive();
+    notifyWorkbench(false);
     loadHistory();
+  }
+
+  /** Tell the right panel which session (and folder) is shown. */
+  function notifyWorkbench(historyChanged) {
+    const live = state.sessions.get(state.selectedId);
+    const cwd = live?.cwd ?? state.history?.cwd ?? rowFor(state.selectedId)?.ws.cwd;
+    window.workbench?.update({ sessionId: state.selectedId, cwd, history: state.history, historyChanged });
   }
 
   function autoSelect() {

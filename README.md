@@ -29,6 +29,16 @@ next to it:
   sessions get a live dot and float to the top; a filter box searches folder names and
   session titles. The window follows the most recently active session unless you pick one.
   The left panel can be hidden with its button or **Ctrl+B** (⌘B on macOS).
+- **Right panel (Files and Review)**, like pi-gui's workbench, for the selected session's
+  folder. Toggle it with the button at the top right or **Ctrl+Alt+B**; drag its edge to
+  resize.
+  - **Files**: browse the folder tree and read files with line numbers. Markdown is
+    rendered (with a Source toggle) and images are shown.
+  - **Review**: git changes, either **Uncommitted** (including untracked files) or
+    **Branch** (everything since the branch split from main/master), with +/− counts and
+    a coloured diff per file. **Changed in this session** lists the files Pi edited or
+    wrote in the open session.
+  - Read-only by design: no editing and no terminal (your terminal is where Pi runs).
 
 ## Install
 
@@ -66,6 +76,10 @@ Pi (interactive) ──events──► companion server ──SSE──► windo
   builds the workspace list from Pi's sessions folder, reading only the start and end of
   each file (session files can be hundreds of MB with images), cached until a file
   changes. It reads history only from inside that folder and keeps no data on disk.
+  The right panel only reads inside the folder of a session it knows (the page sends a
+  session id, never a path), rejects `..` and symlinks that lead outside it, and runs
+  only read-only `git` commands. Requests whose `Host` is not `127.0.0.1`/`localhost`
+  are refused, which blocks DNS-rebinding attacks from web pages.
 - The **window** is plain HTML and JavaScript: no build step and no CDN.
 
 ## Settings
