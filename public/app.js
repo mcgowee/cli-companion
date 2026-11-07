@@ -1051,6 +1051,7 @@
       if (!s) renderHeader();
       else renderUsage();
       if (stick) scrollToBottom();
+      if (state.pendingFind) requestAnimationFrame(applyFind);
       notifyWorkbench(true);
     } catch (error) {
       console.warn(error);
@@ -1081,11 +1082,33 @@
   }
 
   /** Show a session from another page (e.g. Usage overview's top sessions). */
-  window.openSession = (id) => {
+  window.openSession = (id, { find, nth = 0 } = {}) => {
     state.pinnedByUser = true;
+    state.pendingFind = find?.length ? { id, terms: find, nth } : null;
     if (location.hash && location.hash !== "#/") location.hash = "#/";
+    const already = state.selectedId === id && state.history;
     select(id);
+    if (already) applyFind();
   };
+
+  /** After Search: scroll to the nth newest message with every term, and mark it for a moment. */
+  function applyFind() {
+    const f = state.pendingFind;
+    if (!f || f.id !== state.selectedId) return;
+    state.pendingFind = null;
+    const matches = [...transcriptEl.querySelectorAll("article.msg.user, article.msg.assistant")]
+      .reverse()
+      .filter((el) => {
+        const text = el.textContent.toLowerCase();
+        return f.terms.every((t) => text.includes(t));
+      });
+    const target = matches[f.nth] ?? matches[0];
+    if (!target) return;
+    state.stickToBottom = false;
+    target.scrollIntoView({ block: "center" });
+    target.classList.add("find-hit");
+    setTimeout(() => target.classList.remove("find-hit"), 4000);
+  }
 
   /** Tell the right panel which session (and folder) is shown. */
   function notifyWorkbench(historyChanged) {

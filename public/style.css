@@ -196,6 +196,24 @@ a.dash-card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--li
 .chart-table table { border-collapse: collapse; margin-top: 6px; }
 .chart-table th, .chart-table td { padding: 3px 14px 3px 0; text-align: left; border-bottom: 1px solid var(--line); }
 .chart-table th { color: var(--muted); font-weight: 600; }
+/* Search page */
+.search-form input { box-sizing: border-box; width: 100%; padding: 10px 14px; font: inherit; font-size: 15px; color: var(--text); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 10px; }
+.search-form input:focus { outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent); border-color: var(--accent); }
+.search-status { color: var(--muted); font-size: 12.5px; min-height: 1.4em; margin: 8px 0 4px; }
+.sr { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 10px 12px; margin-bottom: 10px; }
+.sr-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.sr-head .sw { flex: none; align-self: center; }
+.sr-title { all: unset; cursor: pointer; font-weight: 600; font-size: 14px; }
+.sr-title:hover { color: var(--accent); }
+.sr-meta { color: var(--muted); font-size: 12px; }
+.sr-hit { all: unset; box-sizing: border-box; cursor: pointer; display: block; width: 100%; padding: 6px 8px; margin-top: 4px; border-radius: 8px; font-size: 13px; }
+.sr-hit:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
+.sr-title:focus-visible, .sr-hit:focus-visible { outline: 2px solid var(--accent); }
+.sr-who { display: block; color: var(--muted); font-size: 11.5px; }
+.sr-text { overflow-wrap: anywhere; }
+.sr mark, .find-hit mark { background: color-mix(in srgb, var(--warn) 35%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+.msg.find-hit { outline: 2px solid var(--warn); outline-offset: 4px; border-radius: 8px; transition: outline-color 1.5s; }
 /* Usage overview: sessions with the most tokens. */
 .top-sessions { display: flex; flex-direction: column; margin-top: 8px; }
 .top-row { all: unset; cursor: pointer; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; grid-template-rows: auto auto; column-gap: 10px;

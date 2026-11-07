@@ -12,12 +12,14 @@
     <a class="brand" href="#/"><span class="logo">&gt;_</span> CLI Companion</a>
     <nav class="menu" aria-label="Main">
       <a class="menu-item" href="#/" data-page="home">Home</a>
+      <a class="menu-item" href="#/search" data-page="search" title="Search all sessions (Ctrl+Shift+F)">Search</a>
       <a class="menu-item" href="#/dashboards" data-page="dashboards">Dashboards</a>
       <a class="menu-item" href="#/settings" data-page="settings">Settings</a>
       <a class="menu-item" href="#/about" data-page="about">About</a>
     </nav>
   </header>
 
+  <section class="page" id="page-search" hidden></section>
   <section class="page" id="page-dashboards" hidden></section>
 
   <section class="page" id="page-settings" hidden></section>
@@ -158,6 +160,7 @@
   <script src="launch.js"></script>
   <script src="dashboards.js"></script>
   <script src="settings.js"></script>
+  <script src="search.js"></script>
   <script src="menu.js"></script>
 </body>
 </html>

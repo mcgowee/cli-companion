@@ -120,7 +120,13 @@ next to it:
   - Otherwise read-only by design: no editing of files and no terminal inside the page (your terminal is where Pi runs).
 - **First run**: with no sessions anywhere yet, the window shows which CLIs it found, where it
   looked, and how to start each one.
-- **Menu bar: Home, Dashboards, Settings, About.** Home is the session view.
+- **Menu bar: Home, Search, Dashboards, Settings, About.** Home is the session view.
+  - **Search** (Ctrl+Shift+F) finds words in every session of every CLI: what you typed and
+    the replies, not tool output or thinking. All words must be in one message; "quotes" for a
+    phrase. Results are grouped by session, newest first; click one to open the session at
+    that message. The text is held in memory only, never written to disk; the first search
+    after the server starts reads every session file (about 10 seconds for a few GB), later
+    ones only what was added.
   - **Dashboards** has built-in dashboards and your own. **Usage overview** shows sessions
     started per day in each CLI (7, 30 or 90 days, with a table view), active days
     and your busiest workspaces, all from the session files already indexed, and **tokens**:

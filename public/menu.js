@@ -4,7 +4,7 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const esc = window.escapeHtml;
-  const pages = { home: $("page-home"), dashboards: $("page-dashboards"), settings: $("page-settings"), about: $("page-about") };
+  const pages = { home: $("page-home"), search: $("page-search"), dashboards: $("page-dashboards"), settings: $("page-settings"), about: $("page-about") };
 
   function route() {
     const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
@@ -24,6 +24,7 @@
     if (page === "about") loadAbout();
     window.dashboardsPage?.show(page === "dashboards" ? rest : null);
     window.settingsPage?.show(page === "settings");
+    window.searchPage?.show(page === "search");
   }
 
   /** Ask the server to restart, wait for the new one to answer, then reload the page. */
@@ -121,6 +122,7 @@
         <dt><kbd>Ctrl+Enter</kbd></dt><dd>Put the composer text in Pi's input, or copy it for Claude</dd>
         <dt><kbd>Ctrl+Shift+Enter</kbd></dt><dd>Put it in Pi's input and send it</dd>
         <dt><kbd>/</kbd></dt><dd>At the start of a composer line: slash commands for the selected CLI</dd>
+        <dt><kbd>Ctrl+Shift+F</kbd></dt><dd>Search all sessions</dd>
         <dt><kbd>Ctrl+B</kbd></dt><dd>Show or hide the left panel</dd>
         <dt><kbd>Ctrl+Alt+B</kbd></dt><dd>Show or hide Files and Review</dd>
       </dl>

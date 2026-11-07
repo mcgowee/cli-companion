@@ -22,6 +22,7 @@ import { APP_FILE_HEADERS, APP_MIME, findApps, resolveAppFile, urlName } from ".
 import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard } from "./dashboards.mjs";
 import { usageSummary } from "./usage.mjs";
 import { createTokenTracker } from "./token-usage.mjs";
+import { createSearchIndex } from "./search.mjs";
 import { copyLine, LaunchError, openPlan, resumeCommand, terminalsFor, workspaceActions } from "./launch.mjs";
 import { loadSettings, saveSettings, SettingsError, sourceEnv, validateSettings } from "./settings.mjs";
 import { execFileSync, spawn } from "node:child_process";
@@ -51,6 +52,8 @@ const DASHBOARDS_FILE = join(stateDir(), "dashboards.json");
 const FAVORITES_FILE = join(stateDir(), "favorites.json");
 // Token use per session, read from the CLIs' session files (cached in token-usage.json).
 const tokenUsage = createTokenTracker({ cacheFile: join(stateDir(), "token-usage.json") });
+// Search across sessions: message text in memory only (never written to disk).
+const searchIndex = createSearchIndex();
 const OLLAMA_URL = ollamaUrl();
 const suggestions = suggestionCache();
 
@@ -862,6 +865,21 @@ const server = createServer(async (req, res) => {
         if (error instanceof WorkbenchError) sendJson(res, error.status, { error: error.message });
         else sendJson(res, error instanceof SyntaxError ? 400 : 500, { error: error.message });
       }
+      return;
+    }
+
+    if (url.pathname === "/api/search") {
+      // ?q= words and "phrases" (all must be in one message). The first search reads every
+      // session file (seconds); later ones only what was added. While reading, partial results
+      // come back with { indexing: { done, total } } and the page asks again.
+      await refreshSaved();
+      const enabled = new Set(SOURCES.filter((source) => source.enabled).map((source) => source.id));
+      const metas = [...savedById.values()].filter((meta) => enabled.has(meta.source ?? "pi"));
+      const build = searchIndex.updateAll(metas);
+      await Promise.race([build, new Promise((done) => setTimeout(done, 1200))]);
+      const progress = searchIndex.progress();
+      const found = searchIndex.search(metas, url.searchParams.get("q") ?? "");
+      sendJson(res, 200, { ...found, indexing: progress.running ? { done: progress.done, total: progress.total } : undefined });
       return;
     }
 
