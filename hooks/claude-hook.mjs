@@ -9,6 +9,7 @@
 // Rules: never slow Claude Code down or break it. Every request has a short timeout; if the
 // companion isn't running, the hook prints nothing and exits 0 (Claude carries on as usual).
 
+import { writeSync } from "node:fs";
 import { eventFromHook, stopHookOutput } from "../server/claude-hooks.mjs";
 
 const PORT = Number.parseInt(process.env.PI_COMPANION_PORT ?? "30143", 10);
@@ -44,7 +45,8 @@ async function main() {
   if (event.type !== "stop" || !res.ok) return;
   const body = await res.json().catch(() => ({}));
   const output = stopHookOutput(body.messages);
-  if (output) process.stdout.write(JSON.stringify(output));
+  // Synchronous write: process.exit() below can drop an async write to a pipe on Windows.
+  if (output) writeSync(1, JSON.stringify(output));
 }
 
 main()
