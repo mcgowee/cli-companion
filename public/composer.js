@@ -1,5 +1,8 @@
-// Bottom composer: write or collect text here, then put it into the running Pi's input box
-// (the bridge extension pastes it there; you press Enter in the terminal).
+// Bottom composer: write or collect text, put it into the running Pi's input box, check what
+// is there, and press Enter for Pi from here. The bridge extension does the work inside Pi:
+//   paste  — add text to the input box      peek   — report what the input box holds
+//   clear  — empty the input box            submit — send the input box, like pressing Enter
+// Every command comes back with the input box's text, so the window can show and verify it.
 // Also handles every Copy / Add button on the page.
 (function () {
   const $ = (id) => document.getElementById(id);
@@ -8,15 +11,26 @@
   const statusEl = $("composer-status");
   const targetEl = $("composer-target");
   const composerEl = $("composer");
+  const piInputEl = $("pi-input");
+  const piInputText = $("pi-input-text");
+  const piInputMeta = $("pi-input-meta");
+  const enterEl = $("pi-input-enter");
+  const piClearEl = $("pi-input-clear");
+  const piRefreshEl = $("pi-input-refresh");
 
   /** id -> raw text for messages (filled by app.js when it renders them). */
   const textRefs = new Map();
 
+  const REPLY_TIMEOUT_MS = 30_000;
+
   const state = {
     session: null, // live session object from /events, or null
     selectedId: null,
-    pending: new Map(), // cmdId -> sent text
+    pending: new Map(), // cmdId -> { type, text, resolve }
     lastSent: "",
+    editor: null, // text in Pi's input box (null = not known yet)
+    editorFor: null, // session id that `editor` belongs to
+    verifiedText: "", // last pasted text, to check the input box against
   };
 
   function loadPref(key, fallback) {
@@ -42,12 +56,12 @@
     clearTimeout(draftTimer);
     draftTimer = setTimeout(() => savePref("pi-companion.draft", textEl.value), 300);
     autoSize();
-    renderTarget();
+    renderControls();
   });
 
   function autoSize() {
     textEl.style.height = "auto";
-    textEl.style.height = `${Math.min(textEl.scrollHeight + 2, Math.round(window.innerHeight * 0.45))}px`;
+    textEl.style.height = `${Math.min(textEl.scrollHeight + 2, Math.round(window.innerHeight * 0.4))}px`;
   }
 
   function setCollapsed(collapsed) {
@@ -59,7 +73,7 @@
   $("composer-toggle").addEventListener("click", () => setCollapsed(!composerEl.classList.contains("collapsed")));
   setCollapsed(loadPref("pi-companion.composerCollapsed", false) === true);
 
-  /* ── can we send? ────────────────────────────────────── */
+  /* ── can we talk to this Pi? ─────────────────────────── */
 
   function blocker() {
     const s = state.session;
@@ -70,15 +84,49 @@
     return undefined;
   }
 
-  function renderTarget() {
+  function busy() {
+    return state.pending.size > 0;
+  }
+
+  function renderControls() {
     const s = state.session;
-    const name = s ? s.name && !["New thread", "New session"].includes(s.name) ? s.name : (s.cwd ?? "").split(/[\\/]/).pop() : "";
+    const name = s ? (s.name && !["New thread", "New session"].includes(s.name) ? s.name : (s.cwd ?? "").split(/[\\/]/).pop()) : "";
     const why = blocker();
     targetEl.textContent = why ? "" : `→ ${name || "Pi"}`;
-    sendEl.disabled = Boolean(why) || !textEl.value.trim() || state.pending.size > 0;
-    sendEl.title = why ?? "Put this text in Pi's input box (Ctrl+Enter)";
-    if (why && !state.pending.size && !statusEl.dataset.sticky) setStatus(why, "muted");
+    sendEl.disabled = Boolean(why) || !textEl.value.trim() || busy();
+    sendEl.title = why ?? "Put this text in Pi's input box (Ctrl+Enter). Ctrl+Shift+Enter also presses Enter for you.";
+    if (why && !busy() && !statusEl.dataset.sticky) setStatus(why, "muted");
     else if (!why && statusEl.dataset.kind === "muted") setStatus("");
+    renderPiInput();
+  }
+
+  /** The "Pi's input box" strip: what is in the box now, with Enter / Clear / Refresh. */
+  function renderPiInput() {
+    const why = blocker();
+    const known = state.editorFor === state.selectedId && state.editor !== null;
+    piInputEl.hidden = Boolean(why);
+    if (why) return;
+    const text = known ? state.editor : "";
+    const empty = known && !text.trim();
+    piInputEl.classList.toggle("empty", !known || empty);
+    if (!known) {
+      piInputMeta.textContent = "not checked yet";
+      piInputText.textContent = "";
+    } else if (empty) {
+      piInputMeta.textContent = "empty";
+      piInputText.textContent = "";
+    } else {
+      const lines = text.split("\n").length;
+      const verified = state.verifiedText && text.includes(state.verifiedText.trim());
+      piInputMeta.innerHTML = `${lines} line${lines === 1 ? "" : "s"}${verified ? ` · <span class="ok">✓ matches what you sent</span>` : ""}`;
+      piInputText.textContent = text;
+    }
+    enterEl.disabled = busy() || !known || empty;
+    piClearEl.disabled = busy() || !known || empty;
+    piRefreshEl.disabled = busy();
+    enterEl.title = state.session?.status === "running" || state.session?.status === "compacting"
+      ? "Pi is busy: the message waits until it finishes"
+      : "Send what's in Pi's input box, like pressing Enter in the terminal";
   }
 
   function setStatus(text, kind = "", sticky = false) {
@@ -88,47 +136,124 @@
     else delete statusEl.dataset.sticky;
   }
 
-  /* ── send ────────────────────────────────────────────── */
+  /* ── commands to Pi ──────────────────────────────────── */
 
-  const REPLY_TIMEOUT_MS = 30_000;
-
-  async function send() {
-    if (blocker() || !textEl.value.trim() || state.pending.size) return;
-    const text = textEl.value;
-    // Register the send before the request: Pi can paste and report back before the
-    // server's response to this request arrives.
+  /**
+   * Send one command to the selected Pi and wait for its report.
+   * Resolves to { ok, error, editor, detail }; never rejects.
+   */
+  function command(type, text) {
+    const sessionId = state.selectedId;
+    // Register before the request: Pi can answer before the server's response arrives.
     const cmdId = crypto.randomUUID();
-    state.pending.set(cmdId, text);
-    setStatus("Sending to Pi…", "busy");
-    sendEl.disabled = true;
-    // Never stay stuck: if no report comes back, say so and let the user try again.
-    setTimeout(() => {
-      if (!state.pending.has(cmdId)) return;
-      state.pending.delete(cmdId);
-      setStatus("No reply from Pi. Check the terminal; the text may already be in its input box.", "error", true);
-      renderTarget();
-    }, REPLY_TIMEOUT_MS);
-    try {
-      const res = await fetch("/api/send", {
+    return new Promise((resolve) => {
+      state.pending.set(cmdId, { type, text, sessionId, resolve });
+      renderControls();
+      setTimeout(() => {
+        if (!state.pending.has(cmdId)) return;
+        state.pending.delete(cmdId);
+        resolve({ ok: false, error: "No reply from Pi. Check the terminal." });
+        renderControls();
+      }, REPLY_TIMEOUT_MS);
+      fetch("/api/send", {
         method: "POST",
         headers: { "content-type": "application/json", "x-pi-companion-page": "1" },
-        body: JSON.stringify({ id: state.selectedId, text, cmdId }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-    } catch (error) {
-      if (!state.pending.has(cmdId)) return;
-      state.pending.delete(cmdId);
-      setStatus(`Not sent: ${error.message}`, "error", true);
-      renderTarget();
+        body: JSON.stringify({ id: sessionId, type, text, cmdId }),
+      })
+        .then(async (res) => {
+          if (res.ok) return;
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || `HTTP ${res.status}`);
+        })
+        .catch((error) => {
+          if (!state.pending.has(cmdId)) return;
+          state.pending.delete(cmdId);
+          resolve({ ok: false, error: error.message });
+          renderControls();
+        });
+    });
+  }
+
+  function noteEditor(result, sessionId) {
+    if (typeof result.editor === "string" && sessionId === state.selectedId) {
+      state.editor = result.editor;
+      state.editorFor = sessionId;
     }
   }
 
-  sendEl.addEventListener("click", send);
+  /** Put the composer text in Pi's input box; with `andEnter`, also send it. */
+  async function put(andEnter = false) {
+    if (blocker() || !textEl.value.trim() || busy()) return;
+    const text = textEl.value;
+    const sessionId = state.selectedId;
+    setStatus("Putting it in Pi's input…", "busy");
+    const result = await command("paste", text);
+    noteEditor(result, sessionId);
+    if (!result.ok) {
+      setStatus(`Not delivered: ${result.error || "unknown error"}`, "error", true);
+      renderControls();
+      return;
+    }
+    state.lastSent = text;
+    state.verifiedText = text;
+    if (textEl.value === text) {
+      textEl.value = "";
+      savePref("pi-companion.draft", "");
+      autoSize();
+    }
+    if (andEnter) {
+      await enter();
+      return;
+    }
+    statusEl.innerHTML = `In Pi's input. Press ⏎ Enter (here or in the terminal) to send it. <button type="button" class="link" data-restore>Bring text back</button>`;
+    statusEl.dataset.kind = "ok";
+    statusEl.dataset.sticky = "1";
+    renderControls();
+  }
+
+  /** Send what is in Pi's input box, as if Enter was pressed in the terminal. */
+  async function enter() {
+    if (blocker() || busy()) return;
+    const sessionId = state.selectedId;
+    setStatus("Sending to Pi…", "busy");
+    const result = await command("submit");
+    noteEditor(result, sessionId);
+    if (result.ok) {
+      state.verifiedText = "";
+      setStatus(result.detail === "queued" ? "Sent. Pi is busy, so it will read it when it finishes." : "Sent to Pi ✓", "ok", true);
+    } else {
+      setStatus(`Not sent: ${result.error || "unknown error"}`, "error", true);
+    }
+    renderControls();
+  }
+
+  async function peek(quiet = false) {
+    if (blocker() || busy()) return;
+    const sessionId = state.selectedId;
+    const result = await command("peek");
+    noteEditor(result, sessionId);
+    if (!result.ok && !quiet) setStatus(`Couldn't check: ${result.error}`, "error", true);
+    renderControls();
+  }
+
+  async function clearPi() {
+    if (blocker() || busy()) return;
+    const sessionId = state.selectedId;
+    const result = await command("clear");
+    noteEditor(result, sessionId);
+    state.verifiedText = "";
+    setStatus(result.ok ? "Cleared Pi's input box." : `Couldn't clear: ${result.error}`, result.ok ? "" : "error", !result.ok);
+    renderControls();
+  }
+
+  sendEl.addEventListener("click", () => put(false));
+  enterEl.addEventListener("click", () => enter());
+  piClearEl.addEventListener("click", () => clearPi());
+  piRefreshEl.addEventListener("click", () => peek(false));
   textEl.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.shiftKey) {
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
-      send();
+      put(event.shiftKey);
     }
   });
   $("composer-clear").addEventListener("click", () => {
@@ -137,7 +262,7 @@
     savePref("pi-companion.draft", "");
     autoSize();
     setStatus(state.lastSent ? "Cleared." : "", "", false);
-    renderTarget();
+    renderControls();
     textEl.focus();
   });
 
@@ -218,7 +343,7 @@
     textEl.setSelectionRange(caret, caret);
     savePref("pi-companion.draft", textEl.value);
     autoSize();
-    renderTarget();
+    renderControls();
   }
 
   document.addEventListener("click", async (event) => {
@@ -246,33 +371,31 @@
     fenced,
     /** The selected session changed or its live state updated. */
     update({ selectedId, session }) {
-      if (selectedId !== state.selectedId) delete statusEl.dataset.sticky;
+      const changed = selectedId !== state.selectedId;
+      const wasBlocked = Boolean(blocker());
       state.selectedId = selectedId;
       state.session = session ?? null;
-      renderTarget();
-    },
-    /** The bridge reported back on a send. */
-    delivered({ cmdId, ok, error }) {
-      const text = state.pending.get(cmdId);
-      if (text === undefined) return;
-      state.pending.delete(cmdId);
-      if (ok) {
-        state.lastSent = text;
-        if (textEl.value === text) {
-          textEl.value = "";
-          savePref("pi-companion.draft", "");
-          autoSize();
-        }
-        statusEl.innerHTML = `In Pi's input. Press Enter in the terminal to send it. <button type="button" class="link" data-restore>Bring text back</button>`;
-        statusEl.dataset.kind = "ok";
-        statusEl.dataset.sticky = "1";
-      } else {
-        setStatus(`Not delivered: ${error || "unknown error"}`, "error", true);
+      if (changed) {
+        delete statusEl.dataset.sticky;
+        state.verifiedText = "";
       }
-      renderTarget();
+      renderControls();
+      // Look at Pi's input box once when a session becomes reachable (not on every update).
+      if (blocker()) state.peekedFor = null;
+      else if ((changed || wasBlocked) && state.peekedFor !== selectedId) {
+        state.peekedFor = selectedId;
+        peek(true);
+      }
+    },
+    /** The bridge reported back on a command. */
+    delivered(msg) {
+      const pending = state.pending.get(msg.cmdId);
+      if (!pending) return;
+      state.pending.delete(msg.cmdId);
+      pending.resolve({ ok: msg.ok, error: msg.error, editor: msg.editor, detail: msg.detail });
     },
   };
 
   autoSize();
-  renderTarget();
+  renderControls();
 })();

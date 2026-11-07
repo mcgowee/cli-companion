@@ -84,8 +84,20 @@
           <span class="composer-status" id="composer-status" role="status" aria-live="polite"></span>
         </div>
         <div class="composer-body" id="composer-body">
+          <div class="pi-input empty" id="pi-input" hidden>
+            <div class="pi-input-head">
+              <span class="pi-input-label">Pi's input box</span>
+              <span class="pi-input-meta" id="pi-input-meta"></span>
+              <span class="pi-input-actions">
+                <button class="mini" id="pi-input-refresh" type="button" title="Check what's in Pi's input box now">Refresh</button>
+                <button class="mini" id="pi-input-clear" type="button" title="Empty Pi's input box">Clear</button>
+                <button class="btn primary small" id="pi-input-enter" type="button">⏎ Enter</button>
+              </span>
+            </div>
+            <pre class="pi-input-text" id="pi-input-text"></pre>
+          </div>
           <textarea id="composer-text" rows="3" spellcheck="false" aria-label="Text for Pi"
-            placeholder="Write or paste here, or click Add on code, messages, files and diffs. Ctrl+Enter puts it in Pi's input box."></textarea>
+            placeholder="Write or paste here, or click Add on code, messages, files and diffs. Ctrl+Enter puts it in Pi's input box; Ctrl+Shift+Enter also sends it."></textarea>
           <div class="composer-actions">
             <button class="btn" id="composer-clear" type="button">Clear</button>
             <button class="btn primary" id="composer-send" type="button">Put in Pi's input <kbd>Ctrl+Enter</kbd></button>

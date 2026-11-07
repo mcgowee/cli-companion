@@ -31,7 +31,11 @@ next to it:
   The left panel can be hidden with its button or **Ctrl+B** (⌘B on macOS).
 - **Send text to Pi (bottom composer)**: write or collect text, then **Put in Pi's input**
   (**Ctrl+Enter**). It lands in the running Pi CLI's prompt box, with a short notice in the
-  terminal. Nothing is sent to the model until you press Enter in the terminal yourself.
+  terminal. The **Pi's input box** strip above the composer shows what that box holds right
+  now (✓ when it matches what you sent), with **⏎ Enter** to send it from the window,
+  **Clear** and **Refresh**. **Ctrl+Shift+Enter** puts the text in and sends it in one go. If
+  Pi is busy, the message waits until it finishes. `/` commands and `!` shell lines are left
+  for you to send from the terminal.
   Every code block, message, tool input/output, file (Files tab) and diff (Review tab) has
   **Copy** and **Add** buttons; Add drops it into the composer as a fenced block. The draft is
   kept if you close the window. Works for running terminal sessions; sessions opened before
@@ -107,8 +111,7 @@ The server log and the app-window browser profile live in `~/.pi/agent/companion
 
 ## Limits
 
-- Text goes into Pi's input box for you to send; sending directly, images, and pulling
-  Pi's draft into the composer are planned.
+- Images from the composer, and pulling Pi's draft into the composer for editing, are planned.
 - Past sessions open read-only; resume one in Pi with `pi -r`.
 - Tested on Windows 11 with Pi 1.4. macOS and Linux use the same code paths but have not
   been tested yet; reports welcome.

@@ -204,31 +204,80 @@ export default function companionBridge(pi: ExtensionAPI): void {
 
   let inboxAbort: AbortController | undefined;
 
-  /** Apply one command from the window; returns an error message, or undefined on success. */
-  const runCommand = (ctx: ExtensionContext, command: { type?: string; text?: unknown }): string | undefined => {
-    if (command.type !== "paste" || typeof command.text !== "string") return "Unknown command.";
-    if (ctx.mode !== "tui") return "Only the Pi CLI (terminal) has an input box to paste into.";
-    const before = ctx.ui.getEditorText();
-    // Something already typed: start the pasted text on a new line instead of gluing it on.
-    const text = before && !/\s$/.test(before) ? `\n${command.text}` : command.text;
-    try {
-      ctx.ui.pasteToEditor(text);
-    } catch {
-      // Older Pi without paste handling: append to whatever is already typed.
-      ctx.ui.setEditorText(before ? `${before}\n${text}` : text);
+  type CommandResult = { error?: string; editor?: string; detail?: string };
+  const EDITOR_REPORT_MAX = 50_000;
+
+  /**
+   * Apply one command from the window:
+   *  - paste:  add text to Pi's input box (the user still decides when to send)
+   *  - peek:   report what is in the input box (so the window can show it)
+   *  - clear:  empty the input box
+   *  - submit: send what is in the input box as the user's message, like pressing Enter
+   * Every result carries the input box's text afterwards, so the window can verify it.
+   */
+  const runCommand = (ctx: ExtensionContext, command: { type?: string; text?: unknown }): CommandResult => {
+    if (ctx.mode !== "tui") return { error: "Only the Pi CLI (terminal) has an input box." };
+    const report = (): string => ctx.ui.getEditorText().slice(0, EDITOR_REPORT_MAX);
+
+    switch (command.type) {
+      case "peek":
+        return { editor: report() };
+
+      case "clear":
+        ctx.ui.setEditorText("");
+        ctx.ui.notify("[companion] Cleared the input box.", "info");
+        return { editor: report() };
+
+      case "paste": {
+        if (typeof command.text !== "string") return { error: "Nothing to paste." };
+        const before = ctx.ui.getEditorText();
+        // Something already typed: start the pasted text on a new line instead of gluing it on.
+        const text = before && !/\s$/.test(before) ? `\n${command.text}` : command.text;
+        try {
+          ctx.ui.pasteToEditor(text);
+        } catch {
+          // Older Pi without paste handling: append to whatever is already typed.
+          ctx.ui.setEditorText(before ? `${before}\n${text}` : text);
+        }
+        if (ctx.ui.getEditorText() === before) {
+          return { error: "Pi's input box did not change (is a dialog open in Pi?).", editor: report() };
+        }
+        // The paste does not redraw the terminal by itself; a notice does, and says where the text came from.
+        const lines = command.text.split("\n").length;
+        ctx.ui.notify(`[companion] Pasted ${lines} line${lines === 1 ? "" : "s"} into the input.`, "info");
+        return { editor: report() };
+      }
+
+      case "submit": {
+        const text = ctx.ui.getEditorText();
+        if (!text.trim()) return { error: "Pi's input box is empty.", editor: "" };
+        // Slash commands, !shell lines and prompt templates are handled by the terminal's Enter key,
+        // not by sendUserMessage, so leave those for the user to press Enter on.
+        if (/^\s*[/!]/.test(text)) {
+          return { error: "That's a / command or ! shell line. Press Enter in the terminal for those.", editor: report() };
+        }
+        const busy = !ctx.isIdle();
+        ctx.ui.setEditorText("");
+        try {
+          if (busy) pi.sendUserMessage(text, { deliverAs: "followUp" });
+          else pi.sendUserMessage(text);
+        } catch (err) {
+          ctx.ui.setEditorText(text); // put it back so nothing is lost
+          return { error: `Pi refused the message: ${String(err)}`, editor: report() };
+        }
+        return { editor: report(), detail: busy ? "queued" : "sent" };
+      }
+
+      default:
+        return { error: "Unknown command." };
     }
-    if (ctx.ui.getEditorText() === before) return "Pi's input box did not change (is a dialog open in Pi?).";
-    // The paste does not redraw the terminal by itself; a notice does, and says where the text came from.
-    const lines = command.text.split("\n").length;
-    ctx.ui.notify(`[companion] Pasted ${lines} line${lines === 1 ? "" : "s"} into the input. Press Enter to send.`, "info");
-    return undefined;
   };
 
-  const ack = (cmdId: unknown, error: string | undefined) =>
+  const ack = (cmdId: unknown, result: CommandResult) =>
     fetch(`${URL_BASE}/bridge/ack`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-pi-companion": "1" },
-      body: JSON.stringify({ cmdId, ok: !error, error }),
+      body: JSON.stringify({ cmdId, ok: !result.error, ...result }),
       signal: AbortSignal.timeout(2000),
     }).catch(() => undefined);
 
@@ -250,8 +299,13 @@ export default function companionBridge(pi: ExtensionAPI): void {
           if (res.status === 200) {
             const { commands } = (await res.json()) as { commands?: Array<{ cmdId: string; type?: string; text?: unknown }> };
             for (const command of commands ?? []) {
-              const error = runCommand(lastCtx ?? ctx, command);
-              void ack(command.cmdId, error);
+              let result: CommandResult;
+              try {
+                result = runCommand(lastCtx ?? ctx, command);
+              } catch (err) {
+                result = { error: `Pi could not do that: ${String(err)}` };
+              }
+              void ack(command.cmdId, result);
             }
           } else if (res.status !== 204) {
             await new Promise((r) => setTimeout(r, BACKOFF_MS).unref?.());

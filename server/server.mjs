@@ -8,7 +8,7 @@
 // Rules: bind 127.0.0.1 only, Node built-ins only,
 // never touch Pi's files except to read them.
 
-import { randomUUID } from "node:crypto";
+import { commandFromRequest } from "./commands.mjs";
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -213,7 +213,7 @@ function publicSession(session) {
 /* ── page → Pi commands (the bridge long-polls for them) ── */
 
 const COMMAND_TTL_MS = 20_000;
-const MAX_SEND_CHARS = 200_000;
+
 /** sessionId -> { queue: command[], waiters: res[], lastPollAt } */
 const inboxes = new Map();
 
@@ -464,7 +464,15 @@ const server = createServer(async (req, res) => {
         return;
       }
       const ack = JSON.parse(await readBody(req));
-      broadcast({ type: "delivered", cmdId: String(ack.cmdId ?? ""), ok: ack.ok === true, error: ack.error, detail: ack.detail });
+      broadcast({
+        type: "delivered",
+        cmdId: String(ack.cmdId ?? ""),
+        ok: ack.ok === true,
+        error: typeof ack.error === "string" ? ack.error.slice(0, 500) : undefined,
+        detail: typeof ack.detail === "string" ? ack.detail.slice(0, 100) : undefined,
+        // What Pi's input box holds after the command, so the page can show and verify it.
+        editor: typeof ack.editor === "string" ? ack.editor.slice(0, 50_000) : undefined,
+      });
       res.writeHead(204).end();
       return;
     }
@@ -483,18 +491,12 @@ const server = createServer(async (req, res) => {
         sendJson(res, 409, { error: "That session isn't running." });
         return;
       }
-      const text = typeof body.text === "string" ? body.text : "";
-      if (!text.trim()) {
-        sendJson(res, 400, { error: "Nothing to send." });
-        return;
-      }
-      if (text.length > MAX_SEND_CHARS) {
-        sendJson(res, 413, { error: "Too long to paste (over 200,000 characters)." });
-        return;
-      }
       // The page picks the id before sending, so a reply that arrives before this response can't be missed.
-      const cmdId = /^[0-9a-f-]{36}$/i.test(String(body.cmdId ?? "")) ? String(body.cmdId) : randomUUID();
-      const command = { cmdId, type: "paste", text };
+      const { command, status, error } = commandFromRequest(body);
+      if (!command) {
+        sendJson(res, status, { error });
+        return;
+      }
       enqueueCommand(id, command);
       sendJson(res, 202, { cmdId: command.cmdId });
       return;

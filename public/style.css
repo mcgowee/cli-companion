@@ -320,6 +320,18 @@ body.resizing { cursor: col-resize; user-select: none; }
 .composer textarea { display: block; width: 100%; min-height: 64px; resize: vertical; padding: 10px 12px; border-radius: 10px;
   border: 1px solid var(--line); background: var(--panel); color: var(--text); font: 13px/1.5 var(--mono); }
 .composer textarea:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 0; }
+.pi-input { margin-bottom: 8px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--panel)); }
+.pi-input-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; font-size: 12.5px; }
+.pi-input-label { font-weight: 650; white-space: nowrap; }
+.pi-input-meta { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.pi-input-meta .ok { color: var(--ok); }
+.pi-input-actions { margin-left: auto; display: flex; gap: 6px; align-items: center; flex: none; }
+.pi-input-text { margin: 0; padding: 8px 12px 10px; border-top: 1px solid var(--line); max-height: 9.5em; overflow: auto;
+  font: 12.5px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; }
+.pi-input.empty .pi-input-text { display: none; }
+.btn.small { padding: 4px 11px; font-size: 12.5px; }
+.mini:disabled { opacity: 0.45; cursor: not-allowed; }
 .composer-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .btn { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 8px;
   font-size: 13px; border: 1px solid var(--line); background: var(--panel); color: var(--text); }
