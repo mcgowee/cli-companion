@@ -33,8 +33,7 @@
         i++;
         while (i < lines.length && !lines[i].trim().startsWith(fence[1])) body.push(lines[i++]);
         i++;
-        const lang = fence[2] ? `<span class="lang">${escapeHtml(fence[2])}</span>` : "";
-        html.push(`<pre>${lang}<code>${escapeHtml(body.join("\n"))}</code></pre>`);
+        html.push(codeBlock(body.join("\n"), fence[2]));
         continue;
       }
 
@@ -110,6 +109,13 @@
     return html.join("");
   }
 
+  /** A code block with Copy / Add-to-composer buttons (handled by composer.js). */
+  function codeBlock(code, lang = "") {
+    const langTag = lang ? `<span class="lang">${escapeHtml(lang)}</span>` : "";
+    return `<div class="code-wrap" data-lang="${escapeHtml(lang)}"><div class="code-tools">${langTag}<button type="button" class="mini" data-copy>Copy</button><button type="button" class="mini" data-add title="Add to the composer">Add</button></div><pre><code>${escapeHtml(code)}</code></pre></div>`;
+  }
+
   window.renderMarkdown = render;
   window.escapeHtml = escapeHtml;
+  window.codeBlock = codeBlock;
 })();

@@ -8,6 +8,7 @@
 // Rules: bind 127.0.0.1 only, Node built-ins only,
 // never touch Pi's files except to read them.
 
+import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -89,6 +90,7 @@ function applyBatch(batch) {
   if (typeof batch.name === "string") session.name = batch.name;
   if (typeof batch.model === "string") session.model = batch.model;
   if (typeof batch.leafId === "string") session.leafId = batch.leafId;
+  if (typeof batch.mode === "string") session.mode = batch.mode;
   if (batch.context && typeof batch.context === "object") session.context = batch.context;
   session.lastEventAt = now();
   session.ended = false;
@@ -202,7 +204,53 @@ function publicSession(session) {
     lastEventAt: session.lastEventAt,
     ended: session.ended,
     hasHistory: Boolean(session.sessionFile),
+    mode: session.mode,
+    // The bridge polls for commands while the session is open; this says whether it is listening now.
+    listening: (inboxes.get(session.id)?.waiters.length ?? 0) > 0 || now() - (inboxes.get(session.id)?.lastPollAt ?? 0) < 35_000,
   };
+}
+
+/* ── page → Pi commands (the bridge long-polls for them) ── */
+
+const COMMAND_TTL_MS = 20_000;
+const MAX_SEND_CHARS = 200_000;
+/** sessionId -> { queue: command[], waiters: res[], lastPollAt } */
+const inboxes = new Map();
+
+function inboxFor(id) {
+  let inbox = inboxes.get(id);
+  if (!inbox) {
+    inbox = { queue: [], waiters: [], lastPollAt: 0 };
+    inboxes.set(id, inbox);
+  }
+  return inbox;
+}
+
+function deliver(inbox) {
+  while (inbox.queue.length && inbox.waiters.length) {
+    const res = inbox.waiters.shift();
+    const commands = inbox.queue.splice(0);
+    sendJson(res, 200, { commands });
+  }
+}
+
+function enqueueCommand(sessionId, command) {
+  const inbox = inboxFor(sessionId);
+  inbox.queue.push(command);
+  deliver(inbox);
+  // Not picked up in time: tell the page, and drop it so it never arrives late.
+  setTimeout(() => {
+    const index = inbox.queue.indexOf(command);
+    if (index >= 0) {
+      inbox.queue.splice(index, 1);
+      broadcast({
+        type: "delivered",
+        cmdId: command.cmdId,
+        ok: false,
+        error: "Pi didn't pick it up. Is the companion extension loaded in that Pi? Try /reload there.",
+      });
+    }
+  }, COMMAND_TTL_MS).unref();
 }
 
 function broadcast(message) {
@@ -228,6 +276,7 @@ setInterval(() => {
   for (const [id, session] of sessions) {
     if (session.pid && !isProcessAlive(session.pid)) {
       sessions.delete(id);
+      inboxes.delete(id);
       broadcast({ type: "removed", id });
     }
   }
@@ -376,6 +425,79 @@ const server = createServer(async (req, res) => {
     return;
   }
   try {
+    if (url.pathname === "/bridge/inbox") {
+      // Long poll from the bridge extension in Pi: wait up to 25 s for commands for this session.
+      if (req.method !== "GET" || req.headers["x-pi-companion"] !== "1") {
+        res.writeHead(403).end();
+        return;
+      }
+      const id = url.searchParams.get("session") ?? "";
+      if (!id) {
+        res.writeHead(400).end();
+        return;
+      }
+      const inbox = inboxFor(id);
+      inbox.lastPollAt = now();
+      inbox.waiters.push(res);
+      const live = sessions.get(id);
+      if (live && inbox.waiters.length === 1) scheduleSessionBroadcast(live);
+      const timer = setTimeout(() => {
+        const i = inbox.waiters.indexOf(res);
+        if (i < 0) return; // already answered with commands
+        inbox.waiters.splice(i, 1);
+        res.writeHead(204).end();
+      }, 25_000);
+      // res (not req) "close": fires when the answer is sent or the bridge disconnects.
+      res.on("close", () => {
+        clearTimeout(timer);
+        const i = inbox.waiters.indexOf(res);
+        if (i >= 0) inbox.waiters.splice(i, 1);
+        inbox.lastPollAt = now();
+      });
+      deliver(inbox);
+      return;
+    }
+
+    if (url.pathname === "/bridge/ack") {
+      if (req.method !== "POST" || req.headers["x-pi-companion"] !== "1") {
+        res.writeHead(403).end();
+        return;
+      }
+      const ack = JSON.parse(await readBody(req));
+      broadcast({ type: "delivered", cmdId: String(ack.cmdId ?? ""), ok: ack.ok === true, error: ack.error, detail: ack.detail });
+      res.writeHead(204).end();
+      return;
+    }
+
+    if (url.pathname === "/api/send") {
+      // From the companion page. The custom header means a cross-site page can't send this
+      // without a CORS preflight (never answered), and the Host check above stops DNS rebinding.
+      if (req.method !== "POST" || req.headers["x-pi-companion-page"] !== "1") {
+        res.writeHead(403).end();
+        return;
+      }
+      const body = JSON.parse(await readBody(req));
+      const id = String(body.id ?? "");
+      const live = sessions.get(id);
+      if (!live || live.ended) {
+        sendJson(res, 409, { error: "That session isn't running." });
+        return;
+      }
+      const text = typeof body.text === "string" ? body.text : "";
+      if (!text.trim()) {
+        sendJson(res, 400, { error: "Nothing to send." });
+        return;
+      }
+      if (text.length > MAX_SEND_CHARS) {
+        sendJson(res, 413, { error: "Too long to paste (over 200,000 characters)." });
+        return;
+      }
+      const command = { cmdId: randomUUID(), type: "paste", text };
+      enqueueCommand(id, command);
+      sendJson(res, 202, { cmdId: command.cmdId });
+      return;
+    }
+
     if (url.pathname === "/ingest") {
       // A custom header forces a CORS preflight, which this server never answers,
       // so a web page in the browser cannot post fake events here.

@@ -195,8 +195,79 @@ export default function companionBridge(pi: ExtensionAPI): void {
       name: sm.getSessionName(),
       model: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined,
       idle: ctx.isIdle(),
+      mode: ctx.mode,
       context,
     };
+  };
+
+  /* ── commands from the companion window (long poll) ── */
+
+  let inboxAbort: AbortController | undefined;
+
+  /** Apply one command from the window; returns an error message, or undefined on success. */
+  const runCommand = (ctx: ExtensionContext, command: { type?: string; text?: unknown }): string | undefined => {
+    if (command.type !== "paste" || typeof command.text !== "string") return "Unknown command.";
+    if (ctx.mode !== "tui") return "Only the Pi CLI (terminal) has an input box to paste into.";
+    const text = command.text;
+    const before = ctx.ui.getEditorText();
+    try {
+      ctx.ui.pasteToEditor(text);
+    } catch {
+      // Older Pi without paste handling: append to whatever is already typed.
+      ctx.ui.setEditorText(before ? `${before}\n${text}` : text);
+    }
+    if (ctx.ui.getEditorText() === before) return "Pi's input box did not change (is a dialog open in Pi?).";
+    // The paste does not redraw the terminal by itself; a notice does, and says where the text came from.
+    const lines = text.split("\n").length;
+    ctx.ui.notify(`[companion] Pasted ${lines} line${lines === 1 ? "" : "s"} into the input. Press Enter to send.`, "info");
+    return undefined;
+  };
+
+  const ack = (cmdId: unknown, error: string | undefined) =>
+    fetch(`${URL_BASE}/bridge/ack`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-pi-companion": "1" },
+      body: JSON.stringify({ cmdId, ok: !error, error }),
+      signal: AbortSignal.timeout(2000),
+    }).catch(() => undefined);
+
+  /**
+   * Wait for commands for this session; one request at a time, re-opened after each answer.
+   * Each loop owns its controller, so a session switch stops the old loop and starts a new one.
+   */
+  const runInbox = async (controller: AbortController) => {
+    const signal = controller.signal;
+    {
+      while (!signal.aborted) {
+        const ctx = lastCtx;
+        if (!ctx) break;
+        try {
+          const res = await fetch(
+            `${URL_BASE}/bridge/inbox?session=${encodeURIComponent(ctx.sessionManager.getSessionId())}`,
+            { headers: { "x-pi-companion": "1" }, signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]) },
+          );
+          if (res.status === 200) {
+            const { commands } = (await res.json()) as { commands?: Array<{ cmdId: string; type?: string; text?: unknown }> };
+            for (const command of commands ?? []) {
+              const error = runCommand(lastCtx ?? ctx, command);
+              void ack(command.cmdId, error);
+            }
+          } else if (res.status !== 204) {
+            await new Promise((r) => setTimeout(r, BACKOFF_MS).unref?.());
+          }
+        } catch {
+          if (signal.aborted) break;
+          // Server not running (or restarting): try again in a few seconds.
+          await new Promise((r) => setTimeout(r, BACKOFF_MS).unref?.());
+        }
+      }
+    }
+  };
+
+  const startInbox = () => {
+    inboxAbort?.abort();
+    inboxAbort = new AbortController();
+    void runInbox(inboxAbort);
   };
 
   const flush = async () => {
@@ -247,6 +318,7 @@ export default function companionBridge(pi: ExtensionAPI): void {
     if (!ctx.hasUI) return;
     offlineUntil = 0;
     push(ctx, { type: "session_start", reason: event.reason });
+    startInbox();
     if (!heartbeat) {
       heartbeat = setInterval(() => {
         if (lastCtx) push(lastCtx, { type: "hello" });
@@ -259,6 +331,8 @@ export default function companionBridge(pi: ExtensionAPI): void {
     if (!ctx.hasUI) return;
     if (heartbeat) clearInterval(heartbeat);
     heartbeat = undefined;
+    inboxAbort?.abort();
+    inboxAbort = undefined;
     push(ctx, { type: "shutdown" });
     if (flushTimer) clearTimeout(flushTimer);
     await flush();

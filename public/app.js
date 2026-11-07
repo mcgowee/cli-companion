@@ -434,17 +434,24 @@
     return `<details class="tool ${status}">
       <summary><span class="tname">${esc(call.name)}</span><span class="targ">${esc(firstArg)}</span>${dur}</summary>
       <div class="tbody">
-        <div class="tlabel">Input</div><pre>${esc(call.args)}</pre>
-        ${r ? `<div class="tlabel">${r.isError ? "Error" : "Output"}${r.truncated ? " (cut short)" : ""}</div><pre>${esc(r.output || "(empty)")}</pre>${imagesHtml(r.images)}` : ""}
+        <div class="tlabel">Input</div>${window.codeBlock(call.args, "json")}
+        ${r ? `<div class="tlabel">${r.isError ? "Error" : "Output"}${r.truncated ? " (cut short)" : ""}</div>${window.codeBlock(r.output || "(empty)", "text")}${imagesHtml(r.images)}` : ""}
       </div>
     </details>`;
+  }
+
+  /** Copy / Add buttons for a whole message (its raw markdown is kept in composer.textRefs). */
+  function msgTools(id, text) {
+    if (!text || !window.composer) return "";
+    window.composer.textRefs.set(id, text);
+    return `<span class="msg-tools"><button type="button" class="mini" data-copy data-ref="${esc(id)}">Copy</button><button type="button" class="mini" data-add data-ref="${esc(id)}" title="Add to the composer">Add</button></span>`;
   }
 
   function itemHtml(item) {
     const dim = item.compacted ? " compacted" : "";
     switch (item.kind) {
       case "user":
-        return `<article class="msg user${dim}"><div class="who">You <time>${fmtTime(item.timestamp)}</time></div>
+        return `<article class="msg user${dim}"><div class="who">${msgTools(item.id, item.text)}You <time>${fmtTime(item.timestamp)}</time></div>
           <div class="bubble">${md(item.text)}${imagesHtml(item.images)}</div></article>`;
       case "assistant": {
         const thinking = item.thinking
@@ -453,7 +460,7 @@
         const err = item.errorMessage ? `<div class="err">${esc(item.errorMessage)}</div>` : "";
         const tools = item.toolCalls?.length ? `<div class="tools">${item.toolCalls.map(toolHtml).join("")}</div>` : "";
         if (!item.text && !thinking && !tools && !err) return "";
-        return `<article class="msg assistant${dim}"><div class="who">Pi <time>${fmtTime(item.timestamp)}</time></div>
+        return `<article class="msg assistant${dim}"><div class="who">Pi <time>${fmtTime(item.timestamp)}</time>${msgTools(item.id, item.text)}</div>
           ${thinking}${item.text ? `<div class="prose">${md(item.text)}</div>` : ""}${err}${tools}</article>`;
       }
       case "compaction": {
@@ -471,7 +478,7 @@
       case "custom":
         return `<article class="msg custom${dim}"><div class="who">${esc(item.customType)}</div><div class="prose">${md(item.text)}</div>${imagesHtml(item.images)}</article>`;
       case "bash":
-        return `<article class="msg bash${dim}"><div class="who">! shell</div><pre>$ ${esc(item.command)}\n${esc(item.output)}</pre></article>`;
+        return `<article class="msg bash${dim}"><div class="who">! shell</div>${window.codeBlock(`$ ${item.command}\n${item.output}`, "text")}</article>`;
       case "event":
         return `<div class="event${dim}">${esc(item.text)}</div>`;
       case "orphanToolResult":
@@ -582,6 +589,12 @@
     const live = state.sessions.get(state.selectedId);
     const cwd = live?.cwd ?? state.history?.cwd ?? rowFor(state.selectedId)?.ws.cwd;
     window.workbench?.update({ sessionId: state.selectedId, cwd, history: state.history, historyChanged });
+    notifyComposer();
+  }
+
+  /** Tell the composer which session it would send to, and whether that session is live. */
+  function notifyComposer() {
+    window.composer?.update({ selectedId: state.selectedId, session: state.sessions.get(state.selectedId) });
   }
 
   function autoSelect() {
@@ -606,6 +619,7 @@
     autoSelect();
     renderSidebar();
     if (session.id === state.selectedId) {
+      notifyComposer();
       const stick = state.stickToBottom;
       renderHeader();
       renderLive();
@@ -634,6 +648,7 @@
         renderSidebar();
         renderHeader();
         renderLive();
+        notifyComposer();
         loadHistory(true);
       } else if (msg.type === "session") {
         upsert(msg.session);
@@ -647,6 +662,9 @@
         scheduleWorkspaces(300);
         renderSidebar();
         renderHeader();
+        notifyComposer();
+      } else if (msg.type === "delivered") {
+        window.composer?.delivered(msg);
       }
     };
   }

@@ -29,6 +29,13 @@ next to it:
   sessions get a live dot and float to the top; a filter box searches folder names and
   session titles. The window follows the most recently active session unless you pick one.
   The left panel can be hidden with its button or **Ctrl+B** (⌘B on macOS).
+- **Send text to Pi (bottom composer)**: write or collect text, then **Put in Pi's input**
+  (**Ctrl+Enter**). It lands in the running Pi CLI's prompt box, with a short notice in the
+  terminal. Nothing is sent to the model until you press Enter in the terminal yourself.
+  Every code block, message, tool input/output, file (Files tab) and diff (Review tab) has
+  **Copy** and **Add** buttons; Add drops it into the composer as a fenced block. The draft is
+  kept if you close the window. Works for running terminal sessions; sessions opened before
+  the extension was updated need `/reload` once.
 - **Resizable panels**: drag the inner edge of the left or right panel (or focus it and use
   ←/→; Shift for bigger steps). Double-click an edge to reset its width. Widths are
   remembered, and the transcript always keeps at least 360 px.
@@ -82,6 +89,11 @@ Pi (interactive) ──events──► companion server ──SSE──► windo
   session id, never a path), rejects `..` and symlinks that lead outside it, and runs
   only read-only `git` commands. Requests whose `Host` is not `127.0.0.1`/`localhost`
   are refused, which blocks DNS-rebinding attacks from web pages.
+- **Sending to Pi**: Pi never opens a port. The extension in each interactive Pi keeps one
+  request open to the server (`/bridge/inbox`) and receives only commands for its own
+  session; it pastes the text with Pi's `ctx.ui.pasteToEditor` and reports back. The page's
+  send request needs a custom header (a cross-site page can't add one without a CORS
+  preflight, which is never answered), and a command nobody picks up within 20 s is dropped.
 - The **window** is plain HTML and JavaScript: no build step and no CDN.
 
 ## Settings
@@ -95,7 +107,8 @@ The server log and the app-window browser profile live in `~/.pi/agent/companion
 
 ## Limits
 
-- Read-only for now. Sending text or images from the window into Pi is planned.
+- Text goes into Pi's input box for you to send; sending directly, images, and pulling
+  Pi's draft into the composer are planned.
 - Past sessions open read-only; resume one in Pi with `pi -r`.
 - Tested on Windows 11 with Pi 1.4. macOS and Linux use the same code paths but have not
   been tested yet; reports welcome.

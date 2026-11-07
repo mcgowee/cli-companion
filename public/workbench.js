@@ -217,7 +217,8 @@
     const isMd = /\.(md|markdown)$/i.test(f.path);
     const head = `<div class="wb-bar"><button class="icon-btn small" data-back title="Back to files" aria-label="Back to files">←</button>
       <span class="wb-path" title="${esc(f.path)}">${esc(f.path)}</span>
-      ${isMd && f.data?.kind === "text" ? `<button class="chip" data-mode="${f.mode === "preview" ? "source" : "preview"}">${f.mode === "preview" ? "Source" : "Preview"}</button>` : ""}</div>`;
+      ${isMd && f.data?.kind === "text" ? `<button class="chip" data-mode="${f.mode === "preview" ? "source" : "preview"}">${f.mode === "preview" ? "Source" : "Preview"}</button>` : ""}
+      ${f.data?.kind === "text" ? composerChips(`file:${f.path}`, f.data.text, () => `\`${f.path}\`:\n${window.composer.fenced(f.data.text, langFor(f.path))}`) : ""}</div>`;
     const d = f.data;
     if (!d) return `${head}<div class="wb-empty">Loading…</div>`;
     if (d.kind === "error") return `${head}<div class="wb-empty error">${esc(d.error)}</div>`;
@@ -230,6 +231,20 @@
     if (isMd && f.mode === "preview") return `${head}<div class="md-view prose">${md(d.text)}</div>`;
     const lines = d.text.replace(/\n$/, "").split("\n");
     return `${head}<div class="code-view"><pre class="gutter">${lines.map((_, i) => i + 1).join("\n")}</pre><pre class="code">${esc(d.text)}</pre></div>`;
+  }
+
+  /** Copy (raw text) and Add (formatted for Pi) chips; texts are kept in composer.textRefs. */
+  function composerChips(key, rawText, addText) {
+    if (!window.composer) return "";
+    window.composer.textRefs.set(`${key}#copy`, rawText);
+    window.composer.textRefs.set(`${key}#add`, addText());
+    return `<button class="chip" data-copy data-ref="${esc(`${key}#copy`)}">Copy</button><button class="chip" data-add data-ref="${esc(`${key}#add`)}" title="Add to the composer">Add</button>`;
+  }
+
+  function langFor(path) {
+    const ext = (path.split(".").pop() ?? "").toLowerCase();
+    const map = { js: "js", mjs: "js", cjs: "js", ts: "ts", tsx: "tsx", jsx: "jsx", py: "python", ps1: "powershell", sh: "bash", md: "markdown", json: "json", yml: "yaml", yaml: "yaml", css: "css", html: "html", rs: "rust", go: "go", java: "java", cs: "csharp", sql: "sql", toml: "toml" };
+    return map[ext] ?? "";
   }
 
   function fmtSize(n) {
@@ -315,6 +330,7 @@
     if (wb.diff) {
       el.innerHTML = `<div class="wb-bar"><button class="icon-btn small" data-back title="Back to changes" aria-label="Back to changes">←</button>
           <span class="wb-path" title="${esc(wb.diff.path)}">${esc(wb.diff.path)}</span>
+          ${wb.diff.text ? composerChips(`diff:${wb.diff.path}`, wb.diff.text, () => `Changes in \`${wb.diff.path}\`:\n${window.composer.fenced(wb.diff.text, "diff")}`) : ""}
           <button class="chip" data-open-file>Open file</button></div>
         ${wb.diff.text === null ? `<div class="wb-empty">Loading…</div>` : `<pre class="diff-view">${diffHtml(wb.diff.text)}</pre>`}`;
       el.querySelector("[data-back]").addEventListener("click", () => {
