@@ -91,7 +91,9 @@ next to it:
 - **Right panel (Files, Review and Apps)**, like pi-gui's workbench, for the selected session's
   folder. Toggle it with the button at the top right or **Ctrl+Alt+B**.
   - **Files**: browse the folder tree and read files with line numbers. Markdown is
-    rendered (with a Source toggle) and images are shown.
+    rendered (with a Source toggle) and images are shown. **New folder**: the folder-plus button
+    in the bar creates one in the session's folder; the one beside a folder (on hover) creates one
+    inside it. Type a name, Enter to create, Esc to cancel. It never overwrites anything.
   - **Review**: git changes, either **Uncommitted** (including untracked files) or
     **Branch** (everything since the branch split from main/master), with +/− counts and
     a coloured diff per file. **Changed in this session** lists the files Pi edited or
@@ -103,7 +105,7 @@ next to it:
     browser, or **Pin to Dashboards** to keep it in the Dashboards menu (never added by itself).
     HTML files are served from `/app-files/…` in a sandbox (its own origin, so its scripts can't
     use the companion; browser storage and loading local JSON with fetch don't work there).
-  - Read-only by design: no editing and no terminal inside the page (your terminal is where Pi runs).
+  - Otherwise read-only by design: no editing of files and no terminal inside the page (your terminal is where Pi runs).
 - **First run**: with no sessions anywhere yet, the window shows which CLIs it found, where it
   looked, and how to start each one.
 - **Menu bar: Home, Dashboards, Settings, About.** Home is the session view.
@@ -188,7 +190,8 @@ Pi (interactive) ──events──► companion server ──SSE──► windo
   files it writes are its own settings and custom dashboard list, in `~/.cli-companion`.
   The right panel only reads inside the folder of a session it knows (the page sends a
   session id, never a path), rejects `..` and symlinks that lead outside it, and runs
-  only read-only `git` commands. App files from that folder are sent with a sandbox policy. Requests whose `Host` is not `127.0.0.1`/`localhost`
+  only read-only `git` commands. Its one write, New folder, also stays inside that folder and
+  needs the page's own request header. App files from that folder are sent with a sandbox policy. Requests whose `Host` is not `127.0.0.1`/`localhost`
   are refused, which blocks DNS-rebinding attacks from web pages.
 - **Sending to Pi**: Pi never opens a port. The extension in each interactive Pi keeps one
   request open to the server (`/bridge/inbox`) and receives only commands for its own

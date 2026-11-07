@@ -1,6 +1,7 @@
 // Right panel ("workbench", like pi-gui's): Files and Review for the selected session's folder,
 // and Apps: web addresses and .html files in the session's final reply, to open here or pin to
-// Dashboards. Read-only. The server resolves the folder from the session id, never from a path we send.
+// Dashboards. Read-only except New folder in Files. The server resolves the folder from the
+// session id, never from a full path we send.
 (function () {
   const $ = (id) => document.getElementById(id);
   const esc = window.escapeHtml;
@@ -12,6 +13,8 @@
     folderOpen:
       '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 17.5V7.5a2 2 0 0 1 2-2h3.6l2 2h6.4a2 2 0 0 1 2 2v1"/><path d="M3.5 17.5l2.3-5.6a2 2 0 0 1 1.9-1.3H21a1 1 0 0 1 .9 1.4l-2.2 5.3a2 2 0 0 1-1.9 1.2H5.5a2 2 0 0 1-2-1z"/></svg>',
     file: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5z"/><path d="M14 3.5v5h5"/></svg>',
+    folderPlus:
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.6l2 2h7.4a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><path d="M12 10.5v5M9.5 13h5"/></svg>',
   };
 
   function loadPref(key, fallback) {
@@ -40,6 +43,7 @@
     dirs: new Map(), // rel path -> entries | "loading" | { error }
     expanded: new Set([""]),
     file: null, // { path, data, mode }
+    newFolder: null, // { parent, error, busy } while the name box is open
     // Review
     scope: "uncommitted",
     review: null,
@@ -159,17 +163,26 @@
     renderFiles();
   }
 
+  /** The name box for a new folder, shown first inside its parent. */
+  function newFolderHtml(depth) {
+    const nf = wb.newFolder;
+    return `<form class="ft-new" style="--d:${depth}" data-new-folder>
+        ${ICON.folder}<input name="name" placeholder="New folder name" aria-label="New folder name" spellcheck="false" autocomplete="off" ${nf.busy ? "disabled" : ""}>
+      </form>${nf.error ? `<div class="ft-row error" style="--d:${depth}">${esc(nf.error)}</div>` : ""}`;
+  }
+
   function treeHtml(path, depth) {
     const entries = wb.dirs.get(path);
     if (entries === "loading" || entries === undefined) return `<div class="ft-row muted" style="--d:${depth}">Loading…</div>`;
     if (entries.error) return `<div class="ft-row error" style="--d:${depth}">${esc(entries.error)}</div>`;
-    if (!entries.length) return `<div class="ft-row muted" style="--d:${depth}">(empty)</div>`;
-    return entries
+    const box = wb.newFolder?.parent === path ? newFolderHtml(depth) : "";
+    if (!entries.length) return box || `<div class="ft-row muted" style="--d:${depth}">(empty)</div>`;
+    return box + entries
       .map((entry) => {
         const rel = path ? `${path}/${entry.name}` : entry.name;
         if (entry.kind === "dir") {
           const open = wb.expanded.has(rel);
-          return `<button class="ft-row dir" style="--d:${depth}" data-dir="${esc(rel)}" aria-expanded="${open}">${open ? ICON.folderOpen : ICON.folder}<span>${esc(entry.name)}</span></button>${open ? treeHtml(rel, depth + 1) : ""}`;
+          return `<div class="ft-dir"><button class="ft-row dir" style="--d:${depth}" data-dir="${esc(rel)}" aria-expanded="${open}">${open ? ICON.folderOpen : ICON.folder}<span>${esc(entry.name)}</span></button><button class="ft-add" type="button" data-add-in="${esc(rel)}" title="New folder in ${esc(entry.name)}" aria-label="New folder in ${esc(entry.name)}">${ICON.folderPlus}</button></div>${open ? treeHtml(rel, depth + 1) : ""}`;
         }
         const active = wb.file?.path === rel ? " active" : "";
         return `<button class="ft-row file${active}" style="--d:${depth}" data-file="${esc(rel)}">${ICON.file}<span>${esc(entry.name)}</span></button>`;
@@ -192,6 +205,7 @@
       return;
     }
     el.innerHTML = `<div class="wb-bar"><span class="wb-root" title="${esc(wb.cwd ?? "")}">${esc(wb.cwd ?? "")}</span>
+        <button class="icon-btn small ft-newbtn" data-add-in="" title="New folder here" aria-label="New folder in the session folder">${ICON.folderPlus}</button>
         <button class="icon-btn small" data-refresh title="Refresh" aria-label="Refresh files">⟳</button></div>
       <div class="file-tree">${treeHtml("", 0)}</div>`;
     el.querySelector("[data-refresh]").addEventListener("click", () => {
@@ -211,6 +225,74 @@
       });
     }
     for (const row of el.querySelectorAll("[data-file]")) row.addEventListener("click", () => openFile(row.dataset.file));
+    for (const button of el.querySelectorAll("[data-add-in]")) {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        startNewFolder(button.dataset.addIn);
+      });
+    }
+    const form = el.querySelector("[data-new-folder]");
+    if (form) {
+      const input = form.querySelector("input");
+      input.value = wb.newFolder.draft ?? "";
+      if (!wb.newFolder.busy) input.focus();
+      input.addEventListener("input", () => (wb.newFolder.draft = input.value));
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          wb.newFolder = null;
+          renderFiles();
+        }
+      });
+      input.addEventListener("blur", () => {
+        // Clicking away with nothing typed closes the box.
+        setTimeout(() => {
+          if (wb.newFolder && !wb.newFolder.busy && !input.value.trim() && document.activeElement !== input) {
+            wb.newFolder = null;
+            renderFiles();
+          }
+        }, 150);
+      });
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        void createFolder(input.value);
+      });
+    }
+  }
+
+  function startNewFolder(parent) {
+    wb.newFolder = { parent, draft: "", error: "", busy: false };
+    if (parent) wb.expanded.add(parent);
+    if (!wb.dirs.has(parent)) loadDir(parent);
+    renderFiles();
+  }
+
+  async function createFolder(name) {
+    const nf = wb.newFolder;
+    if (!nf || nf.busy) return;
+    if (!name.trim()) {
+      wb.newFolder = null;
+      renderFiles();
+      return;
+    }
+    nf.busy = true;
+    nf.error = "";
+    renderFiles();
+    try {
+      const res = await fetch(`/api/folder?id=${encodeURIComponent(wb.sessionId)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-pi-companion-page": "1" },
+        body: JSON.stringify({ parent: nf.parent, name }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `HTTP ${res.status}`);
+      wb.newFolder = null;
+      await loadDir(nf.parent);
+    } catch (error) {
+      nf.busy = false;
+      nf.error = error.message;
+      nf.draft = name;
+      renderFiles();
+    }
   }
 
   async function openFile(path) {
@@ -594,6 +676,7 @@
       wb.cwd = cwd ?? wb.cwd;
       wb.history = history;
       if (workspaceChanged) {
+        wb.newFolder = null;
         wb.dirs.clear();
         wb.expanded = new Set([""]);
         wb.file = null;

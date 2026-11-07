@@ -5,7 +5,7 @@
 // request can never read outside that folder. Nothing here writes anything.
 
 import { execFile } from "node:child_process";
-import { open, readdir, realpath, stat } from "node:fs/promises";
+import { mkdir, open, readdir, realpath, stat } from "node:fs/promises";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 const MAX_TEXT_BYTES = 1024 * 1024;
@@ -54,6 +54,40 @@ export async function resolveInside(root, relPath = "") {
   });
   if (!isInside(realRoot, realTarget)) throw new WorkbenchError(403, "path is outside the workspace");
   return realTarget;
+}
+
+const RESERVED_WIN = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
+
+/** A new folder's name: one path part, no characters Windows/macOS/Linux refuse. Throws WorkbenchError(400). */
+export function checkFolderName(input) {
+  const name = String(input ?? "").trim();
+  if (!name) throw new WorkbenchError(400, "Give the folder a name.");
+  if (name.length > 120) throw new WorkbenchError(400, "That name is too long (120 characters at most).");
+  if (name === "." || name === "..") throw new WorkbenchError(400, "That name isn't allowed.");
+  // eslint-disable-next-line no-control-regex
+  if (/[\\/:*?"<>|\x00-\x1f]/.test(name)) throw new WorkbenchError(400, 'A folder name can\'t contain \\ / : * ? " < > |');
+  if (/[. ]$/.test(name)) throw new WorkbenchError(400, "A folder name can't end with a dot or a space.");
+  if (RESERVED_WIN.test(name)) throw new WorkbenchError(400, "Windows reserves that name.");
+  return name;
+}
+
+/**
+ * Create folder `name` inside `parentRel` (relative to the workspace `root`). Never overwrites:
+ * a file or folder already there is a 409. Returns the new folder's path relative to the root.
+ */
+export async function makeFolder(root, parentRel, name) {
+  const clean = checkFolderName(name);
+  const parent = await resolveInside(root, parentRel);
+  if (!(await stat(parent)).isDirectory()) throw new WorkbenchError(400, "That isn't a folder.");
+  try {
+    await mkdir(join(parent, clean));
+  } catch (error) {
+    if (error.code === "EEXIST") throw new WorkbenchError(409, `"${clean}" already exists there.`);
+    if (error.code === "EACCES" || error.code === "EPERM") throw new WorkbenchError(403, "No permission to create a folder there.");
+    throw error;
+  }
+  const realRoot = await resolveInside(root, "");
+  return relative(realRoot, join(parent, clean)).split(sep).join("/");
 }
 
 /** Immediate children of a folder: folders first, then files, by name. */

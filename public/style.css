@@ -292,6 +292,21 @@ body.resizing { cursor: col-resize; user-select: none; }
 .ft-row.muted { color: var(--muted); cursor: default; }
 .ft-row svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; color: var(--muted); }
 .ft-row.dir svg { color: var(--accent); }
+/* New folder: a + beside each folder (on hover or focus) and in the bar; the name box sits first inside its parent. */
+.ft-dir { position: relative; display: flex; align-items: center; }
+.ft-dir > .ft-row { flex: 1; min-width: 0; }
+.ft-add { all: unset; position: absolute; right: 4px; display: none; place-items: center; width: 22px; height: 22px; border-radius: 5px;
+  color: var(--muted); cursor: pointer; background: var(--panel); }
+.ft-dir:hover .ft-add, .ft-add:focus-visible { display: inline-grid; }
+.ft-add:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
+.ft-add:focus-visible { outline: 2px solid var(--accent); }
+.ft-add svg, .ft-newbtn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.ft-newbtn { display: inline-grid; place-items: center; }
+.ft-new { display: flex; align-items: center; gap: 6px; padding: 2px 8px 2px calc(8px + var(--d) * 14px); }
+.ft-new svg { width: 15px; height: 15px; flex: none; fill: none; stroke: var(--accent); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.ft-new input { flex: 1; min-width: 0; padding: 3px 7px; border-radius: 6px; border: 1px solid var(--accent); background: var(--panel);
+  color: var(--text); font: inherit; font-size: 12.5px; }
+.ft-new input:focus { outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent); }
 
 .code-view { display: flex; font-family: var(--mono); font-size: 12px; line-height: 1.55; }
 .code-view pre { margin: 0; padding: 10px 0; white-space: pre; }

@@ -27,7 +27,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { isProcessAlive } from "./fsutil.mjs";
 import { createSources, describeSources, nativeId, sourceForId } from "./sources/index.mjs";
 import { APP_ID, companionPort, ensureServer, isPortUp, migrateStateFile, stateDir } from "./start.mjs";
-import { listDir, readFileForView, resolveInside, reviewDiff, reviewStatus, WorkbenchError } from "./workbench.mjs";
+import { listDir, makeFolder, readFileForView, resolveInside, reviewDiff, reviewStatus, WorkbenchError } from "./workbench.mjs";
 
 const HOST = "127.0.0.1";
 const PORT = companionPort();
@@ -734,7 +734,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (req.method !== "GET" && !["/api/dashboards", "/api/favorites", "/api/launch", "/api/settings"].includes(url.pathname)) {
+    if (req.method !== "GET" && !["/api/dashboards", "/api/favorites", "/api/folder", "/api/launch", "/api/settings"].includes(url.pathname)) {
       res.writeHead(405).end();
       return;
     }
@@ -819,6 +819,28 @@ const server = createServer(async (req, res) => {
       }
       res.writeHead(200, { "content-type": image.mimeType, "cache-control": "private, max-age=3600" });
       res.end(image.data);
+      return;
+    }
+
+    if (url.pathname === "/api/folder") {
+      // New folder in the right panel's Files tab: inside the selected session's folder only (the
+      // page sends a session id and a relative parent, never a full path). Page header required.
+      if (req.method !== "POST") {
+        res.writeHead(405).end();
+        return;
+      }
+      if (req.headers["x-pi-companion-page"] !== "1") {
+        res.writeHead(403).end();
+        return;
+      }
+      try {
+        const root = await workspaceRootFor(url.searchParams.get("id") ?? "");
+        const body = JSON.parse(await readBody(req));
+        sendJson(res, 201, { path: await makeFolder(root, body?.parent ?? "", body?.name) });
+      } catch (error) {
+        if (error instanceof WorkbenchError) sendJson(res, error.status, { error: error.message });
+        else sendJson(res, error instanceof SyntaxError ? 400 : 500, { error: error.message });
+      }
       return;
     }
 
