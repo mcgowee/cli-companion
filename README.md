@@ -56,7 +56,9 @@ next to it:
   **CX**, read from `~/.codex/sessions` with titles from `~/.codex/session_index.jsonl`:
   prompts, replies, reasoning summaries, tool calls with their output, compactions and pasted
   images. A Codex that is open is listed under Active (on Windows, from the lock Codex holds
-  on the session while it runs), as running or idle from its last task event. The composer's
+  on a loaded session, matched against the Codex windows that are open, since Codex's background
+  service keeps a session loaded for a while after its window quits), as running or idle from its
+  last task event. The composer's
   button is **Copy for Codex**. Tested with Codex CLI 0.166.
 - **Send text to Pi (bottom composer)**: write or collect text, then **Put in Pi's input**
   (**Ctrl+Enter**). It lands in the running Pi CLI's prompt box, with a short notice in the

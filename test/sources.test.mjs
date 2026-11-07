@@ -48,3 +48,18 @@ test("usage counts any source by id", () => {
   ]);
   assert.equal(u.workspaces[0].codex, 1);
 });
+
+test("Codex: loaded sessions without a window don't count as running", async () => {
+  const { pickRunning } = await import("../server/sources/codex.mjs");
+  const loaded = [
+    { id: "old", status: "idle", mtimeMs: 100 },
+    { id: "new", status: "idle", mtimeMs: 300 },
+    { id: "work", status: "busy", mtimeMs: 50 },
+  ];
+  const ids = (windows) => pickRunning(loaded, windows).map((s) => s.id);
+  assert.deepEqual(ids(0), ["work"]); // a busy turn is running whatever the count says
+  assert.deepEqual(ids(1), ["work"]);
+  assert.deepEqual(ids(2), ["work", "new"]);
+  assert.deepEqual(ids(null), ["old", "new", "work"]); // count unknown: every loaded session
+  assert.deepEqual(pickRunning(loaded.slice(0, 2), 1).map((s) => s.id), ["new"]);
+});

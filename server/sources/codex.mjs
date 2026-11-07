@@ -1,8 +1,12 @@
 // Codex CLI, read-only: transcripts from ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl, titles
 // from ~/.codex/session_index.jsonl. Running: Codex holds ~/.codex/thread-writer-locks/<id>.lock
-// while a session is open (on Windows a read of a held lock fails with EBUSY); busy or idle then
-// comes from the last task event in the transcript.
+// while a session is loaded (on Windows a read of a held lock fails with EBUSY); busy or idle then
+// comes from the last task event in the transcript. The lock is held by Codex's background
+// app-server, which keeps a session loaded for a while after its window quits, so a held lock alone
+// isn't enough: with N Codex windows open (codex.exe processes outside the app-server's folder),
+// busy sessions plus the most recently written idle ones, up to N in all, count as running.
 
+import { execFile } from "node:child_process";
 import { closeSync, existsSync, openSync, readSync } from "node:fs";
 import { open, readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -74,6 +78,37 @@ function isLockHeld(file) {
   } finally {
     if (fd !== undefined) closeSync(fd);
   }
+}
+
+/**
+ * How many Codex windows are open (Windows only): codex.exe processes that aren't the background
+ * app-server, whose copy lives under ~/.codex/packages. null when it can't be told.
+ */
+function countCodexWindows() {
+  return new Promise((done) => {
+    execFile(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-Command", "(Get-Process codex -ErrorAction SilentlyContinue).Path"],
+      { timeout: 5000, windowsHide: true },
+      (error, stdout) => {
+        if (error) return done(null);
+        const paths = stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+        done(paths.filter((path) => !/[\\/]packages[\\/]app-server-daemon[\\/]/i.test(path)).length);
+      },
+    );
+  });
+}
+
+/**
+ * Which loaded sessions have a window: busy ones first, then the most recently written, up to the
+ * number of open windows. With the window count unknown, every loaded session counts.
+ * @param {{id: string, status: string, mtimeMs: number}[]} loaded
+ * @param {number | null} windows
+ */
+export function pickRunning(loaded, windows) {
+  if (windows === null) return loaded;
+  const ordered = [...loaded].sort((a, b) => (b.status === "busy") - (a.status === "busy") || b.mtimeMs - a.mtimeMs);
+  return ordered.slice(0, Math.max(windows, ordered.filter((s) => s.status === "busy").length));
 }
 
 export function codexSource(env = process.env) {
@@ -170,14 +205,17 @@ export function codexSource(env = process.env) {
       } catch {
         // gone
       }
+      const loaded = [];
       for (const name of names) {
         const match = name.match(/^([0-9a-f][0-9a-f-]{7,63})\.lock$/i);
         if (!match || !isLockHeld(join(lockDir, name))) continue;
         let status = "idle";
+        let mtimeMs = 0;
         const file = fileById.get(match[1]);
         if (file) {
           try {
             const stats = await stat(file);
+            mtimeMs = stats.mtimeMs;
             const handle = await open(file, "r");
             try {
               const length = Math.min(stats.size, 512 * 1024);
@@ -189,8 +227,10 @@ export function codexSource(env = process.env) {
             // keep idle
           }
         }
-        map.set(`${PREFIX}${match[1]}`, status);
+        loaded.push({ id: match[1], status, mtimeMs });
       }
+      const windows = loaded.length ? await countCodexWindows() : 0;
+      for (const { id, status } of pickRunning(loaded, windows)) map.set(`${PREFIX}${id}`, status);
     }
     runningCache = { at: Date.now(), map };
     return map;
