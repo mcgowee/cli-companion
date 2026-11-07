@@ -38,6 +38,8 @@ export function claudeSource(env = process.env) {
     if (Date.now() - runningCache.at < 3000) return runningCache.map;
     const map = new Map();
     map.supported = false;
+    // Where each running session is open: "desktop" (the Claude app) or "terminal".
+    map.where = new Map();
     try {
       map.supported = (await stat(runningDir)).isDirectory();
       for (const name of await readdir(runningDir)) {
@@ -48,6 +50,7 @@ export function claudeSource(env = process.env) {
           // The same session can be open in two processes (CLI and desktop app): busy wins.
           const id = `${CLAUDE_PREFIX}${info.sessionId}`;
           if (map.get(id) !== "busy") map.set(id, info.status === "busy" ? "busy" : "idle");
+          if (map.where.get(id) !== "terminal") map.where.set(id, /desktop/i.test(String(info.entrypoint ?? "")) ? "desktop" : "terminal");
         } catch {
           // Half-written or unreadable: skip it this time.
         }
@@ -58,6 +61,8 @@ export function claudeSource(env = process.env) {
     if (map.supported) {
       for (const id of resumedIds(await commandLines())) {
         if (!map.has(`${CLAUDE_PREFIX}${id}`)) map.set(`${CLAUDE_PREFIX}${id}`, "idle");
+        // The desktop app also runs `claude --resume=<id>`: its status file says where it is.
+        if (!map.where.has(`${CLAUDE_PREFIX}${id}`)) map.where.set(`${CLAUDE_PREFIX}${id}`, "terminal");
       }
     }
     runningCache = { at: Date.now(), map };

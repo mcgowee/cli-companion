@@ -37,7 +37,7 @@
       return;
     }
     menu.innerHTML = `
-      <div class="launch-head"><span>${kind === "workspace" ? "Open in a terminal" : "Resume in a terminal"}</span>
+      <div class="launch-head"><span>${kind === "workspace" || data.options?.some((o) => o.action === "terminal") ? "Open in a terminal" : "Resume in a terminal"}</span>
         <code title="${esc(data.cwd)}">${esc(data.cwd)}</code></div>
       ${data.options
         .map(

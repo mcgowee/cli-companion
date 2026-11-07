@@ -362,10 +362,12 @@ async function workspaceRootFor(id) {
 async function runningMap() {
   const merged = new Map();
   merged.supported = new Set();
+  merged.where = new Map();
   for (const source of SOURCES) {
     if (!source.enabled || !source.running) continue;
     const map = await source.running();
     for (const [id, status] of map) merged.set(id, status);
+    for (const [id, where] of map.where ?? []) merged.where.set(id, where);
     if (map.supported) merged.supported.add(source.id);
   }
   return merged;
@@ -389,8 +391,15 @@ async function launchTarget(kind, id) {
     if (!meta?.cwd) throw new LaunchError("Unknown session.");
     const source = sourceById(meta.source);
     const sessionId = nativeId(source, id);
-    const running = source.live ? Boolean(sessions.get(id) && !sessions.get(id).ended) : (await runningMap()).has(id);
-    return { kind, cwd: await existingDir(meta.cwd), source, sessionId, running };
+    let running;
+    let where;
+    if (source.live) running = Boolean(sessions.get(id) && !sessions.get(id).ended);
+    else {
+      const map = await runningMap();
+      running = map.has(id);
+      where = map.where.get(id);
+    }
+    return { kind, cwd: await existingDir(meta.cwd), source, sessionId, running, where };
   }
   if (kind === "workspace") {
     const meta = [...savedById.values()].find((m) => workspaceKey(m.cwd) === id);
@@ -420,9 +429,18 @@ function launchOptions(target) {
     ...(disabled ? { disabled } : {}),
   });
   if (target.kind === "session") {
-    const disabled = target.running ? "This session is already running. Use its open terminal." : undefined;
     const command = resumeCommand(target.source, target.sessionId);
-    return [make({ action: "resume", label: `Resume in ${target.source.label}`, command }, disabled)];
+    if (!target.running) return [make({ action: "resume", label: `Resume in ${target.source.label}`, command })];
+    // Running: a plain terminal in its folder is still useful. Resuming would put the same session
+    // in two places at once, which can mix up its history, so say where it is open instead.
+    const where =
+      target.where === "desktop"
+        ? "Open in the Claude desktop app. To move it to a terminal, close it there first; Resume then appears here."
+        : "Already running in a terminal. Switch to that window.";
+    return [
+      make({ action: "terminal", label: "Terminal here", command: "" }),
+      make({ action: "resume", label: `Resume in ${target.source.label}`, command }, where),
+    ];
   }
   return workspaceActions(SOURCES).map((option) => make(option));
 }

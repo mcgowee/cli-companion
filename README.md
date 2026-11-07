@@ -36,8 +36,9 @@ next to it:
   opens a menu. For a workspace: **Terminal here**, then start or continue each installed CLI
   (**Start Pi**, `pi -c`, **Start Claude Code**, **Start Codex**, `codex resume --last`), and
   **Copy folder path**. For a saved session: resume it in its own CLI (`pi --session <id>`,
-  `claude --resume <id>`, `codex resume <id>`). Running sessions have no icon, since their
-  terminal is already open. Each option has **Copy** (the line to paste yourself, such as
+  `claude --resume <id>`, `codex resume <id>`). For a running session the menu offers
+  **Terminal here** and says where the session is open (a terminal, or the Claude desktop app)
+  instead of resuming it twice. Each option has **Copy** (the line to paste yourself, such as
   `cd 'C:\AI\pi'; pi -c` in PowerShell) and **Open**, which starts a new terminal window in
   that folder running the command: Windows Terminal or a PowerShell window on Windows,
   Terminal or iTerm2 on macOS, and the first terminal found on Linux (x-terminal-emulator,

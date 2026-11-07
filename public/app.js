@@ -188,9 +188,11 @@
       }
       <span class="sago">${esc(ago)}</span>
     </button>`;
-    // Saved (not running) sessions in the tree get the terminal icon: resume in a new terminal.
-    if (wsName || isActive(s)) return row;
-    return `<div class="row-wrap">${row}${termButton("session", s.id, `Resume ${rowTitle(s)} in a terminal`)}</div>`;
+    // Sessions in the tree get the terminal icon: resume a saved one in a new terminal; for a
+    // running one, a terminal in its folder and where the session is open.
+    if (wsName) return row;
+    const label = isActive(s) ? `Open a terminal for ${rowTitle(s)}` : `Resume ${rowTitle(s)} in a terminal`;
+    return `<div class="row-wrap">${row}${termButton("session", s.id, label)}</div>`;
   }
 
   /** The small terminal icon that opens the Open / Copy menu (public/launch.js). */
