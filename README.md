@@ -108,7 +108,7 @@ Needs [Node.js](https://nodejs.org) 20 or newer.
 **Without Pi** (Claude Code, or just to look around):
 
 ```bash
-npx cli-companion
+npx github:mcgowee/cli-companion
 ```
 
 This starts the companion server if it is not running and opens the window. It opens as an
@@ -116,7 +116,7 @@ app window if Chrome, Chromium or Edge is installed, otherwise in your default b
 have the `cli-companion` command on your PATH, install it once:
 
 ```bash
-npm install -g cli-companion
+npm install -g github:mcgowee/cli-companion
 cli-companion              # start (if needed) and open the window
 cli-companion --no-open    # start the server only
 cli-companion --foreground # run the server in this terminal; Ctrl+C stops it
