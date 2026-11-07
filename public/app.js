@@ -165,6 +165,12 @@
     return !cliSources.forRow(s).live && Boolean(s.active) && s.runStatus !== "idle";
   }
 
+  /** Running and in the middle of a turn (not waiting for you). */
+  function isWorking(s) {
+    const status = liveStatus(s.id);
+    return status ? status !== "idle" : fileBusy(s);
+  }
+
   function activityOf(s) {
     return Math.max(state.sessions.get(s.id)?.lastEventAt ?? 0, s.lastActivity ?? 0);
   }
@@ -221,9 +227,11 @@
     groups.sort((a, b) => (b.lastActivity ?? 0) - (a.lastActivity ?? 0));
 
     // Active: every running session, flat, with its workspace name. They stay in the tree too.
+    // Waiting for you first, the one that finished most recently on top (its last write is when
+    // it finished); sessions still working go below them, so the top is always what to do next.
     const activeRows = groups
       .flatMap((ws) => ws.sessions.filter(isActive).map((s) => ({ s, ws })))
-      .sort((a, b) => activityOf(b.s) - activityOf(a.s));
+      .sort((a, b) => isWorking(a.s) - isWorking(b.s) || activityOf(b.s) - activityOf(a.s));
     const activeHtml = `<div class="section-head side-section">Active${activeRows.length ? ` <span class="ws-count">${activeRows.length}</span>` : ""}</div>
       <div class="active-list">${
         activeRows.length
@@ -325,6 +333,8 @@
       state.workspaces = (await res.json()).workspaces ?? [];
       state.workspacesLoaded = true;
       renderSidebar();
+      // While a session is working, look again soon so it moves to the top of Active when it finishes.
+      if (state.workspaces.some((ws) => ws.sessions?.some((s) => isActive(s) && isWorking(s)))) scheduleWorkspaces(3000);
       if (!state.sessions.has(state.selectedId)) renderHeader();
     } catch (error) {
       console.warn(error);
