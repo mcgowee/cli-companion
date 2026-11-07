@@ -1,12 +1,13 @@
 // Settings page (#/settings): which CLIs to show and where their folders are, which terminal
 // Open uses, and suggested replies (a local Ollama model). Saved by the server in
-// ~/.cli-companion/settings.json.
+// ~/.cli-companion/settings.json. Also the Shortcut buttons (Start menu / desktop), which act at once.
 (function () {
   const esc = window.escapeHtml;
   const root = document.getElementById("page-settings");
   let data = null; // GET /api/settings
   let models = null; // GET /api/suggest/models: { url, models } or { error }
   let status = { text: "", kind: "" };
+  let shortcut = null; // GET /api/shortcut
 
   async function load() {
     try {
@@ -20,6 +21,54 @@
       models = await res.json();
     } catch {
       models = { error: "Couldn't ask the companion server." };
+    }
+    try {
+      const res = await fetch("/api/shortcut", { cache: "no-store" });
+      shortcut = res.ok ? await res.json() : null;
+    } catch {
+      shortcut = null;
+    }
+  }
+
+  // Shortcut: buttons that act at once (not part of Save).
+  function shortcutHtml() {
+    if (!shortcut) return "";
+    if (!shortcut.supported) return `<h2>Shortcut</h2><p class="set-hint">Shortcuts aren't supported on this system yet.</p>`;
+    const names = { start: data.platform === "win32" ? "Start menu" : "Applications menu", desktop: "Desktop" };
+    const rows = Object.entries(shortcut.places)
+      .map(
+        ([place, p]) => `<div class="sc-row">
+          <span><b>${esc(names[place] ?? place)}</b> <small>${p.exists ? "added" : "not added"}</small></span>
+          <button class="btn small" type="button" data-shortcut="${esc(place)}" data-on="${p.exists ? "0" : "1"}">${p.exists ? "Remove" : "Add"}</button>
+        </div>`,
+      )
+      .join("");
+    return `<h2>Shortcut</h2>
+      <p class="set-hint">A <b>CLI Companion</b> shortcut starts the companion if it isn't running and opens this window, with no
+        terminal. Pin it to the taskbar or Start from its right-click menu. Takes effect at once.</p>
+      <div class="sc-list">${rows}</div>
+      <p class="set-status sc-status" role="status"></p>`;
+  }
+
+  async function toggleShortcut(button) {
+    button.disabled = true;
+    const note = root.querySelector(".sc-status");
+    try {
+      const res = await fetch("/api/shortcut", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-pi-companion-page": "1" },
+        body: JSON.stringify({ place: button.dataset.shortcut, on: button.dataset.on === "1" }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `HTTP ${res.status}`);
+      shortcut = out;
+      render();
+    } catch (error) {
+      button.disabled = false;
+      if (note) {
+        note.textContent = error.message;
+        note.className = "set-status sc-status error";
+      }
     }
   }
 
@@ -136,7 +185,9 @@
           <button class="btn primary" type="submit">Save</button>
         </div>
       </form>
+      ${shortcutHtml()}
     </div>`;
+    for (const b of root.querySelectorAll("[data-shortcut]")) b.addEventListener("click", () => toggleShortcut(b));
     root.querySelector("#settings-reset").addEventListener("click", () => {
       status = { text: "", kind: "" };
       render();

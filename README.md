@@ -161,6 +161,8 @@ next to it:
     Saved in `~/.cli-companion/settings.json`; changes apply at once.
     **Appearance**: theme (match this computer, light or dark), and switches for cost estimates and
     for git branch and changes. For text size, use the browser zoom.
+    **Shortcut**: add or remove a **CLI Companion** shortcut in the Start menu or on the desktop
+    (see Install).
   - **About** shows the version, this server's address and folders, shortcuts and privacy,
     and has **Restart server** (picks up new code; open sessions stay open).
 
@@ -185,12 +187,20 @@ cli-companion --no-open    # start the server only
 cli-companion --foreground # run the server in this terminal; Ctrl+C stops it
 cli-companion --restart    # stop the running server, start a fresh one, open the window
 cli-companion --stop       # stop the running server
+cli-companion --shortcut   # add a CLI Companion shortcut to the Start menu (--shortcut=desktop)
 cli-companion --help
 ```
 
 The server keeps running in the background after the command exits (closing the window
 doesn't stop it; use `--stop`, or **Restart server** on the About page). You can also open
 <http://127.0.0.1:30143> yourself.
+
+**A shortcut to click:** Settings → **Shortcut** → **Add** (or `cli-companion --shortcut`) puts
+a **CLI Companion** shortcut, with its own icon, in the Start menu, or on the desktop. It starts
+the companion if it isn't running and opens the window, with no terminal; right-click it to pin
+it to the taskbar or Start. On Linux it is a `.desktop` file in `~/.local/share/applications`;
+macOS isn't supported yet. The shortcut runs the copy that made it, so remove it in Settings
+before you uninstall.
 
 **With Pi**, install it as a Pi package. This adds the live view of Pi sessions (status,
 streaming text, tools, compaction) and **Put in Pi's input**:

@@ -26,6 +26,7 @@ import { createTokenTracker } from "./token-usage.mjs";
 import { createSearchIndex } from "./search.mjs";
 import { copyLine, LaunchError, openPlan, quotePath, resumeCommand, terminalsFor, workspaceActions } from "./launch.mjs";
 import { handoffBrief, handoffFileName, saveHandoff, sessionMarkdown } from "./handoff.mjs";
+import { PLACES, setShortcut, shortcutStatus } from "./shortcut.mjs";
 import { loadSettings, saveSettings, SettingsError, sourceEnv, validateSettings } from "./settings.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import { isProcessAlive } from "./fsutil.mjs";
@@ -774,7 +775,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (req.method !== "GET" && !["/api/dashboards", "/api/favorites", "/api/folder", "/api/handoff", "/api/launch", "/api/settings"].includes(url.pathname)) {
+    if (req.method !== "GET" && !["/api/dashboards", "/api/favorites", "/api/folder", "/api/handoff", "/api/launch", "/api/settings", "/api/shortcut"].includes(url.pathname)) {
       res.writeHead(405).end();
       return;
     }
@@ -1026,6 +1027,26 @@ const server = createServer(async (req, res) => {
       } catch (error) {
         if (error instanceof WorkbenchError) sendJson(res, error.status, { error: error.message });
         else throw error;
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/shortcut") {
+      // GET: is there a "CLI Companion" shortcut in the Start menu / on the desktop. POST (page
+      // header) { place: "start"|"desktop", on }: make or remove it. Only this copy's own launcher.
+      try {
+        if (req.method === "POST") {
+          if (req.headers["x-pi-companion-page"] !== "1") {
+            res.writeHead(403).end();
+            return;
+          }
+          const body = JSON.parse(await readBody(req));
+          if (!PLACES.includes(body.place)) throw new SyntaxError("place must be start or desktop");
+          await setShortcut(body.place, body.on === true);
+        }
+        sendJson(res, 200, await shortcutStatus());
+      } catch (error) {
+        sendJson(res, error instanceof SyntaxError ? 400 : 500, { error: error.message });
       }
       return;
     }

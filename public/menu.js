@@ -133,7 +133,8 @@
       files read-only. The only files it writes are its own, in <code>~/.cli-companion</code>: your settings, favorites,
       token counts per session file (numbers only, no text) and your list of custom dashboards (<code>${esc(info.dashboardsFile || "~/.cli-companion/dashboards.json")}</code>), and,
       only when you click <b>Continue in …</b> under <b>Hand off</b>, a brief of that session in <code>~/.cli-companion/handoffs</code>
-      (the newest 20 are kept). Its only requests are the online check for
+      (the newest 20 are kept). Outside that folder it writes only the <b>CLI Companion</b> shortcut, when you click
+      <b>Add</b> under Settings → Shortcut. Its only requests are the online check for
       dashboards on this computer and, if you switch on suggested replies, the Ollama on this computer
       (only local models; the last message of the session you're viewing goes to it). It never contacts
       anything outside this computer. It starts a program only when

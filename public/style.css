@@ -163,6 +163,11 @@ a.dash-card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--li
 .set-status { margin-right: auto; font-size: 13px; }
 .set-status.ok { color: var(--ok); }
 .set-status.error { color: var(--bad); }
+.sc-list { display: grid; gap: 6px; margin-top: 10px; max-width: 460px; }
+.sc-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.sc-row small { color: var(--muted); margin-left: 6px; }
+.sc-status:empty { display: none; }
+.sc-status { margin-top: 8px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .dash-add-foot { grid-column: 1 / -1; display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
 .dash-msg { color: var(--muted); font-size: 12.5px; }

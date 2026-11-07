@@ -14,6 +14,8 @@ Usage: cli-companion [options]
   --restart         Stop the running server, start a fresh one, open the window
   --stop            Stop the running server
   --foreground      Run the server in this terminal (Ctrl+C stops it)
+  --shortcut        Add a CLI Companion shortcut to the Start menu (apps menu on Linux)
+  --shortcut=desktop  … on the desktop instead
   --port <n>        Use another port (default 30143, or CLI_COMPANION_PORT)
   --version         Print the version
   --help            Show this help
@@ -40,6 +42,15 @@ for (let i = 0; i < args.length; i++) {
   else if (arg === "--foreground") opts.foreground = true;
   else if (arg === "--restart") opts.restart = true;
   else if (arg === "--stop") opts.stop = true;
+  else if (arg === "--shortcut" || arg === "--shortcut=start" || arg === "--shortcut=desktop") {
+    const { setShortcut } = await import("../server/shortcut.mjs");
+    try {
+      console.log(`Added ${await setShortcut(arg.endsWith("desktop") ? "desktop" : "start", true)}`);
+      process.exit(0);
+    } catch (error) {
+      fail(error.message);
+    }
+  }
   else if (arg === "--port" || arg.startsWith("--port=")) {
     const value = arg.includes("=") ? arg.split("=")[1] : args[++i];
     const port = /^\d+$/.test(value ?? "") ? Number(value) : NaN;
