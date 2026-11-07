@@ -231,7 +231,11 @@
       <div class="section-head side-section">Workspaces</div>`;
 
     $("empty-hint").hidden = groups.length > 0 || Boolean(filter);
-    if (!groups.length && !filter && !state.selectedId) renderWelcome();
+    // The welcome card is for a real first run: only once the list has loaded, and gone again
+    // as soon as a session exists.
+    const welcome = transcriptEl.querySelector(".welcome");
+    if (!groups.length && !filter && !state.selectedId && state.workspacesLoaded) renderWelcome();
+    else if (welcome && groups.length) transcriptEl.innerHTML = `<div class="placeholder" id="placeholder">Pick a session on the left.</div>`;
     list.innerHTML = activeHtml + groups
       .map((ws) => {
         const open = isWsOpen(ws);
@@ -317,6 +321,7 @@
       const res = await fetch("/api/workspaces", { cache: "no-store" });
       if (!res.ok) throw new Error(`workspaces ${res.status}`);
       state.workspaces = (await res.json()).workspaces ?? [];
+      state.workspacesLoaded = true;
       renderSidebar();
       if (!state.sessions.has(state.selectedId)) renderHeader();
     } catch (error) {
