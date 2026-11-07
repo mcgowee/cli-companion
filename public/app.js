@@ -50,6 +50,19 @@
     return parts[parts.length - 1] ?? path;
   }
 
+  /** 1.2k, 34k, 1.2M, 3.4B */
+  function fmtCount(n) {
+    if (!Number.isFinite(n)) return "?";
+    for (const [size, unit] of [[1e9, "B"], [1e6, "M"], [1e3, "k"]]) {
+      if (n >= size) return `${(n / size).toFixed(n >= size * 100 ? 0 : 1).replace(/\.0$/, "")}${unit}`;
+    }
+    return String(Math.round(n));
+  }
+
+  function fmtUsd(n) {
+    return n >= 100 ? `$${Math.round(n)}` : n >= 0.01 ? `$${n.toFixed(2)}` : "<$0.01";
+  }
+
   function fmtTokens(n) {
     if (typeof n !== "number") return "?";
     return n >= 1000 ? `${(n / 1000).toFixed(n >= 100_000 ? 0 : 1)}k` : String(n);
@@ -625,6 +638,117 @@
   }, 2000);
 
   function renderHeader() {
+    renderHeaderParts();
+    renderUsage();
+  }
+
+  /* ── token use (from the session file, /api/history → usage) ── */
+
+  function usageTotal(u) {
+    return u.tokens.input + u.tokens.output + u.tokens.cacheRead + u.tokens.cacheWrite;
+  }
+
+  function timeOf(at) {
+    const d = new Date(at);
+    if (Number.isNaN(d.getTime())) return "";
+    if (d.toDateString() === new Date().toDateString()) return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  }
+
+  function renderUsage() {
+    const box = $("usage");
+    const u = state.history?.usage;
+    const live = state.sessions.get(state.selectedId);
+    const liveContext = live?.context && typeof live.context.contextWindow === "number";
+    if (!u || !state.selectedId || (!usageTotal(u) && !u.rateLimits)) {
+      box.hidden = true;
+      $("usage-pop").hidden = true;
+      if (!liveContext) $("context").hidden = true;
+      return;
+    }
+    box.hidden = false;
+    const limit = u.rateLimits?.length ? u.rateLimits.reduce((a, b) => (b.usedPercent > a.usedPercent ? b : a)) : undefined;
+    const approx = u.costKind === "claude-estimate" ? "~" : "";
+    const chip = [`${fmtCount(usageTotal(u))} tokens`];
+    if (u.costUsd) chip.push(`${approx}${fmtUsd(u.costUsd)}`);
+    else if (limit) chip.push(`${limit.label.replace(" limit", "")} ${Math.round(limit.usedPercent)}%`);
+    $("usage-chip").textContent = chip.join(" · ");
+
+    // Context: the live Pi meter wins; otherwise what the file last recorded.
+    const ctxEl = $("context");
+    const bar = ctxEl.querySelector(".context-bar");
+    if (!liveContext) {
+      const ctx = u.context;
+      ctxEl.hidden = !ctx?.tokens;
+      if (ctx?.tokens) {
+        const pct = ctx.window ? (ctx.tokens / ctx.window) * 100 : null;
+        bar.hidden = pct === null;
+        $("context-fill").style.width = `${Math.min(100, pct ?? 0)}%`;
+        $("context-fill").className = `context-fill${pct >= 85 ? " hot" : pct >= 70 ? " warm" : ""}`;
+        $("context-text").textContent =
+          pct === null ? `${fmtTokens(ctx.tokens)} in context` : `${fmtTokens(ctx.tokens)} / ${fmtTokens(ctx.window)} · ${Math.round(pct)}%`;
+        ctxEl.title = `Context at the last reply${ctx.at ? ` (${timeOf(ctx.at)})` : ""}${pct === null ? ". The session file doesn't say how big the window is." : ""}`;
+      }
+    } else {
+      bar.hidden = false;
+      ctxEl.title = "Context used";
+    }
+
+    const row = (label, value, note = "") => `<div class="u-row"><span>${label}</span><b>${value}</b>${note ? `<small>${note}</small>` : ""}</div>`;
+    const t = u.tokens;
+    const parts = [
+      `<div class="u-head">Token use<span>${esc(u.model ?? "")}</span></div>`,
+      row("Total", fmtCount(usageTotal(u)), `${u.turns.toLocaleString()} model calls`),
+      row("Input", fmtCount(t.input), "new, not from cache"),
+      t.cacheWrite ? row("Cache write", fmtCount(t.cacheWrite)) : "",
+      row("Cache read", fmtCount(t.cacheRead), "re-read from cache, much cheaper than new input"),
+      row("Output", fmtCount(t.output)),
+    ];
+    if (u.context?.tokens) {
+      const value = u.context.window ? `${fmtCount(u.context.tokens)} / ${fmtCount(u.context.window)}` : fmtCount(u.context.tokens);
+      parts.push(row("Context", value, "at the last reply"));
+    }
+    if (u.costUsd) {
+      const note =
+        u.costKind === "claude-estimate"
+          ? `Claude Code's own estimate at API prices${u.costAt ? `, last saved ${timeOf(u.costAt)}` : ""}. A Pro or Max plan isn't billed this.`
+          : "From the provider's prices, as Pi recorded them.";
+      parts.push(row("Cost", `${approx}${fmtUsd(u.costUsd)}`, note));
+    }
+    if (u.lines) parts.push(row("Lines changed", `+${u.lines.added.toLocaleString()} −${u.lines.removed.toLocaleString()}`, "as Claude Code counts them"));
+    for (const l of u.rateLimits ?? []) {
+      const note = [l.resetsAt && `resets ${timeOf(l.resetsAt)}`, l.at && `as of ${timeOf(l.at)}`].filter(Boolean).join(" · ");
+      parts.push(row(esc(l.label), `${Math.round(l.usedPercent)}% used`, note));
+    }
+    parts.push(`<p class="u-foot">Read from the session file. Totals for all sessions: <a href="#/dashboards/usage">Usage overview</a>.</p>`);
+    $("usage-pop").innerHTML = parts.join("");
+  }
+
+  function closeUsagePop(focusChip) {
+    $("usage-pop").hidden = true;
+    $("usage-chip").setAttribute("aria-expanded", "false");
+    if (focusChip) $("usage-chip").focus();
+  }
+  $("usage-chip").addEventListener("click", (event) => {
+    event.stopPropagation();
+    const pop = $("usage-pop");
+    pop.hidden = !pop.hidden;
+    $("usage-chip").setAttribute("aria-expanded", String(!pop.hidden));
+    if (!pop.hidden) {
+      // Open toward whichever side has room (the header wraps on narrow windows).
+      const chip = $("usage-chip").getBoundingClientRect();
+      const main = $("topbar").getBoundingClientRect();
+      pop.classList.toggle("align-left", chip.right - pop.offsetWidth < main.left + 8);
+    }
+  });
+  document.addEventListener("click", (event) => {
+    if (!$("usage-pop").hidden && !$("usage").contains(event.target)) closeUsagePop(false);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !$("usage-pop").hidden) closeUsagePop(true);
+  });
+
+  function renderHeaderParts() {
     const s = state.sessions.get(state.selectedId);
     if (!s && state.selectedId) {
       renderSavedHeader();
@@ -859,6 +983,7 @@
       renderTranscript();
       considerSuggest();
       if (!s) renderHeader();
+      else renderUsage();
       if (stick) scrollToBottom();
       notifyWorkbench(true);
     } catch (error) {
@@ -888,6 +1013,13 @@
     notifyWorkbench(false);
     loadHistory();
   }
+
+  /** Show a session from another page (e.g. Usage overview's top sessions). */
+  window.openSession = (id) => {
+    state.pinnedByUser = true;
+    if (location.hash && location.hash !== "#/") location.hash = "#/";
+    select(id);
+  };
 
   /** Tell the right panel which session (and folder) is shown. */
   function notifyWorkbench(historyChanged) {

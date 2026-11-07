@@ -243,6 +243,8 @@
         </details>
       </section>
 
+      ${tokensSection(u)}
+
       <section class="chart-card">
         <div class="chart-head">
           <h2>Busiest workspaces${u.workspacesUsed > u.workspaces.length ? ` <span class="h2-note">top ${u.workspaces.length} of ${u.workspacesUsed}</span>` : ""}</h2>
@@ -260,7 +262,98 @@
         renderUsage();
       });
     }
-    if (u) drawDaily(u.daily, series);
+    for (const b of root.querySelectorAll("[data-open-session]")) {
+      b.addEventListener("click", () => window.openSession?.(b.dataset.openSession));
+    }
+    drawCharts();
+    // The first time, the server is still reading session files: ask again shortly.
+    clearTimeout(state.rescan);
+    if (u?.tokens?.scanning) {
+      state.rescan = setTimeout(async () => {
+        if (root.hidden || !root.querySelector("#usage-chart")) return;
+        await loadUsage();
+        renderUsage();
+      }, 2000);
+    }
+  }
+
+  function drawCharts() {
+    const u = state.usage;
+    if (!u) return;
+    drawDaily(u.daily, seriesOf(u));
+    if (u.tokens) drawDaily(u.tokens.daily, tokenSeries(u.tokens), { boxId: "tokens-chart", fmt: fmtCount, what: "Tokens per day" });
+  }
+
+  /* ── tokens (from /api/usage → tokens) ── */
+
+  function fmtCount(n) {
+    for (const [size, unit] of [[1e9, "B"], [1e6, "M"], [1e3, "k"]]) {
+      if (n >= size) return `${(n / size).toFixed(n >= size * 100 ? 0 : 1).replace(/\.0$/, "")}${unit}`;
+    }
+    return String(Math.round(n));
+  }
+  const fmtUsd = (n) => (n >= 100 ? `$${Math.round(n).toLocaleString()}` : `$${n.toFixed(2)}`);
+  const tokenSum = (b) => b.input + b.output + b.cacheRead + b.cacheWrite;
+
+  function tokenSeries(t) {
+    const ids = t.sources.filter((id) => tokenSum(t.bySource[id]) > 0);
+    return ids.map((id) => ({ id, label: cliSources.get(id).label, tag: cliSources.get(id).tag || cliSources.get(id).label }));
+  }
+
+  function tokensSection(u) {
+    const t = u.tokens;
+    if (!t) return "";
+    const series = tokenSeries(t);
+    const all = Object.values(t.bySource).reduce(
+      (a, b) => ({ input: a.input + b.input, output: a.output + b.output, cacheRead: a.cacheRead + b.cacheRead, cacheWrite: a.cacheWrite + b.cacheWrite, turns: a.turns + b.turns }),
+      { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, turns: 0 },
+    );
+    const costs = series.filter((x) => t.bySource[x.id].costUsd > 0);
+    const scanning = t.scanning
+      ? `<p class="scan-note" role="status">Reading session files for token counts… ${t.scanning.done} of ${t.scanning.total}. The first time takes a few seconds; after that only new lines are read.</p>`
+      : "";
+    const costTile = costs.length
+      ? `<div class="tile"><span class="tile-label">Estimated cost</span><span class="tile-value">${fmtUsd(costs.reduce((s, x) => s + t.bySource[x.id].costUsd, 0))}</span>
+          <span class="tile-delta">${costs.map((x) => `${fmtUsd(t.bySource[x.id].costUsd)} ${esc(x.label)}`).join(" · ")}</span></div>`
+      : "";
+    const top = t.topSessions.length
+      ? `<div class="top-sessions">${t.topSessions
+          .map(
+            (s) => `<button class="top-row" type="button" data-open-session="${esc(s.id)}" title="${esc(s.cwd ?? "")}">
+            <i class="sw ${esc(s.source)}" aria-hidden="true"></i>
+            <span class="top-name">${esc(s.name || "(untitled)")}</span>
+            <span class="top-sub">${esc(cliSources.get(s.source).label)}${s.model ? ` · ${esc(s.model)}` : ""}</span>
+            <span class="top-num">${fmtCount(s.tokens)}${s.costUsd ? ` · ${fmtUsd(s.costUsd)}` : ""}</span>
+          </button>`,
+          )
+          .join("")}</div>`
+      : `<p class="page-lead">No token use recorded in this range.</p>`;
+    return `${scanning}
+      <div class="tiles">
+        <div class="tile"><span class="tile-label">Tokens</span><span class="tile-value">${fmtCount(tokenSum(all))}</span>
+          <span class="tile-delta">${fmtInt(all.turns)} model calls</span></div>
+        <div class="tile"><span class="tile-label">Read from cache</span><span class="tile-value">${tokenSum(all) ? Math.round((all.cacheRead / tokenSum(all)) * 100) : 0}%</span>
+          <span class="tile-delta">${fmtCount(all.cacheRead)} of the tokens</span></div>
+        <div class="tile"><span class="tile-label">Output tokens</span><span class="tile-value">${fmtCount(all.output)}</span>
+          <span class="tile-delta">${fmtCount(all.input)} new input</span></div>
+        ${costTile}
+      </div>
+      <section class="chart-card">
+        <div class="chart-head"><h2>Tokens per day</h2>${legend(series)}</div>
+        <div class="chart" id="tokens-chart"></div>
+        <details class="chart-table"><summary>Show as a table</summary>
+          <table><thead><tr><th>Day</th>${series.map((x) => `<th>${esc(x.label)}</th>`).join("")}<th>Total</th></tr></thead><tbody>
+          ${[...t.daily].reverse().map((d) => `<tr><td>${esc(fmtDay(d.date, true))}</td>${series.map((x) => `<td>${fmtInt(d[x.id] ?? 0)}</td>`).join("")}<td>${fmtInt(total(d, series))}</td></tr>`).join("")}
+          </tbody></table>
+        </details>
+      </section>
+      <section class="chart-card">
+        <div class="chart-head"><h2>Most tokens <span class="h2-note">sessions in this range</span></h2></div>
+        ${top}
+      </section>
+      <p class="dash-file">Tokens are counted from each CLI's session files (input, cache and output, in the hour the model call was made).
+        Cost: Pi's comes from the provider's prices as Pi recorded them; Claude Code's is its own estimate at API prices,
+        saved now and then (a Pro or Max plan isn't billed it). Codex records no cost; its plan limits show in the session header.</p>`;
   }
 
   function workspaceRows(u, series) {
@@ -282,9 +375,16 @@
       .join("")}</div>`;
   }
 
+  /** A round axis step giving at most about 5 grid lines: 1, 2, 5, 10, 20, 50, … */
+  function niceStep(max) {
+    const rough = max / 5;
+    const pow = 10 ** Math.floor(Math.log10(Math.max(rough, 1)));
+    return [1, 2, 5, 10].map((m) => m * pow).find((st) => st >= rough) ?? 10 * pow;
+  }
+
   /** Stacked columns (one segment per CLI, in series order from the baseline), with a hover tooltip. */
-  function drawDaily(daily, series) {
-    const box = root.querySelector("#usage-chart");
+  function drawDaily(daily, series, { boxId = "usage-chart", fmt = String, what = "Sessions started per day" } = {}) {
+    const box = root.querySelector(`#${boxId}`);
     if (!box) return;
     const W = Math.max(320, box.clientWidth);
     const H = 220;
@@ -292,7 +392,7 @@
     const iw = W - pad.l - pad.r;
     const ih = H - pad.t - pad.b;
     const maxTotal = Math.max(...daily.map((d) => total(d, series)), 1);
-    const step = maxTotal <= 4 ? 1 : maxTotal <= 10 ? 2 : maxTotal <= 25 ? 5 : maxTotal <= 50 ? 10 : 25;
+    const step = niceStep(maxTotal);
     const top = Math.ceil(maxTotal / step) * step;
     const y = (v) => pad.t + ih - (v / top) * ih;
     const band = iw / daily.length;
@@ -303,7 +403,7 @@
     let grid = "";
     for (let v = 0; v <= top; v += step) {
       grid += `<line class="grid" x1="${pad.l}" x2="${W - pad.r}" y1="${y(v)}" y2="${y(v)}"/>`;
-      grid += `<text class="axis" x="${pad.l - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
+      grid += `<text class="axis" x="${pad.l - 6}" y="${y(v) + 4}" text-anchor="end">${esc(fmt(v))}</text>`;
     }
     const labelEvery = Math.ceil(daily.length / Math.max(2, Math.floor(iw / 64)));
     let xLabels = "";
@@ -338,7 +438,7 @@
     });
 
     box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img"
-        aria-label="Sessions started per day, ${esc(series.map((x) => x.label).join(", "))}, stacked">${grid}${bars}${xLabels}</svg>
+        aria-label="${esc(what)}, ${esc(series.map((x) => x.label).join(", "))}, stacked">${grid}${bars}${xLabels}</svg>
       <div class="tip" hidden></div>`;
     const tip = box.querySelector(".tip");
     const svg = box.querySelector("svg");
@@ -349,8 +449,8 @@
       for (const h of svg.querySelectorAll(".hit.on")) h.classList.remove("on");
       hit.classList.add("on");
       tip.innerHTML = `<b>${esc(fmtDay(d.date, true))}</b>
-        ${series.map((x) => `<span><i class="sw ${esc(x.id)}"></i>${esc(x.label)} <b>${d[x.id] ?? 0}</b></span>`).join("")}
-        <span class="muted">Total ${total(d, series)}</span>`;
+        ${series.map((x) => `<span><i class="sw ${esc(x.id)}"></i>${esc(x.label)} <b>${esc(fmt(d[x.id] ?? 0))}</b></span>`).join("")}
+        <span class="muted">Total ${esc(fmt(total(d, series)))}</span>`;
       tip.hidden = false;
       const rect = box.getBoundingClientRect();
       const left = Math.min(event.clientX - rect.left + 12, rect.width - tip.offsetWidth - 4);
@@ -367,7 +467,7 @@
   window.addEventListener("resize", () => {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
-      if (!root.hidden && state.usage && root.querySelector("#usage-chart")) drawDaily(state.usage.daily);
+      if (!root.hidden && state.usage && root.querySelector("#usage-chart")) drawCharts();
     }, 120);
   });
 

@@ -21,6 +21,7 @@ import { addFavorite, FavoriteError, loadFavorites, removeFavorite } from "./fav
 import { APP_FILE_HEADERS, APP_MIME, findApps, resolveAppFile, urlName } from "./apps.mjs";
 import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard } from "./dashboards.mjs";
 import { usageSummary } from "./usage.mjs";
+import { createTokenTracker } from "./token-usage.mjs";
 import { copyLine, LaunchError, openPlan, resumeCommand, terminalsFor, workspaceActions } from "./launch.mjs";
 import { loadSettings, saveSettings, SettingsError, sourceEnv, validateSettings } from "./settings.mjs";
 import { execFileSync, spawn } from "node:child_process";
@@ -48,6 +49,8 @@ const SERVER_STARTED_AT = Date.now();
 migrateStateFile("dashboards.json");
 const DASHBOARDS_FILE = join(stateDir(), "dashboards.json");
 const FAVORITES_FILE = join(stateDir(), "favorites.json");
+// Token use per session, read from the CLIs' session files (cached in token-usage.json).
+const tokenUsage = createTokenTracker({ cacheFile: join(stateDir(), "token-usage.json") });
 const OLLAMA_URL = ollamaUrl();
 const suggestions = suggestionCache();
 
@@ -775,7 +778,13 @@ const server = createServer(async (req, res) => {
         return;
       }
       const transcript = where.source.transcript(entries, { leafId: where.leafId });
-      sendJson(res, 200, { ...transcript, source: where.source.id, historyVersion: where.historyVersion });
+      let usage;
+      try {
+        usage = await tokenUsage.forSession({ id, source: where.source.id, file: where.file });
+      } catch {
+        // Token use is extra: the transcript still shows without it.
+      }
+      sendJson(res, 200, { ...transcript, usage, source: where.source.id, historyVersion: where.historyVersion });
       return;
     }
 
@@ -945,7 +954,15 @@ const server = createServer(async (req, res) => {
       const days = [7, 30, 90].includes(Number(url.searchParams.get("days"))) ? Number(url.searchParams.get("days")) : 30;
       const offsetMin = Math.max(-840, Math.min(840, Number.parseInt(url.searchParams.get("tz") ?? "0", 10) || 0));
       const ids = SOURCES.filter((source) => source.enabled).map((source) => source.id);
-      sendJson(res, 200, usageSummary([...savedById.values()], { days, offsetMin, sources: ids }));
+      const metas = [...savedById.values()];
+      // Tokens: the first time, every session file is read (can take a while); after that only
+      // what was added. Wait a little, then answer with what's done and say it's still reading.
+      const scan = tokenUsage.updateAll(metas.filter((meta) => ids.includes(meta.source ?? "pi")));
+      await Promise.race([scan, new Promise((done) => setTimeout(done, 1500))]);
+      sendJson(res, 200, {
+        ...usageSummary(metas, { days, offsetMin, sources: ids }),
+        tokens: tokenUsage.summary(metas, { days, offsetMin, sources: ids }),
+      });
       return;
     }
 

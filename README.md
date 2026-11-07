@@ -24,6 +24,14 @@ next to it:
   compaction becomes a card with the summary the model now sees and the files it lists;
   messages that were summarized are dimmed.
 - **Context meter** and a status pill (Idle, Running, Compacting).
+- **Token use** for every session, Pi, Claude Code and Codex alike, read from the CLI's own
+  session file: a chip in the header ("308M tokens · ~$66.51") opens the breakdown (new input,
+  cache write, cache read, output, context at the last reply). Cost is shown only when the CLI
+  records one: Pi's comes from the provider's prices; Claude Code's is its own estimate at API
+  prices, saved now and then (a Pro or Max plan isn't billed it). Codex records no cost, so its
+  chip shows your plan's 5-hour and weekly limits instead. The context meter shows for saved
+  and Claude Code / Codex sessions too (Claude Code's files don't say how big the window is,
+  so there it's a token count without a bar).
 - **Active and Workspaces**: the sidebar starts with **Active**, a flat list of every running
   session with its folder name under the title. Sessions waiting for you come first, the one
   that finished most recently on top, then the ones still working. Under it, **Favorites**:
@@ -110,8 +118,12 @@ next to it:
   looked, and how to start each one.
 - **Menu bar: Home, Dashboards, Settings, About.** Home is the session view.
   - **Dashboards** has built-in dashboards and your own. **Usage overview** shows sessions
-    started per day in Pi and Claude Code (7, 30 or 90 days, with a table view), active days
-    and your busiest workspaces, all from the session files already indexed. **Custom**
+    started per day in each CLI (7, 30 or 90 days, with a table view), active days
+    and your busiest workspaces, all from the session files already indexed, and **tokens**:
+    totals, how much came from cache, estimated cost, tokens per day by CLI, and the sessions
+    that used the most (click one to open it). The first visit reads every session file once
+    (a few seconds for gigabytes); after that only new lines are read, and the counts are kept
+    in `~/.cli-companion/token-usage.json`. **Custom**
     dashboards are links to any page, such as a local server's status page: add them with the
     form, open them inside the companion or in a new tab. Ones on this computer show online
     or offline. The list is kept in `~/.cli-companion/dashboards.json`.
@@ -186,8 +198,9 @@ Pi (interactive) ──events──► companion server ──SSE──► windo
 - The **server** (Node built-ins only, no dependencies) listens on `127.0.0.1` only. It
   builds the workspace list from Pi's sessions folder, reading only the start and end of
   each file (session files can be hundreds of MB with images), cached until a file
-  changes. It reads history only from inside that folder and keeps no session data on disk; the only
-  files it writes are its own settings and custom dashboard list, in `~/.cli-companion`.
+  changes. It reads history only from inside that folder and keeps no session text on disk; the only
+  files it writes are its own (settings, favorites, custom dashboard list, and token counts per
+  session file), in `~/.cli-companion`.
   The right panel only reads inside the folder of a session it knows (the page sends a
   session id, never a path), rejects `..` and symlinks that lead outside it, and runs
   only read-only `git` commands. Its one write, New folder, also stays inside that folder and
