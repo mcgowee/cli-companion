@@ -1,10 +1,10 @@
-// Top menu bar: Home (the session view), Dashboards and About, switched by the URL hash
-// (#/, #/dashboards, #/about) so Back/Forward and a reload keep the page. Home's state is
+// Top menu bar: Home (the session view), Dashboards, Settings and About, switched by the URL hash
+// (#/, #/dashboards, #/settings, #/about) so Back/Forward and a reload keep the page. Home's state is
 // untouched while another page is shown; it is only hidden.
 (function () {
   const $ = (id) => document.getElementById(id);
   const esc = window.escapeHtml;
-  const pages = { home: $("page-home"), dashboards: $("page-dashboards"), about: $("page-about") };
+  const pages = { home: $("page-home"), dashboards: $("page-dashboards"), settings: $("page-settings"), about: $("page-about") };
 
   function route() {
     const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
@@ -23,6 +23,7 @@
     document.title = page === "home" ? "CLI Companion" : `${page[0].toUpperCase()}${page.slice(1)} · CLI Companion`;
     if (page === "about") loadAbout();
     window.dashboardsPage?.show(page === "dashboards" ? rest : null);
+    window.settingsPage?.show(page === "settings");
   }
 
   async function loadAbout() {
@@ -89,8 +90,8 @@
 
       <h2>Privacy</h2>
       <p>Everything stays on this computer: the server listens on 127.0.0.1 only and reads your session
-      files read-only. The one file it writes is your list of custom dashboards
-      (<code>${esc(info.dashboardsFile || "~/.cli-companion/dashboards.json")}</code>). Its only requests are the online check for
+      files read-only. The only files it writes are its own, in <code>~/.cli-companion</code>: your settings and
+      your list of custom dashboards (<code>${esc(info.dashboardsFile || "~/.cli-companion/dashboards.json")}</code>). Its only requests are the online check for
       dashboards on this computer; it never contacts anything outside it. It starts a program only when
       you click <b>Open</b> in a terminal menu, and only one of a fixed set of commands
       (a shell, <code>pi</code>, <code>pi -c</code>, <code>claude</code>, or resuming a listed session).</p>

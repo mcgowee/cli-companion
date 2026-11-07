@@ -44,18 +44,105 @@ export function copyLine(cwd, command, platform = process.platform) {
   return platform === "win32" ? `${cd}; ${command}` : `${cd} && ${command}`;
 }
 
+/** Terminals Open can use, per platform, in the order "auto" tries them. */
+export const TERMINALS = {
+  win32: [
+    { id: "wt", label: "Windows Terminal" },
+    { id: "console", label: "PowerShell window" },
+  ],
+  darwin: [
+    { id: "terminal", label: "Terminal" },
+    { id: "iterm", label: "iTerm2" },
+  ],
+  linux: [
+    { id: "x-terminal-emulator", label: "System default (x-terminal-emulator)" },
+    { id: "gnome-terminal", label: "GNOME Terminal" },
+    { id: "konsole", label: "Konsole" },
+    { id: "xfce4-terminal", label: "Xfce Terminal" },
+    { id: "kitty", label: "kitty" },
+    { id: "alacritty", label: "Alacritty" },
+    { id: "wezterm", label: "WezTerm" },
+    { id: "xterm", label: "xterm" },
+  ],
+};
+
+export function terminalsFor(platform = process.platform) {
+  return TERMINALS[platform] ?? TERMINALS.linux;
+}
+
+/** A string inside AppleScript double quotes. */
+function appleString(text) {
+  return `"${String(text).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+/** One way to open a terminal, or undefined if this terminal id doesn't apply. */
+function plan(id, cwd, command, { platform, shell, userShell }) {
+  if (platform === "win32") {
+    const shellArgs = command ? ["-NoExit", "-Command", command] : ["-NoLogo"];
+    if (id === "wt") {
+      // Windows Terminal treats ";" in its arguments as a separator between its own commands.
+      if (String(cwd).includes(";")) return undefined;
+      return { file: "wt.exe", args: ["-w", "new", "-d", cwd, shell, ...shellArgs] };
+    }
+    // A detached console program gets its own new window.
+    if (id === "console") return { file: shell, args: shellArgs, cwd };
+    return undefined;
+  }
+  const line = copyLine(cwd, command, platform);
+  if (platform === "darwin") {
+    if (id === "terminal") {
+      return { file: "osascript", args: ["-e", `tell application "Terminal" to do script ${appleString(line)}`, "-e", 'tell application "Terminal" to activate'] };
+    }
+    if (id === "iterm") {
+      return {
+        file: "osascript",
+        args: [
+          "-e",
+          `tell application "iTerm" to tell current session of (create window with default profile) to write text ${appleString(line)}`,
+          "-e",
+          'tell application "iTerm" to activate',
+        ],
+      };
+    }
+    return undefined;
+  }
+  // Linux and others: a login shell that runs the command, then stays open.
+  const sh = userShell || "bash";
+  const run = [sh, "-lc", command ? `${command}; exec ${sh}` : `exec ${sh}`];
+  switch (id) {
+    case "gnome-terminal":
+      return { file: id, args: ["--working-directory", cwd, "--", ...run], cwd };
+    case "konsole":
+      return { file: id, args: ["--workdir", cwd, "-e", ...run], cwd };
+    case "xfce4-terminal":
+      return { file: id, args: ["--working-directory", cwd, "-x", ...run], cwd };
+    case "kitty":
+      return { file: id, args: ["--directory", cwd, ...run], cwd };
+    case "alacritty":
+      return { file: id, args: ["--working-directory", cwd, "-e", ...run], cwd };
+    case "wezterm":
+      return { file: id, args: ["start", "--cwd", cwd, "--", ...run], cwd };
+    case "xterm":
+    case "x-terminal-emulator":
+      return { file: id, args: ["-e", ...run], cwd };
+    default:
+      return undefined;
+  }
+}
+
 /**
- * How to open it: Windows Terminal in the folder running PowerShell (with the command, the
- * window stays open after it ends). undefined where opening isn't supported.
+ * How to open a terminal in `cwd` running `command` ("" = just a shell): the ways to try, in
+ * order, each { file, args, cwd? } for spawn() (no shell). `terminal` is a TERMINALS id, or
+ * "auto" to try them all. With a command the window stays open after it ends.
  */
-export function openPlan(cwd, command, { platform = process.platform, shell = "pwsh" } = {}) {
-  if (platform !== "win32") return undefined;
-  // Windows Terminal treats ";" in its arguments as a separator between its own commands.
-  if (String(cwd).includes(";")) throw new LaunchError("That folder name contains ';', which Windows Terminal can't open. Use Copy.");
-  const shellArgs = command ? [shell, "-NoExit", "-Command", command] : [shell, "-NoLogo"];
-  return {
-    terminal: { file: "wt.exe", args: ["-w", "new", "-d", cwd, ...shellArgs] },
-    // No Windows Terminal: a plain console window in the folder.
-    fallback: { file: shell, args: command ? ["-NoExit", "-Command", command] : ["-NoLogo"], cwd },
-  };
+export function openPlan(cwd, command, { platform = process.platform, shell = "pwsh", terminal = "auto", userShell } = {}) {
+  const ids = terminal === "auto" ? terminalsFor(platform).map((t) => t.id) : [terminal];
+  const plans = ids.map((id) => plan(id, cwd, command, { platform, shell, userShell })).filter(Boolean);
+  if (!plans.length) {
+    if (platform === "win32" && String(cwd).includes(";")) {
+      throw new LaunchError("That folder name contains ';', which Windows Terminal can't open. Use Copy.");
+    }
+    throw new LaunchError("That terminal can't open here. Pick another in Settings, or use Copy.");
+  }
+  return plans;
 }

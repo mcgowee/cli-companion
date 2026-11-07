@@ -11,6 +11,7 @@
 //   enabled       false when switched off (CLI_COMPANION_<ID>=0, or later in Settings)
 //   installed     true if its sessions folder exists (checked each time)
 //   folders       [{ label, path }] for About
+//   home          { env, path, usual }: the CLI's own folder, which Settings can change
 //   scan()                         -> saved sessions [{ id, source, cwd, created, name, preview, file, size, mtimeMs }]
 //   owns(file)                     -> true if the file is inside this source's folder
 //   readEntries(file)              -> parsed entries (cached), or undefined
@@ -58,5 +59,7 @@ export function describeSources(sources) {
     enabled: s.enabled,
     installed: s.installed,
     folders: s.folders,
+    home: s.home,
+    start: s.startActions[0]?.command ?? "",
   }));
 }

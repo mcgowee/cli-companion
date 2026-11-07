@@ -102,6 +102,41 @@ a.dash-card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--li
 .dash-add label.full { grid-column: 1 / -1; }
 .dash-add input { padding: 7px 9px; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 13px; }
 .dash-add input:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 0; }
+/* First-run welcome (no sessions anywhere yet) */
+.welcome { max-width: 620px; margin: 48px auto; padding: 24px 26px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+.welcome h2 { margin: 0 0 8px; font-size: 19px; }
+.welcome p { color: var(--muted); margin: 0 0 14px; }
+.welcome a { color: var(--accent); }
+.wel-list { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.wel-list li { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 4px 8px; }
+.wel-sub { grid-column: 2 / -1; color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
+.wel-ok { color: var(--ok); font-size: 12px; font-weight: 600; }
+.wel-miss { color: var(--muted); font-size: 12px; font-weight: 600; }
+.wel-foot { font-size: 12.5px; }
+/* Settings page */
+.set-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.set-card { margin: 0; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.set-card.off { opacity: 0.7; }
+.set-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.set-card .switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; }
+.set-card .switch input { width: 16px; height: 16px; accent-color: var(--accent); margin: 0; }
+.set-name { display: inline-flex; align-items: center; gap: 7px; }
+.src-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--src); }
+.set-state { font-size: 12px; font-weight: 600; }
+.set-state.ok { color: var(--ok); }
+.set-state.warn { color: var(--warn); }
+.set-state.muted { color: var(--muted); }
+.set-note { margin: 0 0 auto; font-size: 12.5px; color: var(--muted); min-height: 1.2em; overflow-wrap: anywhere; }
+.set-field { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--muted); }
+.set-field.narrow { max-width: 420px; }
+.set-field input, .set-field select { padding: 7px 9px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; font-size: 13px; min-width: 0; }
+.set-field input:focus, .set-field select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 0; }
+.set-hint { font-size: 12.5px; color: var(--muted); margin: 8px 0 0; }
+.set-foot { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--line); }
+.set-status { margin-right: auto; font-size: 13px; }
+.set-status.ok { color: var(--ok); }
+.set-status.error { color: var(--bad); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .dash-add-foot { grid-column: 1 / -1; display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
 .dash-msg { color: var(--muted); font-size: 12.5px; }
 .dash-msg[data-kind="ok"] { color: var(--ok); }

@@ -13,6 +13,7 @@ import { mergeCommands, PI_BUILTINS } from "../slash-commands.mjs";
 export function piSource(env = process.env) {
   const agentDir = env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
   const dir = resolve(agentDir, "sessions");
+  const switchedOff = env.CLI_COMPANION_PI === "0";
 
   // Parsed entries of the few most recently opened files, reused until the file changes.
   const cache = new Map();
@@ -39,14 +40,16 @@ export function piSource(env = process.env) {
     assistant: "Pi",
     live: true,
     canType: true,
-    // Pi sessions also arrive live from the extension, so Pi stays on even before its folder exists.
-    enabled: true,
+    // Pi sessions also arrive live from the extension, so Pi counts as available even before its
+    // folder exists. Switched off, its saved sessions and terminal-menu entries are hidden.
+    enabled: !switchedOff,
     get installed() {
       return existsSync(dir);
     },
     dir,
+    home: { env: "PI_CODING_AGENT_DIR", path: resolve(agentDir), usual: "~/.pi/agent" },
     folders: [{ label: "Pi sessions", path: dir }],
-    scan: () => scanSessions(dir),
+    scan: () => (switchedOff ? Promise.resolve([]) : scanSessions(dir)),
     owns: (file) => isUnderDir(dir, file),
     readEntries,
     transcript: (entries, { leafId } = {}) => transcriptItems(entries, leafId),

@@ -26,13 +26,17 @@
     forRow(row) {
       return row?.source ? this.get(row.source) : this.forId(row?.id);
     },
-    ready: fetch("/api/sources", { cache: "no-store" })
-      .then((res) => (res.ok ? res.json() : undefined))
-      .then((data) => {
-        if (Array.isArray(data?.sources) && data.sources.length) list = data.sources;
-        window.dispatchEvent(new Event("sources-ready"));
-        return list;
-      })
-      .catch(() => list),
+    /** Fetch the server's list again (after Settings change it). */
+    reload() {
+      return fetch("/api/sources", { cache: "no-store" })
+        .then((res) => (res.ok ? res.json() : undefined))
+        .then((data) => {
+          if (Array.isArray(data?.sources) && data.sources.length) list = data.sources;
+          window.dispatchEvent(new Event("sources-ready"));
+          return list;
+        })
+        .catch(() => list);
+    },
   };
+  window.cliSources.ready = window.cliSources.reload();
 })();

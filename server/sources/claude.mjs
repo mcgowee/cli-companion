@@ -57,6 +57,7 @@ export function claudeSource(env = process.env) {
       return existsSync(dir);
     },
     dir,
+    home: { env: "CLAUDE_CONFIG_DIR", path: home, usual: "~/.claude" },
     folders: [{ label: "Claude Code transcripts", path: switchedOff ? null : dir }],
     scan: () => (switchedOff ? Promise.resolve([]) : scanClaudeSessions(dir)),
     owns: (file) => isUnderDir(dir, file),

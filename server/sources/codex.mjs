@@ -208,6 +208,7 @@ export function codexSource(env = process.env) {
       return existsSync(dir);
     },
     dir,
+    home: { env: "CODEX_HOME", path: home, usual: "~/.codex" },
     folders: [{ label: "Codex sessions", path: switchedOff ? null : dir }],
     scan,
     owns: (file) => isUnderDir(dir, file),

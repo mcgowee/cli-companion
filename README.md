@@ -33,14 +33,16 @@ next to it:
   filter box searches folder names and session titles in both lists. The window follows the most recently active session unless you pick one.
   The left panel can be hidden with its button or **Ctrl+B** (⌘B on macOS).
 - **Open in a terminal**: the small terminal icon beside a workspace or a saved session
-  opens a menu. For a workspace: **Terminal here**, **Start Pi**, **Continue last Pi
-  session** (`pi -c`), **Start Claude Code**, and **Copy folder path**. For a saved session:
-  **Resume in Pi** (`pi --session <id>`) or **Resume in Claude Code** (`claude --resume <id>`).
-  Running sessions have no icon, since their terminal is already open. Each option has **Copy**
-  (a PowerShell line such as `cd 'C:\AI\pi'; pi -c` to paste yourself) and, on Windows,
-  **Open** (a new Windows Terminal window in that folder running the command, or PowerShell
-  if Windows Terminal isn't installed). The commands come from a fixed list in the server;
-  the page only picks one.
+  opens a menu. For a workspace: **Terminal here**, then start or continue each installed CLI
+  (**Start Pi**, `pi -c`, **Start Claude Code**, **Start Codex**, `codex resume --last`), and
+  **Copy folder path**. For a saved session: resume it in its own CLI (`pi --session <id>`,
+  `claude --resume <id>`, `codex resume <id>`). Running sessions have no icon, since their
+  terminal is already open. Each option has **Copy** (the line to paste yourself, such as
+  `cd 'C:\AI\pi'; pi -c` in PowerShell) and **Open**, which starts a new terminal window in
+  that folder running the command: Windows Terminal or a PowerShell window on Windows,
+  Terminal or iTerm2 on macOS, and the first terminal found on Linux (x-terminal-emulator,
+  GNOME Terminal, Konsole, Xfce Terminal, kitty, Alacritty, WezTerm, xterm). Which one is set
+  in **Settings**. The commands come from a fixed list in the server; the page only picks one.
 - **Claude Code sessions too (read-only)**: sessions from Claude Code (CLI or desktop app)
   appear in the same folders, tagged **CC**, read from `~/.claude/projects`. Open one to read
   the transcript (replies, thinking, tool calls with results, compactions, images); a running
@@ -82,13 +84,18 @@ next to it:
     a coloured diff per file. **Changed in this session** lists the files Pi edited or
     wrote in the open session.
   - Read-only by design: no editing and no terminal inside the page (your terminal is where Pi runs).
-- **Menu bar: Home, Dashboards, About.** Home is the session view.
+- **First run**: with no sessions anywhere yet, the window shows which CLIs it found, where it
+  looked, and how to start each one.
+- **Menu bar: Home, Dashboards, Settings, About.** Home is the session view.
   - **Dashboards** has built-in dashboards and your own. **Usage overview** shows sessions
     started per day in Pi and Claude Code (7, 30 or 90 days, with a table view), active days
     and your busiest workspaces, all from the session files already indexed. **Custom**
     dashboards are links to any page, such as a local server's status page: add them with the
     form, open them inside the companion or in a new tab. Ones on this computer show online
     or offline. The list is kept in `~/.cli-companion/dashboards.json`.
+  - **Settings**: show or hide each CLI (Pi, Claude Code, Codex), change where its folder is,
+    and pick the terminal **Open** uses. Saved in `~/.cli-companion/settings.json`; changes
+    apply at once.
   - **About** shows the version, this server's address and folders, shortcuts and privacy.
 
 ## Install
@@ -153,8 +160,8 @@ Pi (interactive) ──events──► companion server ──SSE──► windo
 - The **server** (Node built-ins only, no dependencies) listens on `127.0.0.1` only. It
   builds the workspace list from Pi's sessions folder, reading only the start and end of
   each file (session files can be hundreds of MB with images), cached until a file
-  changes. It reads history only from inside that folder and keeps no session data on disk; the one
-  file it writes is your custom dashboard list.
+  changes. It reads history only from inside that folder and keeps no session data on disk; the only
+  files it writes are its own settings and custom dashboard list, in `~/.cli-companion`.
   The right panel only reads inside the folder of a session it knows (the page sends a
   session id, never a path), rejects `..` and symlinks that lead outside it, and runs
   only read-only `git` commands. Requests whose `Host` is not `127.0.0.1`/`localhost`
@@ -168,6 +175,9 @@ Pi (interactive) ──events──► companion server ──SSE──► windo
 
 ## Settings
 
+Most people only need the **Settings** page. The same things can be set with environment
+variables (a `CLI_COMPANION_<CLI>=0` variable always hides that CLI, whatever the page says):
+
 | Variable | Default | Meaning |
 |---|---|---|
 | `CLI_COMPANION_PORT` | `30143` | Port for the server and the extension (`PI_COMPANION_PORT` also works) |
@@ -176,7 +186,8 @@ Pi (interactive) ──events──► companion server ──SSE──► windo
 | `CLI_COMPANION_CLAUDE` | on | Set to `0` to hide Claude Code sessions (`PI_COMPANION_CLAUDE` also works) |
 | `CODEX_HOME` | `~/.codex` | Codex's folder (sessions are read from `sessions/`) |
 | `CLI_COMPANION_CODEX` | on | Set to `0` to hide Codex sessions |
-| `CLI_COMPANION_HOME` | `~/.cli-companion` | The companion's own files: custom dashboards, server log, app-window browser profile |
+| `CLI_COMPANION_PI` | on | Set to `0` to hide saved Pi sessions |
+| `CLI_COMPANION_HOME` | `~/.cli-companion` | The companion's own files: settings, custom dashboards, server log, app-window browser profile |
 
 Older versions kept these files in `~/.pi/agent/companion/`; the dashboard list is copied
 over on first start.

@@ -1,0 +1,41 @@
+import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test } from "node:test";
+import { loadSettings, saveSettings, SettingsError, sourceEnv, validateSettings } from "../server/settings.mjs";
+import { createSources } from "../server/sources/index.mjs";
+
+const abs = process.platform === "win32" ? "D:\\claude" : "/data/claude";
+
+test("validateSettings keeps known CLIs and terminals, rejects bad values", () => {
+  assert.deepEqual(validateSettings({ sources: { claude: { enabled: false, folder: ` ${abs} ` }, nope: { enabled: false } }, terminal: "console" }, { platform: "win32" }), {
+    sources: { claude: { enabled: false, folder: abs } },
+    terminal: "console",
+  });
+  assert.throws(() => validateSettings({ sources: { codex: { folder: "relative/path" } } }), SettingsError);
+  assert.throws(() => validateSettings({ terminal: "iterm" }, { platform: "win32" }), SettingsError);
+  assert.deepEqual(validateSettings({ terminal: "iterm", sources: { codex: { folder: "x" } } }, { platform: "win32", lenient: true }), {
+    sources: {},
+    terminal: "auto",
+  });
+});
+
+test("settings become the environment the sources read; a real CLI_COMPANION_X=0 still wins", () => {
+  const env = sourceEnv({ sources: { claude: { folder: abs }, codex: { enabled: false } } }, { CLI_COMPANION_PI: "0" });
+  assert.equal(env.CLAUDE_CONFIG_DIR, abs);
+  assert.equal(env.CLI_COMPANION_CODEX, "0");
+  const sources = createSources(env);
+  assert.deepEqual(sources.map((s) => [s.id, s.enabled]), [["pi", false], ["claude", true], ["codex", false]]);
+  assert.equal(sources[1].home.path, abs);
+});
+
+test("save and load round-trip; a broken file loads as defaults", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "companion-settings-"));
+  const file = join(dir, "settings.json");
+  await saveSettings(file, { sources: { codex: { enabled: false } }, terminal: "auto" });
+  assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).sources, { codex: { enabled: false } });
+  assert.deepEqual((await loadSettings(file)).sources, { codex: { enabled: false } });
+  writeFileSync(file, "{ not json");
+  assert.deepEqual(await loadSettings(file), { sources: {}, terminal: "auto" });
+});

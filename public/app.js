@@ -231,6 +231,7 @@
       <div class="section-head side-section">Workspaces</div>`;
 
     $("empty-hint").hidden = groups.length > 0 || Boolean(filter);
+    if (!groups.length && !filter && !state.selectedId) renderWelcome();
     list.innerHTML = activeHtml + groups
       .map((ws) => {
         const open = isWsOpen(ws);
@@ -287,6 +288,27 @@
         renderSidebar();
       });
     }
+  }
+
+  /** First run (no sessions anywhere yet): which CLIs were found, where we looked, how to start. */
+  function renderWelcome() {
+    const shown = cliSources.list().filter((s) => s.enabled !== false);
+    const rows = shown
+      .map((s) => {
+        const where = s.folders?.[0]?.path;
+        const state = s.installed ? `<span class="wel-ok">Found</span>` : `<span class="wel-miss">Not found yet</span>`;
+        return `<li><span class="src-dot" data-src="${esc(s.id)}"></span><b>${esc(s.label)}</b> ${state}
+          <span class="wel-sub">${where ? `Looks in <code>${esc(where)}</code>.` : ""} ${s.start ? `Start it with <code>${esc(s.start)}</code> in a terminal.` : ""}</span></li>`;
+      })
+      .join("");
+    transcriptEl.innerHTML = `<div class="welcome">
+      <h2>Welcome to CLI Companion</h2>
+      <p>A live side window for your coding-agent CLIs. Keep working in the terminal; sessions show up on the
+        left within a few seconds, running ones under Active.</p>
+      <ul class="wel-list">${rows}</ul>
+      <p class="wel-foot">Pi also needs its extension for the live view: <code>pi install git:github.com/mcgowee/cli-companion</code>,
+        then <code>/companion</code>. Hide a CLI or change where it looks in <a href="#/settings">Settings</a>.</p>
+    </div>`;
   }
 
   let workspacesTimer;
@@ -752,6 +774,9 @@
         renderLive();
         notifyComposer();
         loadHistory(true);
+      } else if (msg.type === "sources") {
+        // Settings changed which CLIs are read: refresh the list, then the sidebar.
+        cliSources.reload().then(loadWorkspaces);
       } else if (msg.type === "session") {
         upsert(msg.session);
       } else if (msg.type === "removed") {

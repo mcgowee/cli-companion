@@ -18,7 +18,8 @@ import { fileURLToPath } from "node:url";
 import { groupByWorkspace, workspaceKey } from "./session-index.mjs";
 import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard } from "./dashboards.mjs";
 import { usageSummary } from "./usage.mjs";
-import { copyLine, LaunchError, openPlan, resumeCommand, workspaceActions } from "./launch.mjs";
+import { copyLine, LaunchError, openPlan, resumeCommand, terminalsFor, workspaceActions } from "./launch.mjs";
+import { loadSettings, saveSettings, SettingsError, sourceEnv, validateSettings } from "./settings.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import { isProcessAlive } from "./fsutil.mjs";
 import { createSources, describeSources, nativeId, sourceForId } from "./sources/index.mjs";
@@ -27,16 +28,20 @@ import { listDir, readFileForView, reviewDiff, reviewStatus, WorkbenchError } fr
 
 const HOST = "127.0.0.1";
 const PORT = companionPort();
-// The CLIs the companion reads (server/sources/): Pi, Claude Code, …
-const SOURCES = createSources();
-const PI = SOURCES.find((s) => s.id === "pi");
+// Your settings (the Settings page): which CLIs to read, their folders, the terminal for Open.
+const SETTINGS_FILE = join(stateDir(), "settings.json");
+let settings = await loadSettings(SETTINGS_FILE);
+
+// The CLIs the companion reads (server/sources/): Pi, Claude Code, Codex. Rebuilt when settings change.
+let SOURCES = createSources(sourceEnv(settings));
+let PI = SOURCES.find((s) => s.id === "pi");
 const sourceById = (id) => SOURCES.find((s) => s.id === id) ?? PI;
 // With no running/idle signal from a CLI, a transcript written this recently counts as running.
 const ACTIVE_FALLBACK_MS = 2 * 60_000;
 const PUBLIC_DIR = fileURLToPath(new URL("../public/", import.meta.url));
 const MAX_BODY = 4 * 1024 * 1024;
 const SERVER_STARTED_AT = Date.now();
-// The one file the companion writes: your custom dashboard links.
+// The companion's own files (it writes nothing else): your custom dashboard links, and settings below.
 migrateStateFile("dashboards.json");
 const DASHBOARDS_FILE = join(stateDir(), "dashboards.json");
 
@@ -446,13 +451,25 @@ function spawnDetached(file, args, options = {}) {
 }
 
 async function openTerminal(cwd, command) {
-  const plan = openPlan(cwd, command, { shell: preferredShell() });
-  if (!plan) throw new LaunchError("Opening a terminal works on Windows only for now. Use Copy.");
-  try {
-    await spawnDetached(plan.terminal.file, plan.terminal.args);
-  } catch {
-    await spawnDetached(plan.fallback.file, plan.fallback.args, { cwd: plan.fallback.cwd });
+  const plans = openPlan(cwd, command, {
+    shell: process.platform === "win32" ? preferredShell() : undefined,
+    terminal: settings.terminal,
+    userShell: process.env.SHELL,
+  });
+  let lastError;
+  for (const plan of plans) {
+    try {
+      await spawnDetached(plan.file, plan.args, plan.cwd ? { cwd: plan.cwd } : {});
+      return;
+    } catch (error) {
+      lastError = error; // not installed: try the next one
+    }
   }
+  throw new LaunchError(
+    plans.length > 1
+      ? "No terminal program was found to open. Pick one in Settings, or use Copy."
+      : `Couldn't start ${plans[0].file} (${lastError?.code ?? "error"}). Pick another terminal in Settings, or use Copy.`,
+  );
 }
 
 async function workspaceTree() {
@@ -614,7 +631,7 @@ const server = createServer(async (req, res) => {
     }
 
     // Everything below is read-only, except adding/removing custom dashboard links.
-    if (req.method !== "GET" && url.pathname !== "/api/dashboards" && url.pathname !== "/api/launch") {
+    if (req.method !== "GET" && !["/api/dashboards", "/api/launch", "/api/settings"].includes(url.pathname)) {
       res.writeHead(405).end();
       return;
     }
@@ -732,6 +749,36 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (url.pathname === "/api/settings") {
+      // GET: your settings and what they can be set to. POST (page header): save them.
+      if (req.method === "POST") {
+        if (req.headers["x-pi-companion-page"] !== "1") {
+          res.writeHead(403).end();
+          return;
+        }
+        try {
+          const next = validateSettings(JSON.parse(await readBody(req)));
+          await saveSettings(SETTINGS_FILE, next);
+          settings = next;
+          SOURCES = createSources(sourceEnv(settings));
+          PI = SOURCES.find((s) => s.id === "pi");
+          lastScanAt = 0;
+          broadcast({ type: "sources" });
+        } catch (error) {
+          sendJson(res, error instanceof SettingsError || error instanceof SyntaxError ? 400 : 500, { error: error.message });
+          return;
+        }
+      }
+      sendJson(res, 200, {
+        settings,
+        file: SETTINGS_FILE,
+        platform: process.platform,
+        terminals: terminalsFor(),
+        sources: describeSources(SOURCES),
+      });
+      return;
+    }
+
     if (url.pathname === "/api/sources") {
       // Which CLIs this server reads, and what the page can do with each.
       sendJson(res, 200, { sources: describeSources(SOURCES) });
@@ -754,7 +801,7 @@ const server = createServer(async (req, res) => {
       try {
         const target = await launchTarget(String(params.kind ?? ""), String(params.id ?? ""));
         if (req.method === "GET") {
-          sendJson(res, 200, { cwd: target.cwd, canOpen: process.platform === "win32", options: launchOptions(target) });
+          sendJson(res, 200, { cwd: target.cwd, canOpen: true, platform: process.platform, options: launchOptions(target) });
           return;
         }
         const option = launchOptions(target).find((o) => o.action === params.action);

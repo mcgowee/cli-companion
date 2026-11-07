@@ -13,11 +13,14 @@
     <nav class="menu" aria-label="Main">
       <a class="menu-item" href="#/" data-page="home">Home</a>
       <a class="menu-item" href="#/dashboards" data-page="dashboards">Dashboards</a>
+      <a class="menu-item" href="#/settings" data-page="settings">Settings</a>
       <a class="menu-item" href="#/about" data-page="about">About</a>
     </nav>
   </header>
 
   <section class="page" id="page-dashboards" hidden></section>
+
+  <section class="page" id="page-settings" hidden></section>
 
   <section class="page" id="page-about" hidden>
     <div class="page-inner" id="about-body">
@@ -45,7 +48,7 @@
         <input id="filter" class="filter" type="search" placeholder="Filter workspaces and sessions" aria-label="Filter workspaces and sessions">
       </div>
       <nav id="session-list" class="session-list" aria-label="Workspaces and sessions"></nav>
-      <p class="hint" id="empty-hint">No Pi sessions found yet. Start <code>pi</code> in a terminal; running sessions show up here within 15&nbsp;seconds.</p>
+      <p class="hint" id="empty-hint" hidden>No sessions yet. Start Pi, Claude Code or Codex in a terminal; they show up here within a few seconds.</p>
     </aside>
 
     <div class="panel-resize side-resize" id="side-resize" role="separator" aria-orientation="vertical"
@@ -139,6 +142,7 @@
   <script src="workbench.js"></script>
   <script src="launch.js"></script>
   <script src="dashboards.js"></script>
+  <script src="settings.js"></script>
   <script src="menu.js"></script>
 </body>
 </html>

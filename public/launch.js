@@ -1,6 +1,6 @@
 // Terminal menu: the small terminal icon on a workspace or saved session in the sidebar.
-// Each option has Open (the server starts Windows Terminal in that folder running it) and
-// Copy (the PowerShell line to paste yourself). The page only names an action; the server
+// Each option has Open (the server starts a terminal in that folder running it; which one is
+// set in Settings) and Copy (the line to paste yourself). The page only names an action; the server
 // builds the command from a fixed list (server/launch.mjs).
 (function () {
   const esc = window.escapeHtml;
@@ -50,7 +50,7 @@
         )
         .join("")}
       ${kind === "workspace" ? `<button class="launch-path" type="button" data-copy-path>Copy folder path</button>` : ""}
-      <div class="launch-msg" role="status">${data.canOpen ? "" : "Opening a terminal works on Windows only for now; use Copy."}</div>`;
+      <div class="launch-msg" role="status"></div>`;
   }
 
   function say(text, kind = "") {
@@ -110,7 +110,8 @@
     }
     if (copyBtn) {
       const o = current.data.options[Number(copyBtn.dataset.copyLine)];
-      say((await copy(o.copy)) ? "Copied ✓ Paste it into PowerShell." : "Copy failed.", "ok");
+      const where = current.data.platform === "win32" ? "PowerShell" : "your terminal";
+      say((await copy(o.copy)) ? `Copied ✓ Paste it into ${where}.` : "Copy failed.", "ok");
       return;
     }
     if (openBtn) {

@@ -35,11 +35,30 @@ test("copyLine quotes the folder for PowerShell and POSIX shells", () => {
   assert.equal(copyLine("/home/me/it's", "claude", "linux"), "cd '/home/me/it'\\''s' && claude");
 });
 
-test("openPlan: Windows Terminal in the folder, PowerShell fallback, nothing elsewhere", () => {
-  const plan = openPlan("C:\\AI\\pi", "pi", { platform: "win32", shell: "pwsh" });
-  assert.deepEqual(plan.terminal, { file: "wt.exe", args: ["-w", "new", "-d", "C:\\AI\\pi", "pwsh", "-NoExit", "-Command", "pi"] });
-  assert.deepEqual(plan.fallback, { file: "pwsh", args: ["-NoExit", "-Command", "pi"], cwd: "C:\\AI\\pi" });
-  assert.deepEqual(openPlan("C:\\AI\\pi", "", { platform: "win32", shell: "pwsh" }).terminal.args.slice(-2), ["pwsh", "-NoLogo"]);
-  assert.equal(openPlan("/home/me", "pi", { platform: "linux" }), undefined);
-  assert.throws(() => openPlan("C:\\a;b", "pi", { platform: "win32" }), LaunchError);
+test("openPlan: Windows Terminal, then a PowerShell window", () => {
+  const [wt, console_] = openPlan("C:\\AI\\pi", "pi", { platform: "win32", shell: "pwsh" });
+  assert.deepEqual(wt, { file: "wt.exe", args: ["-w", "new", "-d", "C:\\AI\\pi", "pwsh", "-NoExit", "-Command", "pi"] });
+  assert.deepEqual(console_, { file: "pwsh", args: ["-NoExit", "-Command", "pi"], cwd: "C:\\AI\\pi" });
+  assert.deepEqual(openPlan("C:\\AI\\pi", "", { platform: "win32", shell: "pwsh" })[0].args.slice(-2), ["pwsh", "-NoLogo"]);
+  // ";" breaks Windows Terminal's arguments: only the PowerShell window is left, or an error if that was the choice.
+  assert.deepEqual(openPlan("C:\\a;b", "pi", { platform: "win32", shell: "pwsh" }).map((p) => p.file), ["pwsh"]);
+  assert.throws(() => openPlan("C:\\a;b", "pi", { platform: "win32", terminal: "wt" }), LaunchError);
+  assert.equal(openPlan("C:\\x", "pi", { platform: "win32", terminal: "console" }).length, 1);
+});
+
+test("openPlan: macOS Terminal or iTerm via AppleScript, quotes escaped", () => {
+  const [terminal, iterm] = openPlan("/Users/me/it's \"x\"", "pi -c", { platform: "darwin" });
+  assert.equal(terminal.file, "osascript");
+  // The shell line is  cd '/Users/me/it'\''s "x"' && pi -c ; AppleScript doubles its \ and escapes its ".
+  assert.equal(terminal.args[1], `tell application "Terminal" to do script "cd '/Users/me/it'\\\\''s \\"x\\"' && pi -c"`);
+  assert.match(iterm.args[1], /^tell application "iTerm"/);
+});
+
+test("openPlan: Linux terminals run a login shell that stays open", () => {
+  const plans = openPlan("/home/me", "claude", { platform: "linux", userShell: "/bin/zsh" });
+  assert.equal(plans[0].file, "x-terminal-emulator");
+  const gnome = plans.find((p) => p.file === "gnome-terminal");
+  assert.deepEqual(gnome.args, ["--working-directory", "/home/me", "--", "/bin/zsh", "-lc", "claude; exec /bin/zsh"]);
+  assert.deepEqual(openPlan("/home/me", "", { platform: "linux", terminal: "kitty" })[0].args, ["--directory", "/home/me", "bash", "-lc", "exec bash"]);
+  assert.throws(() => openPlan("/home/me", "pi", { platform: "linux", terminal: "wt" }), LaunchError);
 });
