@@ -29,11 +29,11 @@ next to it:
   that finished most recently on top, then the ones still working. Under it, **Favorites**:
   click the star beside a session in Active to keep it there, running or not (newest first, with
   its terminal icon); click the filled star to remove it. Kept in `~/.cli-companion/favorites.json`.
-  Below that, **Workspaces** lists every workspace
-  (project folder) you have used Pi in, newest first and collapsed, with its sessions
-  underneath (running ones keep their live dot there too), including past sessions you can
-  open and read. Only the folder of the open session expands by itself; what you open or
-  close is remembered. Nothing to add by hand: they come from Pi's own sessions folder. A
+  Below that, **Workspaces**, grouped by CLI first: Pi, Claude Code, Codex, each with a caret
+  that opens its workspaces (project folders), newest first and collapsed, with that CLI's
+  sessions underneath (running ones keep their live dot there too), including past sessions you
+  can open and read. Only the CLI and folder of the open session expand by themselves; what you
+  open or close is remembered. Nothing to add by hand: they come from each CLI's own session files. A
   filter box searches folder names and session titles in both lists. The window follows the most recently active session unless you pick one.
   The left panel can be hidden with its button or **Ctrl+B** (⌘B on macOS).
 - **Open in a terminal**: the small terminal icon beside a workspace or a saved session

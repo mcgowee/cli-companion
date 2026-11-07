@@ -14,7 +14,8 @@
     stickToBottom: true,
     workspaces: [],
     /** workspace id -> true (open) / false (closed), set by the user; remembered per browser. */
-    wsOpen: loadPref("pi-companion.wsOpen", {}),
+    wsOpen: loadPref("pi-companion.wsOpen", {}), // by "<cli>|<workspace id>"
+    cliOpen: loadPref("pi-companion.cliOpen", {}),
     showAll: new Set(),
     filter: "",
     /** Favorite session ids, most recently added first (kept by the server in favorites.json). */
@@ -155,11 +156,48 @@
     return groups;
   }
 
-  /** Workspaces start collapsed; only the one holding the open session opens by itself. */
-  function isWsOpen(ws) {
+  /**
+   * CLI groups and workspaces start collapsed; only the ones holding the open session open by
+   * themselves. `key` is the group's key in `prefs` (state.cliOpen or state.wsOpen).
+   */
+  function isOpen(prefs, key, sessions) {
     if (state.filter) return true;
-    if (ws.id in state.wsOpen) return state.wsOpen[ws.id];
-    return ws.sessions.some((s) => s.id === state.selectedId);
+    if (key in prefs) return prefs[key];
+    return sessions.some((s) => s.id === state.selectedId);
+  }
+
+  /**
+   * The Workspaces tree, by CLI first: one group per CLI (in Settings order) holding that CLI's
+   * workspaces, each with only that CLI's sessions. Newest activity first within a group.
+   */
+  function byCli(groups) {
+    const out = new Map(cliSources.list().map((src) => [src.id, { src, workspaces: [] }]));
+    for (const ws of groups) {
+      const split = new Map();
+      for (const s of ws.sessions) {
+        const id = cliSources.forRow(s).id;
+        if (!split.has(id)) split.set(id, []);
+        split.get(id).push(s);
+      }
+      for (const [id, sessions] of split) {
+        if (!out.has(id)) out.set(id, { src: cliSources.get(id), workspaces: [] });
+        const lastActivity = Math.max(0, ...sessions.map((s) => s.lastActivity ?? 0));
+        out.get(id).workspaces.push({ ...ws, sessions, lastActivity });
+      }
+    }
+    return [...out.values()]
+      .filter((g) => g.workspaces.length)
+      .map((g) => ({ ...g, workspaces: g.workspaces.sort((a, b) => b.lastActivity - a.lastActivity) }));
+  }
+
+  /** The dot beside a CLI or workspace name: shown while one of its sessions runs, pulsing while one works. */
+  function liveDot(sessions) {
+    if (!sessions.some(isActive)) return "";
+    const busy = sessions.some((s) => {
+      const status = liveStatus(s.id);
+      return status === "running" || status === "compacting" || fileBusy(s);
+    });
+    return `<span class="ws-live${busy ? " busy" : ""}"></span>`;
   }
 
   function liveStatus(id) {
@@ -308,16 +346,10 @@
     const welcome = transcriptEl.querySelector(".welcome");
     if (!groups.length && !filter && !state.selectedId && state.workspacesLoaded) renderWelcome();
     else if (welcome && groups.length) transcriptEl.innerHTML = `<div class="placeholder" id="placeholder">Pick a session on the left.</div>`;
-    list.innerHTML = activeHtml + groups
-      .map((ws) => {
-        const open = isWsOpen(ws);
-        const anyLive = ws.sessions.some(isActive);
-        // Solid while its sessions are idle; pulses while one of them is working.
-        const anyBusy = ws.sessions.some((s) => {
-          const status = liveStatus(s.id);
-          return status === "running" || status === "compacting" || fileBusy(s);
-        });
-        const showAll = state.showAll.has(ws.id) || Boolean(filter);
+    const wsSection = (ws, cliId) => {
+        const key = `${cliId}|${ws.id}`;
+        const open = isOpen(state.wsOpen, key, ws.sessions);
+        const showAll = state.showAll.has(key) || Boolean(filter);
         const shown = showAll ? ws.sessions : ws.sessions.slice(0, SESSIONS_SHOWN);
         // Keep the selected session visible even past the cut.
         const selectedRow = ws.sessions.find((s) => s.id === state.selectedId);
@@ -326,18 +358,33 @@
         const rows = shown.map((s) => sessionRow(s)).join("");
         return `<section class="ws${open ? " open" : ""}">
           <div class="row-wrap ws-row-wrap">
-          <button class="ws-head" data-ws="${esc(ws.id)}" title="${esc(ws.cwd)}" aria-expanded="${open}">
+          <button class="ws-head" data-ws="${esc(key)}" title="${esc(ws.cwd)}" aria-expanded="${open}">
             <svg class="ws-icon closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.6l2 2h7.4a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>
             <svg class="ws-icon opened" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 17.5V7.5a2 2 0 0 1 2-2h3.6l2 2h6.4a2 2 0 0 1 2 2v1"/><path d="M3.5 17.5l2.3-5.6a2 2 0 0 1 1.9-1.3H21a1 1 0 0 1 .9 1.4l-2.2 5.3a2 2 0 0 1-1.9 1.2H5.5a2 2 0 0 1-2-1z"/></svg>
             <span class="ws-name">${esc(ws.name)}</span>
-            ${anyLive ? `<span class="ws-live${anyBusy ? " busy" : ""}"></span>` : ""}
+            ${liveDot(ws.sessions)}
             <span class="ws-count">${ws.sessions.length}</span>
           </button>
           ${termButton("workspace", ws.id, `Open ${ws.name} in a terminal`)}
           </div>
           <div class="ws-sessions">${rows}${
-            hidden > 0 ? `<button class="ws-more" data-more="${esc(ws.id)}">Show ${hidden} more</button>` : ""
+            hidden > 0 ? `<button class="ws-more" data-more="${esc(key)}">Show ${hidden} more</button>` : ""
           }</div>
+        </section>`;
+    };
+    list.innerHTML = activeHtml + byCli(groups)
+      .map(({ src, workspaces }) => {
+        const sessions = workspaces.flatMap((ws) => ws.sessions);
+        const open = isOpen(state.cliOpen, src.id, sessions);
+        return `<section class="cli-group${open ? " open" : ""}">
+          <button class="cli-head" data-cli="${esc(src.id)}" aria-expanded="${open}">
+            <svg class="cli-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+            <span class="src-dot" data-src="${esc(src.id)}"></span>
+            <span class="ws-name">${esc(src.label)}</span>
+            ${liveDot(sessions)}
+            <span class="ws-count" title="${workspaces.length} workspaces, ${sessions.length} sessions">${workspaces.length}</span>
+          </button>
+          <div class="cli-workspaces">${workspaces.map((ws) => wsSection(ws, src.id)).join("")}</div>
         </section>`;
       })
       .join("");
@@ -352,6 +399,16 @@
       button.addEventListener("click", () => {
         state.pinnedByUser = true;
         select(button.dataset.id);
+      });
+    }
+    for (const head of list.querySelectorAll(".cli-head")) {
+      head.addEventListener("click", () => {
+        const section = head.closest(".cli-group");
+        const open = !section.classList.contains("open");
+        state.cliOpen[head.dataset.cli] = open;
+        savePref("pi-companion.cliOpen", state.cliOpen);
+        section.classList.toggle("open", open);
+        head.setAttribute("aria-expanded", String(open));
       });
     }
     for (const head of list.querySelectorAll(".ws-head")) {

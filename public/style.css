@@ -334,6 +334,18 @@ body.resizing { cursor: col-resize; user-select: none; }
 .filter:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 0; }
 .session-list { display: flex; flex-direction: column; gap: 4px; }
 
+/* Workspaces tree, by CLI first: a caret opens a CLI's workspaces. */
+.cli-head { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 6px;
+  border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 700; color: var(--text); }
+.cli-head:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.cli-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.cli-caret { width: 14px; height: 14px; flex: none; fill: none; stroke: var(--muted); stroke-width: 2.2; stroke-linecap: round;
+  stroke-linejoin: round; transition: transform .12s; }
+.cli-group.open .cli-caret { transform: rotate(90deg); }
+.cli-workspaces { display: none; flex-direction: column; gap: 4px; padding: 0 0 6px 12px; }
+.cli-group.open .cli-workspaces { display: flex; }
+/* Inside a CLI's group every row is that CLI: the tag would only repeat it. */
+.cli-workspaces .src-tag { display: none; }
 .ws-head { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 6px; width: 100%; padding: 5px 6px;
   border-radius: 6px; cursor: pointer; font-size: 12.5px; font-weight: 650; color: var(--text); }
 .ws-head:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
