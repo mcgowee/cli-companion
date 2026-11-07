@@ -109,7 +109,7 @@
           )
           .join("")}
         ${row("Node", code(info.node && `${info.node} · ${info.platform}`))}
-        ${row("Started", info.startedAt ? esc(new Date(info.startedAt).toLocaleString()) : "")}
+        ${row("Started", info.startedAt ? esc(window.fmtTime(info.startedAt, { year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" })) : "")}
       </dl>
       <p class="about-actions">
         <button class="btn small" type="button" id="about-restart">Restart server</button>

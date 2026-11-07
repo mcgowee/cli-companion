@@ -33,7 +33,7 @@
     const d = new Date(at);
     if (Number.isNaN(d.getTime())) return "";
     const today = new Date().toDateString() === d.toDateString();
-    return today ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : d.toLocaleDateString([], { month: "short", day: "numeric", year: d.getFullYear() === new Date().getFullYear() ? undefined : "numeric" });
+    return today ? window.fmtTime(d, { hour: "numeric", minute: "2-digit" }) : d.toLocaleDateString([], { month: "short", day: "numeric", year: d.getFullYear() === new Date().getFullYear() ? undefined : "numeric" });
   }
 
   const base = (p) => String(p ?? "").split(/[\\/]/).filter(Boolean).pop() ?? "";

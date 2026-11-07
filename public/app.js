@@ -75,7 +75,7 @@
 
   function fmtTime(ts) {
     const d = typeof ts === "number" ? new Date(ts) : new Date(ts ?? Date.now());
-    return Number.isNaN(d.getTime()) ? "" : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return window.fmtTime(d, { hour: "2-digit", minute: "2-digit" });
   }
 
   function reasonText(reason) {
@@ -329,7 +329,16 @@
     gitAsked = "";
     renderSidebar();
     renderHeader();
+    // 12/24-hour switched: redraw the message times, keeping the scroll position.
+    if (window.companionPrefs?.clock !== shownClock) {
+      shownClock = window.companionPrefs?.clock;
+      const scroller = transcriptEl.closest(".scroll") ?? transcriptEl.parentElement;
+      const top = scroller?.scrollTop;
+      renderTranscript();
+      if (scroller && top !== undefined) scroller.scrollTop = top;
+    }
   });
+  let shownClock = window.companionPrefs?.clock;
 
   /** One session row; `wsName` adds the workspace name (used in the Active list). */
   function sessionRow(s, wsName) {
@@ -701,7 +710,7 @@
     $("session-meta").innerHTML = [
       cwd && `<span>${esc(cwd)}</span>`,
       state.history?.model && `<span>${esc(state.history.model)}</span>`,
-      found?.row.lastActivity && `<span>last active ${esc(new Date(found.row.lastActivity).toLocaleString())}</span>`,
+      found?.row.lastActivity && `<span>last active ${esc(window.fmtTime(found.row.lastActivity, { year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" }))}</span>`,
     ]
       .filter(Boolean)
       .join("<span class='sep'>·</span>");
@@ -774,8 +783,8 @@
   function timeOf(at) {
     const d = new Date(at);
     if (Number.isNaN(d.getTime())) return "";
-    if (d.toDateString() === new Date().toDateString()) return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    return d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    if (d.toDateString() === new Date().toDateString()) return window.fmtTime(d, { hour: "numeric", minute: "2-digit" });
+    return window.fmtTime(d, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   }
 
   function renderUsage() {

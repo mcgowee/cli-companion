@@ -159,7 +159,8 @@ next to it:
   - **Settings**: show or hide each CLI (Pi, Claude Code, Codex), change where its folder is,
     pick the terminal **Open** uses, and switch on suggested replies with a local Ollama model.
     Saved in `~/.cli-companion/settings.json`; changes apply at once.
-    **Appearance**: theme (match this computer, light or dark), and switches for cost estimates and
+    **Appearance**: theme (match this computer, light or dark), 12- or 24-hour times (or this
+    computer's choice), and switches for cost estimates and
     for git branch and changes. For text size, use the browser zoom.
     **Shortcut**: add or remove a **CLI Companion** shortcut in the Start menu or on the desktop
     (see Install).

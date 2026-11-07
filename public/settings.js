@@ -73,14 +73,23 @@
   }
 
   function appearanceHtml() {
-    const look = { theme: "system", showCost: true, showGit: true, ...(data.settings.appearance ?? {}) };
+    const look = { theme: "system", showCost: true, showGit: true, clock: "auto", ...(data.settings.appearance ?? {}) };
     const themes = [
       ["system", "Match this computer"],
       ["light", "Light"],
       ["dark", "Dark"],
     ];
+    const sample = (clock) => new Date(2026, 0, 1, 15, 30).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", ...(clock === "12" ? { hour12: true } : clock === "24" ? { hourCycle: "h23" } : {}) });
+    const clocks = [
+      ["auto", `Match this computer (${sample("auto")})`],
+      ["12", `12-hour (${sample("12")})`],
+      ["24", `24-hour (${sample("24")})`],
+    ];
     return `<label class="set-field narrow">Theme
         <select name="theme">${themes.map(([id, label]) => `<option value="${id}" ${id === look.theme ? "selected" : ""}>${label}</option>`).join("")}</select>
+      </label>
+      <label class="set-field narrow">Times
+        <select name="clock">${clocks.map(([id, label]) => `<option value="${id}" ${id === look.clock ? "selected" : ""}>${label}</option>`).join("")}</select>
       </label>
       <label class="switch set-check"><input type="checkbox" name="show-cost" ${look.showCost ? "checked" : ""}>
         <span>Show cost estimates</span></label>
@@ -225,6 +234,7 @@
         theme: form.querySelector('[name="theme"]').value,
         showCost: form.querySelector('[name="show-cost"]').checked,
         showGit: form.querySelector('[name="show-git"]').checked,
+        clock: form.querySelector('[name="clock"]').value,
       },
       suggest: {
         enabled: form.querySelector('[name="suggest-enabled"]').checked,

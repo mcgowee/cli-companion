@@ -13,7 +13,7 @@ test("validateSettings keeps known CLIs and terminals, rejects bad values", () =
     sources: { claude: { enabled: false, folder: abs } },
     terminal: "console",
     suggest: { enabled: false, model: "" },
-    appearance: { theme: "system", showCost: true, showGit: true },
+    appearance: { theme: "system", showCost: true, showGit: true, clock: "auto" },
   });
   assert.throws(() => validateSettings({ sources: { codex: { folder: "relative/path" } } }), SettingsError);
   assert.throws(() => validateSettings({ terminal: "iterm" }, { platform: "win32" }), SettingsError);
@@ -21,7 +21,7 @@ test("validateSettings keeps known CLIs and terminals, rejects bad values", () =
     sources: {},
     terminal: "auto",
     suggest: { enabled: false, model: "" },
-    appearance: { theme: "system", showCost: true, showGit: true },
+    appearance: { theme: "system", showCost: true, showGit: true, clock: "auto" },
   });
   // Suggested replies: a local model only, and on needs a model.
   assert.deepEqual(validateSettings({ suggest: { enabled: true, model: "qwen3.8:27b" } }).suggest, { enabled: true, model: "qwen3.8:27b" });
@@ -48,11 +48,13 @@ test("save and load round-trip; a broken file loads as defaults", async () => {
   assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).sources, { codex: { enabled: false } });
   assert.deepEqual((await loadSettings(file)).sources, { codex: { enabled: false } });
   writeFileSync(file, "{ not json");
-  assert.deepEqual(await loadSettings(file), { sources: {}, terminal: "auto", suggest: { enabled: false, model: "" }, appearance: { theme: "system", showCost: true, showGit: true } });
+  assert.deepEqual(await loadSettings(file), { sources: {}, terminal: "auto", suggest: { enabled: false, model: "" }, appearance: { theme: "system", showCost: true, showGit: true, clock: "auto" } });
 });
 
 test("validateSettings: appearance (theme, cost, git)", () => {
-  assert.deepEqual(validateSettings({ appearance: { theme: "dark", showCost: false } }).appearance, { theme: "dark", showCost: false, showGit: true });
+  assert.deepEqual(validateSettings({ appearance: { theme: "dark", showCost: false } }).appearance, { theme: "dark", showCost: false, showGit: true, clock: "auto" });
+  assert.equal(validateSettings({ appearance: { clock: "24" } }).appearance.clock, "24");
+  assert.throws(() => validateSettings({ appearance: { clock: "13" } }), SettingsError);
   assert.throws(() => validateSettings({ appearance: { theme: "neon" } }), SettingsError);
   assert.equal(validateSettings({ appearance: { theme: "neon" } }, { lenient: true }).appearance.theme, "system");
 });

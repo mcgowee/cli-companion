@@ -8,7 +8,7 @@
 // - terminal: what Open uses ("auto" or an id from TERMINALS for this platform).
 // - suggest: { enabled, model } suggested replies in the composer from a LOCAL Ollama model
 //   (off by default; cloud models are refused).
-// - appearance: { theme: "system" | "light" | "dark", showCost, showGit } how the page looks.
+// - appearance: { theme: "system" | "light" | "dark", showCost, showGit, clock: "auto" | "12" | "24" } how the page looks.
 //
 // Settings become environment overrides for createSources(), so environment variables and
 // settings work the same way. CLI_COMPANION_<ID>=0 in the real environment always wins.
@@ -24,10 +24,11 @@ export class SettingsError extends Error {}
 export const FOLDER_ENV = { pi: "PI_CODING_AGENT_DIR", claude: "CLAUDE_CONFIG_DIR", codex: "CODEX_HOME" };
 
 export function defaultSettings() {
-  return { sources: {}, terminal: "auto", suggest: { enabled: false, model: "" }, appearance: { theme: "system", showCost: true, showGit: true } };
+  return { sources: {}, terminal: "auto", suggest: { enabled: false, model: "" }, appearance: { theme: "system", showCost: true, showGit: true, clock: "auto" } };
 }
 
 const THEMES = ["system", "light", "dark"];
+const CLOCKS = ["auto", "12", "24"];
 
 export async function loadSettings(file) {
   try {
@@ -79,6 +80,8 @@ export function validateSettings(input, { platform = process.platform, lenient =
     else if (look.theme !== undefined) fail("Unknown theme.");
     if (typeof look.showCost === "boolean") out.appearance.showCost = look.showCost;
     if (typeof look.showGit === "boolean") out.appearance.showGit = look.showGit;
+    if (CLOCKS.includes(look.clock)) out.appearance.clock = look.clock;
+    else if (look.clock !== undefined) fail("Unknown clock format.");
   }
   if (out.suggest.enabled && !out.suggest.model) {
     fail("Pick a model for suggested replies, or switch them off.");
