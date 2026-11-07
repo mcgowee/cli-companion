@@ -23,11 +23,13 @@ next to it:
   compaction becomes a card with the summary the model now sees and the files it lists;
   messages that were summarized are dimmed.
 - **Context meter** and a status pill (Idle, Running, Compacting).
-- **Workspaces and sessions**: the sidebar lists every workspace (project folder) you have
-  used Pi in, with its sessions underneath, newest first, including past sessions you can
-  open and read. Nothing to add by hand: they come from Pi's own sessions folder. Running
-  sessions get a live dot and float to the top; a filter box searches folder names and
-  session titles. The window follows the most recently active session unless you pick one.
+- **Active and Workspaces**: the sidebar starts with **Active**, a flat list of every running
+  session with its folder name under the title. Below it, **Workspaces** lists every workspace
+  (project folder) you have used Pi in, newest first and collapsed, with its sessions
+  underneath (running ones keep their live dot there too), including past sessions you can
+  open and read. Only the folder of the open session expands by itself; what you open or
+  close is remembered. Nothing to add by hand: they come from Pi's own sessions folder. A
+  filter box searches folder names and session titles in both lists. The window follows the most recently active session unless you pick one.
   The left panel can be hidden with its button or **Ctrl+B** (⌘B on macOS).
 - **Claude Code sessions too (read-only)**: sessions from Claude Code (CLI or desktop app)
   appear in the same folders, tagged **CC**, read from `~/.claude/projects`. Open one to read

@@ -143,17 +143,44 @@
     return groups;
   }
 
-  function isWsOpen(ws, index) {
+  /** Workspaces start collapsed; only the one holding the open session opens by itself. */
+  function isWsOpen(ws) {
     if (state.filter) return true;
     if (ws.id in state.wsOpen) return state.wsOpen[ws.id];
-    const hasLive = ws.sessions.some((s) => liveStatus(s.id));
-    const hasSelected = ws.sessions.some((s) => s.id === state.selectedId);
-    return hasLive || hasSelected || index < 3;
+    return ws.sessions.some((s) => s.id === state.selectedId);
   }
 
   function liveStatus(id) {
     const live = state.sessions.get(id);
     return live && !live.ended ? live.status : undefined;
+  }
+
+  /** Running Pi, or a Claude Code transcript written to in the last couple of minutes. */
+  function isActive(s) {
+    return Boolean(liveStatus(s.id)) || (s.source === "claude" && s.active);
+  }
+
+  function activityOf(s) {
+    return Math.max(state.sessions.get(s.id)?.lastEventAt ?? 0, s.lastActivity ?? 0);
+  }
+
+  /** One session row; `wsName` adds the workspace name (used in the Active list). */
+  function sessionRow(s, wsName) {
+    const status = liveStatus(s.id);
+    const active = s.id === state.selectedId ? " active" : "";
+    const claude = s.source === "claude" || String(s.id).startsWith("claude:");
+    const dot = status ? esc(status) : claude && s.active ? "claude-active" : "saved";
+    const tip = `${claude ? "Claude Code" : "Pi"}: ${rowTitle(s)}${wsName ? ` · ${wsName}` : ""}`;
+    return `<button class="session${active}" data-id="${esc(s.id)}" title="${esc(tip)}">
+      <span class="sdot ${dot}"></span>
+      ${claude ? `<span class="src-tag" aria-label="Claude Code">CC</span>` : ""}
+      ${
+        wsName
+          ? `<span class="stext"><span class="sname">${esc(rowTitle(s))}</span><span class="sws">${esc(wsName)}</span></span>`
+          : `<span class="sname">${esc(rowTitle(s))}</span>`
+      }
+      <span class="sago">${status && status !== "idle" ? esc(statusLabel({ status })) : esc(fmtAgo(s.lastActivity))}</span>
+    </button>`;
   }
 
   function renderSidebar() {
@@ -171,39 +198,33 @@
         })
         .filter((ws) => ws.sessions.length);
     }
-    // Workspaces with a running session first, then by latest activity.
-    groups.sort((a, b) => {
-      const la = a.sessions.some((s) => liveStatus(s.id)) ? 1 : 0;
-      const lb = b.sessions.some((s) => liveStatus(s.id)) ? 1 : 0;
-      return lb - la || (b.lastActivity ?? 0) - (a.lastActivity ?? 0);
-    });
+    // Newest activity first (a running session keeps its workspace near the top anyway).
+    groups.sort((a, b) => (b.lastActivity ?? 0) - (a.lastActivity ?? 0));
+
+    // Active: every running session, flat, with its workspace name. They stay in the tree too.
+    const activeRows = groups
+      .flatMap((ws) => ws.sessions.filter(isActive).map((s) => ({ s, ws })))
+      .sort((a, b) => activityOf(b.s) - activityOf(a.s));
+    const activeHtml = `<div class="section-head side-section">Active${activeRows.length ? ` <span class="ws-count">${activeRows.length}</span>` : ""}</div>
+      <div class="active-list">${
+        activeRows.length
+          ? activeRows.map(({ s, ws }) => sessionRow(s, ws.name)).join("")
+          : `<p class="hint">${filter ? "No running sessions match." : "No running sessions."}</p>`
+      }</div>
+      <div class="section-head side-section">Workspaces</div>`;
 
     $("empty-hint").hidden = groups.length > 0 || Boolean(filter);
-    list.innerHTML = groups
-      .map((ws, index) => {
-        const open = isWsOpen(ws, index);
-        const anyLive = ws.sessions.some((s) => liveStatus(s.id));
+    list.innerHTML = activeHtml + groups
+      .map((ws) => {
+        const open = isWsOpen(ws);
+        const anyLive = ws.sessions.some(isActive);
         const showAll = state.showAll.has(ws.id) || Boolean(filter);
         const shown = showAll ? ws.sessions : ws.sessions.slice(0, SESSIONS_SHOWN);
         // Keep the selected session visible even past the cut.
         const selectedRow = ws.sessions.find((s) => s.id === state.selectedId);
         if (selectedRow && !shown.includes(selectedRow)) shown.push(selectedRow);
         const hidden = ws.sessions.length - shown.length;
-        const rows = shown
-          .map((s) => {
-            const status = liveStatus(s.id);
-            const active = s.id === state.selectedId ? " active" : "";
-            const claude = s.source === "claude";
-            const dot = status ? esc(status) : claude && s.active ? "claude-active" : "saved";
-            const tip = `${claude ? "Claude Code" : "Pi"}: ${rowTitle(s)}`;
-            return `<button class="session${active}" data-id="${esc(s.id)}" title="${esc(tip)}">
-              <span class="sdot ${dot}"></span>
-              ${claude ? `<span class="src-tag" aria-label="Claude Code">CC</span>` : ""}
-              <span class="sname">${esc(rowTitle(s))}</span>
-              <span class="sago">${status && status !== "idle" ? esc(statusLabel({ status })) : esc(fmtAgo(s.lastActivity))}</span>
-            </button>`;
-          })
-          .join("");
+        const rows = shown.map((s) => sessionRow(s)).join("");
         return `<section class="ws${open ? " open" : ""}">
           <button class="ws-head" data-ws="${esc(ws.id)}" title="${esc(ws.cwd)}" aria-expanded="${open}">
             <svg class="ws-icon closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.6l2 2h7.4a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>

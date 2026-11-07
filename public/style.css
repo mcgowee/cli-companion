@@ -185,6 +185,13 @@ body.resizing { cursor: col-resize; user-select: none; }
 .sname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
 .session.active .sname { font-weight: 600; }
 .sago { color: var(--muted); font-size: 11.5px; flex: none; }
+/* Active list: the workspace name on a second, smaller line under the title. */
+.stext { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.sws { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.side-section { display: flex; align-items: center; gap: 6px; margin: 6px 0 2px; padding: 0 6px; }
+.side-section:first-child { margin-top: 0; }
+.active-list { display: flex; flex-direction: column; gap: 1px; margin-bottom: 8px; }
+.active-list .hint { margin: 2px 0 0; }
 .sdot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex: none; }
 .sdot.saved { background: transparent; border: 1px solid color-mix(in srgb, var(--muted) 55%, transparent); }
 .sdot.idle { background: var(--ok); }
