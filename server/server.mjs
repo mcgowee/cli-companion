@@ -24,7 +24,8 @@ import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDash
 import { usageSummary } from "./usage.mjs";
 import { createTokenTracker } from "./token-usage.mjs";
 import { createSearchIndex } from "./search.mjs";
-import { copyLine, LaunchError, openPlan, resumeCommand, terminalsFor, workspaceActions } from "./launch.mjs";
+import { copyLine, LaunchError, openPlan, quotePath, resumeCommand, terminalsFor, workspaceActions } from "./launch.mjs";
+import { handoffBrief, handoffFileName, saveHandoff, sessionMarkdown } from "./handoff.mjs";
 import { loadSettings, saveSettings, SettingsError, sourceEnv, validateSettings } from "./settings.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import { isProcessAlive } from "./fsutil.mjs";
@@ -773,7 +774,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (req.method !== "GET" && !["/api/dashboards", "/api/favorites", "/api/folder", "/api/launch", "/api/settings"].includes(url.pathname)) {
+    if (req.method !== "GET" && !["/api/dashboards", "/api/favorites", "/api/folder", "/api/handoff", "/api/launch", "/api/settings"].includes(url.pathname)) {
       res.writeHead(405).end();
       return;
     }
@@ -901,6 +902,51 @@ const server = createServer(async (req, res) => {
       const progress = searchIndex.progress();
       const found = searchIndex.search(metas, url.searchParams.get("q") ?? "");
       sendJson(res, 200, { ...found, indexing: progress.running ? { done: progress.done, total: progress.total } : undefined });
+      return;
+    }
+
+    if (url.pathname === "/api/handoff") {
+      // GET ?id=&format=brief|full: the session as Markdown (a brief another CLI can continue from,
+      // or the whole session). POST { id, to } (page header): save the brief in the companion's
+      // own handoffs folder and open a terminal in the session's folder running CLI `to` with a
+      // fixed prompt to read it. `to` names a CLI; the command comes from its source.
+      if (req.method === "POST" && req.headers["x-pi-companion-page"] !== "1") {
+        res.writeHead(403).end();
+        return;
+      }
+      try {
+        const params = req.method === "POST" ? JSON.parse(await readBody(req)) : Object.fromEntries(url.searchParams);
+        const id = String(params.id ?? "");
+        if (!sessions.has(id) && !savedById.has(id)) await refreshSaved();
+        const where = locate(id);
+        const entries = where ? await where.source.readEntries(where.file) : undefined;
+        if (!entries) throw new WorkbenchError(404, "no history for that session");
+        const transcript = where.source.transcript(entries, { leafId: where.leafId });
+        const saved = savedById.get(id);
+        const live = sessions.get(id);
+        const cwd = live?.cwd ?? saved?.cwd ?? transcript.cwd;
+        const title = transcript.name || live?.name || saved?.name || saved?.preview || "session";
+        const git = cwd ? await gitFor(cwd).catch(() => undefined) : undefined;
+        const meta = { title, cli: where.source.label, assistant: where.source.assistant, cwd, file: where.file, git, model: transcript.model };
+        const targets = SOURCES.filter((source) => source.enabled && (source.installed || source.live)).map((source) => ({ id: source.id, label: source.label }));
+        if (req.method === "GET") {
+          const full = params.format === "full";
+          const markdown = full ? sessionMarkdown(transcript, meta) : handoffBrief(transcript, meta);
+          sendJson(res, 200, { markdown, filename: full ? handoffFileName(title).replace(/^handoff-/, "session-") : handoffFileName(title), targets });
+          return;
+        }
+        const to = SOURCES.find((source) => source.id === params.to && source.enabled);
+        const start = to?.startActions[0]?.command;
+        if (!start) throw new LaunchError("That CLI isn't available.");
+        if (!cwd) throw new LaunchError("This session has no folder to open.");
+        const file = await saveHandoff(join(stateDir(), "handoffs"), handoffFileName(title), handoffBrief(transcript, meta));
+        const prompt = `Read the handoff notes in ${file} and continue the work from there.`;
+        await openTerminal(await existingDir(cwd), `${start} ${quotePath(prompt)}`);
+        sendJson(res, 200, { ok: true, file, opened: to.label });
+      } catch (error) {
+        const status = error instanceof WorkbenchError ? error.status : error instanceof LaunchError || error instanceof SyntaxError ? 400 : 500;
+        sendJson(res, status, { error: error.message });
+      }
       return;
     }
 

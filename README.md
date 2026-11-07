@@ -127,6 +127,14 @@ next to it:
   things by typing. The selected session's CLI commands (`/compact`, `/model`, …): Enter puts
   the command in Pi's input, Ctrl+Enter also runs it; for Claude Code and Codex it is copied to
   paste. Also every session (running ones first) and the companion's pages and panels.
+- **Hand off** (session header, or "Hand off this session" in the palette): move the work to
+  another CLI, or take it out. **Copy handoff brief** puts a Markdown brief on the clipboard: where
+  the session started, the last compaction summary, the recent messages, the latest exchange in
+  full, the files it wrote or edited, git state, and the transcript's path. **Continue in Pi /
+  Claude Code / Codex** saves that brief in `~/.cli-companion/handoffs` (newest 20 kept) and opens
+  a terminal in the session's folder running that CLI, told to read it. **Download brief** and
+  **Download whole session** (messages and tool calls, no tool output) save a `.md` file. The
+  brief is put together from the session itself; no model is involved.
 - **Menu bar: Home, Search, Dashboards, Settings, About.** Home is the session view.
   - **Search** (Ctrl+Shift+F) finds words in every session of every CLI: what you typed and
     the replies, not tool output or thinking. All words must be in one message; "quotes" for a

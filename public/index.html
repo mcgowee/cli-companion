@@ -76,6 +76,10 @@
             <span id="context-text"></span>
           </div>
           <span class="pill" id="status-pill">Idle</span>
+          <div class="handoff">
+            <button class="btn small" id="handoff-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="handoff-menu" title="Continue this work in another CLI, or export it">Hand off</button>
+            <div class="usage-pop handoff-menu" id="handoff-menu" role="menu" aria-label="Hand off this session" hidden></div>
+          </div>
           <button class="icon-btn" id="wb-toggle" type="button" aria-label="Files and review panel" title="Files and review (Ctrl+Alt+B)">
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M14.5 4v16"/></svg>
           </button>
@@ -163,6 +167,7 @@
   <script src="dashboards.js"></script>
   <script src="settings.js"></script>
   <script src="search.js"></script>
+  <script src="handoff.js"></script>
   <script src="palette.js"></script>
   <script src="menu.js"></script>
 </body>

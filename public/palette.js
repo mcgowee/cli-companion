@@ -33,6 +33,8 @@
     { label: "Dashboards", run: () => (location.hash = "#/dashboards") },
     { label: "Settings", run: () => (location.hash = "#/settings") },
     { label: "About and keyboard shortcuts", run: () => (location.hash = "#/about") },
+    { label: "Hand off this session", hint: "continue in another CLI, or export", run: () => window.handoff?.open() },
+    { label: "Copy handoff brief", hint: "for pasting into another CLI", run: () => window.handoff?.copy() },
     { label: "Show or hide the left panel", hint: "Ctrl+B", run: () => window.companionApp?.toggleSidebar() },
     { label: "Show or hide Files, Review and Apps", hint: "Ctrl+Alt+B", run: () => $("wb-toggle")?.click() },
   ];
