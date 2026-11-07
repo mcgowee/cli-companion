@@ -14,6 +14,7 @@
   --code: #f2f2f6;
   --compact: #fff7e6;
   --compact-line: #f0d9a8;
+  --claude: #c2603a;
   --radius: 10px;
   --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
   --sans: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
@@ -33,6 +34,7 @@
     --code: #24242e;
     --compact: #2b2414;
     --compact-line: #5a4a22;
+    --claude: #e08a63;
   }
 }
 
@@ -189,6 +191,10 @@ body.resizing { cursor: col-resize; user-select: none; }
 .sdot.running { background: var(--ok); animation: pulse 1.2s infinite; }
 .sdot.compacting { background: var(--warn); animation: pulse 0.8s infinite; }
 .sdot.ended { background: transparent; border: 1px solid var(--muted); }
+.sdot.claude-active { background: var(--claude); animation: pulse 1.6s infinite; }
+.src-tag { flex: none; font: 600 9.5px/1 var(--mono); letter-spacing: 0.04em; padding: 2px 4px; border-radius: 4px;
+  color: var(--claude); background: color-mix(in srgb, var(--claude) 14%, transparent); }
+.pill.claude { color: var(--claude); background: color-mix(in srgb, var(--claude) 14%, transparent); }
 .hint { color: var(--muted); font-size: 12.5px; padding: 0 6px; }
 
 /* main */

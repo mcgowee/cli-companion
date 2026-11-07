@@ -193,8 +193,12 @@
           .map((s) => {
             const status = liveStatus(s.id);
             const active = s.id === state.selectedId ? " active" : "";
-            return `<button class="session${active}" data-id="${esc(s.id)}" title="${esc(rowTitle(s))}">
-              <span class="sdot ${status ? esc(status) : "saved"}"></span>
+            const claude = s.source === "claude";
+            const dot = status ? esc(status) : claude && s.active ? "claude-active" : "saved";
+            const tip = `${claude ? "Claude Code" : "Pi"}: ${rowTitle(s)}`;
+            return `<button class="session${active}" data-id="${esc(s.id)}" title="${esc(tip)}">
+              <span class="sdot ${dot}"></span>
+              ${claude ? `<span class="src-tag" aria-label="Claude Code">CC</span>` : ""}
               <span class="sname">${esc(rowTitle(s))}</span>
               <span class="sago">${status && status !== "idle" ? esc(statusLabel({ status })) : esc(fmtAgo(s.lastActivity))}</span>
             </button>`;
@@ -326,9 +330,41 @@
       .join("<span class='sep'>·</span>");
     $("context").hidden = true;
     const pill = $("status-pill");
-    pill.textContent = "Saved";
-    pill.className = "pill saved";
+    if (isClaude(state.selectedId)) {
+      const recent = found?.row.active || state.claudeActive;
+      pill.textContent = recent ? "Claude Code · active" : "Claude Code";
+      pill.className = `pill claude${recent ? " active" : ""}`;
+    } else {
+      pill.textContent = "Saved";
+      pill.className = "pill saved";
+    }
   }
+
+  function isClaude(id) {
+    return typeof id === "string" && id.startsWith("claude:");
+  }
+
+  /* ── follow a Claude Code session while its file grows (no live bridge yet) ── */
+
+  let claudeStat = null;
+  setInterval(async () => {
+    const id = state.selectedId;
+    if (!isClaude(id) || document.hidden) return;
+    try {
+      const res = await fetch(`/api/stat?id=${encodeURIComponent(id)}`, { cache: "no-store" });
+      if (!res.ok || id !== state.selectedId) return;
+      const s = await res.json();
+      const key = `${s.size}:${s.mtimeMs}`;
+      const changed = claudeStat && claudeStat.id === id && claudeStat.key !== key;
+      const activeChanged = state.claudeActive !== s.active;
+      claudeStat = { id, key };
+      state.claudeActive = s.active;
+      if (changed) loadHistory(true);
+      if (activeChanged) renderHeader();
+    } catch {
+      // Server restarting: try again next tick.
+    }
+  }, 2000);
 
   function renderHeader() {
     const s = state.sessions.get(state.selectedId);
@@ -460,7 +496,7 @@
         const err = item.errorMessage ? `<div class="err">${esc(item.errorMessage)}</div>` : "";
         const tools = item.toolCalls?.length ? `<div class="tools">${item.toolCalls.map(toolHtml).join("")}</div>` : "";
         if (!item.text && !thinking && !tools && !err) return "";
-        return `<article class="msg assistant${dim}"><div class="who">Pi <time>${fmtTime(item.timestamp)}</time>${msgTools(item.id, item.text)}</div>
+        return `<article class="msg assistant${dim}"><div class="who">${state.history?.source === "claude" ? "Claude" : "Pi"} <time>${fmtTime(item.timestamp)}</time>${msgTools(item.id, item.text)}</div>
           ${thinking}${item.text ? `<div class="prose">${md(item.text)}</div>` : ""}${err}${tools}</article>`;
       }
       case "compaction": {
@@ -581,6 +617,7 @@
   function select(id) {
     if (state.selectedId !== id) {
       state.selectedId = id;
+      state.claudeActive = undefined;
       state.history = null;
       state.historyVersionLoaded = -1;
       state.stickToBottom = true;

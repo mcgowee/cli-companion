@@ -6,6 +6,7 @@
 
 import { open, readdir, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { readClaudeMeta } from "./claude-file.mjs";
 
 const HEAD_BYTES = 64 * 1024;
 const TAIL_BYTES = 256 * 1024;
@@ -81,6 +82,7 @@ export async function readSessionMeta(file, stats) {
 
     return {
       id: header.id,
+      source: "pi",
       cwd: header.cwd ?? "",
       created: header.timestamp,
       name: name && !DEFAULT_NAMES.has(name.trim()) ? name.trim() : undefined,
@@ -131,7 +133,73 @@ export async function scanSessions(sessionsDir) {
       }
     }
   }
-  for (const file of metaCache.keys()) if (!seen.has(file)) metaCache.delete(file);
+  // Forget files that disappeared from this folder (the cache also holds Claude Code files).
+  for (const file of metaCache.keys()) if (file.startsWith(sessionsDir) && !seen.has(file)) metaCache.delete(file);
+  return metas;
+}
+
+/** Session id prefix that keeps Claude Code sessions apart from Pi sessions. */
+export const CLAUDE_PREFIX = "claude:";
+
+/**
+ * Claude Code sessions under `projectsDir` (~/.claude/projects/<folder>/<session-id>.jsonl).
+ * Subagent transcripts live one level deeper and are not listed. Same cache as Pi sessions.
+ */
+export async function scanClaudeSessions(projectsDir) {
+  let folders;
+  try {
+    folders = await readdir(projectsDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const metas = [];
+  for (const folder of folders) {
+    if (!folder.isDirectory()) continue;
+    let files;
+    try {
+      files = await readdir(join(projectsDir, folder.name));
+    } catch {
+      continue;
+    }
+    for (const name of files) {
+      if (!name.endsWith(".jsonl")) continue;
+      const file = join(projectsDir, folder.name, name);
+      try {
+        const stats = await stat(file);
+        if (!stats.isFile() || stats.size === 0) continue;
+        const cached = metaCache.get(file);
+        if (cached && cached.mtimeMs === stats.mtimeMs && cached.size === stats.size) {
+          if (cached.meta) metas.push(cached.meta);
+          continue;
+        }
+        const handle = await open(file, "r");
+        let raw;
+        try {
+          raw = await readClaudeMeta((position, length) => readRange(handle, position, length), stats.size);
+        } finally {
+          await handle.close();
+        }
+        const sessionId = raw.sessionId ?? name.replace(/\.jsonl$/, "");
+        const meta = raw.cwd
+          ? {
+              id: `${CLAUDE_PREFIX}${sessionId}`,
+              source: "claude",
+              cwd: raw.cwd,
+              created: raw.created,
+              name: raw.name && !DEFAULT_NAMES.has(raw.name.trim()) ? raw.name.trim() : undefined,
+              preview: raw.preview,
+              file,
+              size: stats.size,
+              mtimeMs: stats.mtimeMs,
+            }
+          : undefined;
+        metaCache.set(file, { mtimeMs: stats.mtimeMs, size: stats.size, meta });
+        if (meta) metas.push(meta);
+      } catch {
+        // Unreadable or vanished mid-scan: skip it this time.
+      }
+    }
+  }
   return metas;
 }
 

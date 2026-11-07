@@ -1,27 +1,36 @@
-// Pi companion server: a live, read-only view of running Pi CLI sessions.
+// Pi companion server: a live view of Pi CLI sessions, plus read-only Claude Code sessions.
 //
-// - The bridge extension (~/.pi/agent/extensions/companion.ts) POSTs event
-//   batches to /ingest. Pi stays the source of truth; this only mirrors it.
-// - The page subscribes to /events (Server-Sent Events) and fetches history
-//   from the session JSONL through /api/history.
+// - The bridge extension (extension/companion.ts) POSTs event batches to /ingest
+//   and long-polls /bridge/inbox for text the page sends. Pi stays the source of truth.
+// - The page subscribes to /events (Server-Sent Events) and fetches history from the
+//   session JSONL through /api/history.
+// - Claude Code transcripts (~/.claude/projects) are listed and read, never written;
+//   with no live bridge, the page polls /api/stat to follow a session that is growing.
 //
-// Rules: bind 127.0.0.1 only, Node built-ins only,
-// never touch Pi's files except to read them.
+// Rules: bind 127.0.0.1 only, Node built-ins only, never write Pi's or Claude Code's files.
 
 import { commandFromRequest } from "./commands.mjs";
 import { createServer } from "node:http";
-import { readFile, stat } from "node:fs/promises";
+import { open, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { extname, join, resolve, sep } from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import { fileURLToPath } from "node:url";
+import { claudeTranscriptItems, findClaudeImage, parseClaudeLines } from "./claude-file.mjs";
 import { findImage, parseEntries, transcriptItems } from "./session-file.mjs";
-import { groupByWorkspace, scanSessions } from "./session-index.mjs";
+import { groupByWorkspace, scanClaudeSessions, scanSessions } from "./session-index.mjs";
 import { listDir, readFileForView, reviewDiff, reviewStatus, WorkbenchError } from "./workbench.mjs";
 
 const HOST = "127.0.0.1";
 const PORT = Number.parseInt(process.env.PI_COMPANION_PORT ?? "30143", 10);
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
 const SESSIONS_DIR = resolve(AGENT_DIR, "sessions");
+// Claude Code transcripts (read-only). PI_COMPANION_CLAUDE=0 turns this source off.
+const CLAUDE_DIR =
+  process.env.PI_COMPANION_CLAUDE === "0"
+    ? undefined
+    : resolve(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "projects");
+const CLAUDE_ACTIVE_MS = 2 * 60_000;
 const PUBLIC_DIR = fileURLToPath(new URL("../public/", import.meta.url));
 const MAX_BODY = 4 * 1024 * 1024;
 
@@ -44,13 +53,17 @@ function isProcessAlive(pid) {
   }
 }
 
-function isUnderSessionsDir(file) {
-  if (typeof file !== "string") return false;
+function isUnderDir(dir, file) {
+  if (typeof file !== "string" || !dir) return false;
   const absolute = resolve(file);
-  const root = SESSIONS_DIR.endsWith(sep) ? SESSIONS_DIR : SESSIONS_DIR + sep;
+  const root = dir.endsWith(sep) ? dir : dir + sep;
   return process.platform === "win32"
     ? absolute.toLowerCase().startsWith(root.toLowerCase())
     : absolute.startsWith(root);
+}
+
+function isUnderSessionsDir(file) {
+  return isUnderDir(SESSIONS_DIR, file);
 }
 
 function newSession(id) {
@@ -306,9 +319,50 @@ function readBody(req) {
   });
 }
 
+/**
+ * Claude Code transcripts grow by appending, and can be hundreds of MB: read each file once,
+ * then only the bytes added since (a StringDecoder keeps multi-byte characters split across
+ * reads intact). A file that shrank is read again from the start.
+ */
+const claudeCache = new Map();
+async function readClaudeEntries(file) {
+  if (!isUnderDir(CLAUDE_DIR, file)) return undefined;
+  try {
+    const stats = await stat(file);
+    let c = claudeCache.get(file);
+    if (c && c.size === stats.size && c.mtimeMs === stats.mtimeMs) return c.entries;
+    if (!c || stats.size < c.offset) c = { offset: 0, carry: "", entries: [], decoder: new StringDecoder("utf8") };
+    const handle = await open(file, "r");
+    try {
+      const CHUNK = 8 * 1024 * 1024;
+      const buffer = Buffer.alloc(CHUNK);
+      while (c.offset < stats.size) {
+        const { bytesRead } = await handle.read(buffer, 0, Math.min(CHUNK, stats.size - c.offset), c.offset);
+        if (!bytesRead) break;
+        c.offset += bytesRead;
+        const text = c.carry + c.decoder.write(buffer.subarray(0, bytesRead));
+        const cut = text.lastIndexOf("\n");
+        c.carry = cut < 0 ? text : text.slice(cut + 1);
+        if (cut >= 0) for (const entry of parseClaudeLines(text.slice(0, cut))) c.entries.push(entry);
+      }
+    } finally {
+      await handle.close();
+    }
+    c.size = stats.size;
+    c.mtimeMs = stats.mtimeMs;
+    claudeCache.delete(file);
+    claudeCache.set(file, c);
+    while (claudeCache.size > 3) claudeCache.delete(claudeCache.keys().next().value);
+    return c.entries;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Parsed entries of the few most recently opened session files, reused until the file changes. */
 const entriesCache = new Map();
-async function readEntries(file) {
+async function readEntries(file, source = "pi") {
+  if (source === "claude") return readClaudeEntries(file);
   if (!isUnderSessionsDir(file)) return undefined;
   try {
     const stats = await stat(file);
@@ -333,8 +387,9 @@ let scanInFlight;
 async function refreshSaved() {
   if (Date.now() - lastScanAt < 2000) return;
   if (!scanInFlight) {
-    scanInFlight = scanSessions(SESSIONS_DIR)
-      .then((metas) => {
+    scanInFlight = Promise.all([SESSIONS_DIR ? scanSessions(SESSIONS_DIR) : [], CLAUDE_DIR ? scanClaudeSessions(CLAUDE_DIR) : []])
+      .then(([pi, claude]) => {
+        const metas = [...pi, ...claude];
         savedById = new Map(metas.map((meta) => [meta.id, meta]));
         lastScanAt = Date.now();
       })
@@ -348,9 +403,9 @@ async function refreshSaved() {
 /** Where a session's history lives: a live session first, else the saved index. */
 function locate(id) {
   const live = sessions.get(id);
-  if (live?.sessionFile) return { file: live.sessionFile, leafId: live.leafId, historyVersion: live.historyVersion };
+  if (live?.sessionFile) return { file: live.sessionFile, leafId: live.leafId, historyVersion: live.historyVersion, source: "pi" };
   const saved = savedById.get(id);
-  if (saved) return { file: saved.file, leafId: undefined, historyVersion: 0 };
+  if (saved) return { file: saved.file, leafId: undefined, historyVersion: 0, source: saved.source ?? "pi" };
   return undefined;
 }
 
@@ -368,12 +423,15 @@ async function workspaceTree() {
   for (const meta of savedById.values()) {
     rows.set(meta.id, {
       id: meta.id,
+      source: meta.source ?? "pi",
       cwd: meta.cwd,
       name: meta.name,
       preview: meta.preview,
       created: meta.created,
       lastActivity: meta.mtimeMs,
       live: undefined,
+      // Claude Code has no live bridge yet: a file written in the last 2 minutes counts as active.
+      active: meta.source === "claude" && Date.now() - meta.mtimeMs < CLAUDE_ACTIVE_MS ? true : undefined,
     });
   }
   for (const live of sessions.values()) {
@@ -551,19 +609,37 @@ const server = createServer(async (req, res) => {
       const id = url.searchParams.get("id") ?? "";
       if (!sessions.has(id) && !savedById.has(id)) await refreshSaved();
       const where = locate(id);
-      const entries = where ? await readEntries(where.file) : undefined;
+      const entries = where ? await readEntries(where.file, where.source) : undefined;
       if (!entries) {
         sendJson(res, 404, { error: "no history for that session" });
         return;
       }
-      sendJson(res, 200, { ...transcriptItems(entries, where.leafId), historyVersion: where.historyVersion });
+      const transcript = where.source === "claude" ? claudeTranscriptItems(entries) : transcriptItems(entries, where.leafId);
+      sendJson(res, 200, { ...transcript, source: where.source, historyVersion: where.historyVersion });
+      return;
+    }
+
+    if (url.pathname === "/api/stat") {
+      // Cheap change check for sessions without a live bridge (Claude Code): size + mtime only.
+      const where = locate(url.searchParams.get("id") ?? "");
+      if (!where) {
+        sendJson(res, 404, { error: "unknown session" });
+        return;
+      }
+      try {
+        const s = await stat(where.file);
+        sendJson(res, 200, { size: s.size, mtimeMs: s.mtimeMs, active: Date.now() - s.mtimeMs < CLAUDE_ACTIVE_MS });
+      } catch {
+        sendJson(res, 404, { error: "file not found" });
+      }
       return;
     }
 
     if (url.pathname === "/api/image") {
       const where = locate(url.searchParams.get("id") ?? "");
-      const entries = where ? await readEntries(where.file) : undefined;
-      const image = entries ? findImage(entries, url.searchParams.get("ref")) : undefined;
+      const entries = where ? await readEntries(where.file, where.source) : undefined;
+      const ref = url.searchParams.get("ref");
+      const image = entries ? (where.source === "claude" ? findClaudeImage(entries, ref) : findImage(entries, ref)) : undefined;
       if (!image) {
         res.writeHead(404).end();
         return;

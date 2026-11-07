@@ -29,6 +29,12 @@ next to it:
   sessions get a live dot and float to the top; a filter box searches folder names and
   session titles. The window follows the most recently active session unless you pick one.
   The left panel can be hidden with its button or **Ctrl+B** (⌘B on macOS).
+- **Claude Code sessions too (read-only)**: sessions from Claude Code (CLI or desktop app)
+  appear in the same folders, tagged **CC**, read from `~/.claude/projects`. Open one to read
+  the transcript (replies, thinking, tool calls with results, compactions, images); a session
+  that is being written to is marked *active* and the open transcript follows it within
+  about 2 seconds. Files and Review work for them as well. Sending into Claude Code isn't
+  supported; use Copy.
 - **Send text to Pi (bottom composer)**: write or collect text, then **Put in Pi's input**
   (**Ctrl+Enter**). It lands in the running Pi CLI's prompt box, with a short notice in the
   terminal. The **Pi's input box** strip above the composer shows what that box holds right
@@ -106,6 +112,8 @@ Pi (interactive) ──events──► companion server ──SSE──► windo
 |---|---|---|
 | `PI_COMPANION_PORT` | `30143` | Port for the server and the extension |
 | `PI_CODING_AGENT_DIR` | `~/.pi/agent` | Pi's folder (sessions are read from `sessions/`) |
+| `CLAUDE_CONFIG_DIR` | `~/.claude` | Claude Code's folder (transcripts are read from `projects/`) |
+| `PI_COMPANION_CLAUDE` | on | Set to `0` to hide Claude Code sessions |
 
 The server log and the app-window browser profile live in `~/.pi/agent/companion/`.
 

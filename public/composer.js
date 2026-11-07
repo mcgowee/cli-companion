@@ -78,6 +78,7 @@
   function blocker() {
     const s = state.session;
     if (!state.selectedId) return "Pick a session first.";
+    if (state.selectedId.startsWith("claude:")) return "Sending to Claude Code isn't supported yet. Use Copy and paste it into Claude Code.";
     if (!s || s.ended) return "This is a saved session. Open it in Pi (pi -r) to send to it.";
     if (s.mode && s.mode !== "tui") return "This Pi has no terminal input box (pi-gui or RPC). Use Copy instead.";
     if (s.listening === false) return "Pi isn't listening yet. Run /reload in that Pi to load the latest companion extension.";
