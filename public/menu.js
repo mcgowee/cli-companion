@@ -136,7 +136,7 @@
 
       <h2>Project</h2>
       <p><a href="https://github.com/mcgowee/cli-companion" target="_blank" rel="noopener">github.com/mcgowee/cli-companion</a>
-      · MIT license · run it with <code>npx github:mcgowee/cli-companion</code>, or in Pi with <code>pi install git:github.com/mcgowee/cli-companion</code></p>`;
+      · MIT license · run it with <code>npx cli-companion</code>, or in Pi with <code>pi install git:github.com/mcgowee/cli-companion</code></p>`;
     const button = $("about-restart");
     button.addEventListener("click", () => restartServer(button, $("about-restart-note")));
   }

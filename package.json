@@ -12,6 +12,10 @@
     "type": "git",
     "url": "git+https://github.com/mcgowee/cli-companion.git"
   },
+  "homepage": "https://github.com/mcgowee/cli-companion#readme",
+  "bugs": {
+    "url": "https://github.com/mcgowee/cli-companion/issues"
+  },
   "keywords": [
     "pi-package",
     "pi",
