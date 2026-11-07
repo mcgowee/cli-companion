@@ -20,6 +20,7 @@
   "files": [
     "extension/",
     "server/",
+    "hooks/",
     "public/",
     "README.md",
     "LICENSE"

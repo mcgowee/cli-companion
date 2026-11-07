@@ -9,7 +9,9 @@
 
 import { randomUUID } from "node:crypto";
 
-export const COMMAND_TYPES = new Set(["paste", "peek", "clear", "submit"]);
+// Claude Code (no input box API): queue — hand text to Claude at its next Stop hook;
+// unqueue — drop what is still waiting.
+export const COMMAND_TYPES = new Set(["paste", "peek", "clear", "submit", "queue", "unqueue"]);
 export const MAX_SEND_CHARS = 200_000;
 
 /**
@@ -20,7 +22,7 @@ export function commandFromRequest(body) {
   const type = body?.type === undefined ? "paste" : String(body.type);
   if (!COMMAND_TYPES.has(type)) return { status: 400, error: "Unknown command." };
   const cmdId = /^[0-9a-f-]{36}$/i.test(String(body?.cmdId ?? "")) ? String(body.cmdId) : randomUUID();
-  if (type !== "paste") return { command: { cmdId, type } };
+  if (type !== "paste" && type !== "queue") return { command: { cmdId, type } };
   const text = typeof body?.text === "string" ? body.text : "";
   if (!text.trim()) return { status: 400, error: "Nothing to send." };
   if (text.length > MAX_SEND_CHARS) return { status: 413, error: "Too long to paste (over 200,000 characters)." };

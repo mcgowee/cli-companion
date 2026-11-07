@@ -29,12 +29,18 @@ next to it:
   sessions get a live dot and float to the top; a filter box searches folder names and
   session titles. The window follows the most recently active session unless you pick one.
   The left panel can be hidden with its button or **Ctrl+B** (⌘B on macOS).
-- **Claude Code sessions too (read-only)**: sessions from Claude Code (CLI or desktop app)
-  appear in the same folders, tagged **CC**, read from `~/.claude/projects`. Open one to read
-  the transcript (replies, thinking, tool calls with results, compactions, images); a session
-  that is being written to is marked *active* and the open transcript follows it within
-  about 2 seconds. Files and Review work for them as well. Sending into Claude Code isn't
-  supported; use Copy.
+- **Claude Code sessions too**: sessions from Claude Code (CLI or desktop app) appear in the
+  same folders, tagged **CC**, read from `~/.claude/projects`. Open one to read the transcript
+  (replies, thinking, tool calls with results, compactions, images); a session that is being
+  written to is marked *active* and the open transcript follows it within about 2 seconds.
+  Files and Review work for them as well.
+  - **Optional hooks** (`node hooks/install-claude-hooks.mjs`, undo with `--remove`) add live
+    status (running, current tool, compacting) and let the composer **Queue for Claude**:
+    Claude Code has no way for another program to type into its prompt, so queued text is
+    handed to Claude by its Stop hook when the current reply ends, and Claude continues with
+    it. If Claude is idle, it waits until the next reply ends. The strip shows what is queued
+    and the last prompt Claude received. The hook exits at once if the companion isn't
+    running, so Claude Code is never slowed down or blocked.
 - **Send text to Pi (bottom composer)**: write or collect text, then **Put in Pi's input**
   (**Ctrl+Enter**). It lands in the running Pi CLI's prompt box, with a short notice in the
   terminal. The **Pi's input box** strip above the composer shows what that box holds right
