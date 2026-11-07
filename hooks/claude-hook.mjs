@@ -35,9 +35,8 @@ async function main() {
       sessionId: payload.session_id,
       transcriptPath: payload.transcript_path,
       cwd: payload.cwd,
-      // The hook runs as a child of the claude process: its parent id lets the companion
-      // notice when that Claude Code exits.
-      pid: process.ppid,
+      // No pid: Claude Code runs hooks through a short-lived shell, so process.ppid is gone
+      // as soon as the hook ends. The companion relies on SessionEnd (and a long idle expiry).
       event: { ...event, at: Date.now() },
     }),
     signal: AbortSignal.timeout(event.type === "stop" ? 2500 : 1200),

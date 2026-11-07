@@ -250,7 +250,7 @@ function applyClaudeHook(body) {
     s.mode = "claude-hooks";
     sessions.set(id, s);
   }
-  if (Number.isInteger(body.pid)) s.pid = body.pid;
+  // Hooks send no pid (their parent is a short-lived shell); SessionEnd and idle expiry end it.
   if (isUnderDir(CLAUDE_DIR, body.transcriptPath)) s.sessionFile = body.transcriptPath;
   if (typeof body.cwd === "string") s.cwd = body.cwd;
   s.lastEventAt = now();
@@ -293,6 +293,7 @@ function applyClaudeHook(body) {
       break;
     }
     case "shutdown":
+      failClaudeQueue(id, "That Claude Code session ended before it was delivered.");
       s.ended = true;
       s.status = "ended";
       s.tools = {};
@@ -363,16 +364,28 @@ function scheduleSessionBroadcast(session) {
   );
 }
 
-// Drop sessions whose Pi process has exited.
+function failClaudeQueue(id, error) {
+  for (const m of claudeQueues.get(id) ?? []) broadcast({ type: "delivered", cmdId: m.cmdId, ok: false, error });
+  claudeQueues.delete(id);
+}
+
+// Claude Code sessions (hooks) have no pid: forget one after SessionEnd plus a short grace,
+// or after a long silence (Claude closed without SessionEnd, e.g. the window was killed).
+const CLAUDE_ENDED_MS = 60_000;
+const CLAUDE_IDLE_MS = 12 * 60 * 60 * 1000;
+
+// Drop sessions whose Pi process has exited, and stale Claude Code hook sessions.
 setInterval(() => {
   for (const [id, session] of sessions) {
-    if (session.pid && !isProcessAlive(session.pid)) {
+    const idleFor = now() - (session.lastEventAt ?? 0);
+    const gone =
+      session.source === "claude"
+        ? idleFor > (session.ended ? CLAUDE_ENDED_MS : CLAUDE_IDLE_MS)
+        : session.pid && !isProcessAlive(session.pid);
+    if (gone) {
       sessions.delete(id);
       inboxes.delete(id);
-      for (const m of claudeQueues.get(id) ?? []) {
-        broadcast({ type: "delivered", cmdId: m.cmdId, ok: false, error: "That Claude Code session closed before it was delivered." });
-      }
-      claudeQueues.delete(id);
+      failClaudeQueue(id, "That Claude Code session closed before it was delivered.");
       broadcast({ type: "removed", id });
     }
   }
