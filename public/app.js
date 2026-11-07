@@ -220,6 +220,11 @@
       .map((ws) => {
         const open = isWsOpen(ws);
         const anyLive = ws.sessions.some(isActive);
+        // Solid while its sessions are idle; pulses while one of them is working.
+        const anyBusy = ws.sessions.some((s) => {
+          const status = liveStatus(s.id);
+          return status === "running" || status === "compacting" || (s.source === "claude" && s.active && s.claudeStatus !== "idle");
+        });
         const showAll = state.showAll.has(ws.id) || Boolean(filter);
         const shown = showAll ? ws.sessions : ws.sessions.slice(0, SESSIONS_SHOWN);
         // Keep the selected session visible even past the cut.
@@ -232,7 +237,7 @@
             <svg class="ws-icon closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.6l2 2h7.4a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>
             <svg class="ws-icon opened" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 17.5V7.5a2 2 0 0 1 2-2h3.6l2 2h6.4a2 2 0 0 1 2 2v1"/><path d="M3.5 17.5l2.3-5.6a2 2 0 0 1 1.9-1.3H21a1 1 0 0 1 .9 1.4l-2.2 5.3a2 2 0 0 1-1.9 1.2H5.5a2 2 0 0 1-2-1z"/></svg>
             <span class="ws-name">${esc(ws.name)}</span>
-            ${anyLive ? `<span class="ws-live"></span>` : ""}
+            ${anyLive ? `<span class="ws-live${anyBusy ? " busy" : ""}"></span>` : ""}
             <span class="ws-count">${ws.sessions.length}</span>
           </button>
           <div class="ws-sessions">${rows}${

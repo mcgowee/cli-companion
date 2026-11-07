@@ -200,6 +200,15 @@ export default function companionBridge(pi: ExtensionAPI): void {
     };
   };
 
+  /** Extension, prompt-template and skill commands (Pi's built-ins are listed by the server). */
+  const commandList = () => {
+    try {
+      return pi.getCommands().map((c) => ({ name: c.name, description: c.description ?? "", source: c.source }));
+    } catch {
+      return undefined;
+    }
+  };
+
   /* ── commands from the companion window (long poll) ── */
 
   let inboxAbort: AbortController | undefined;
@@ -336,11 +345,13 @@ export default function companionBridge(pi: ExtensionAPI): void {
     const events = queue;
     queue = [];
     posting = true;
+    // The slash-command list (for the window's "/" lookup) rides only on start and heartbeat.
+    const withCommands = events.some((e) => e.type === "session_start" || e.type === "hello");
     try {
       await fetch(INGEST_URL, {
         method: "POST",
         headers: { "content-type": "application/json", "x-pi-companion": "1" },
-        body: JSON.stringify({ ...snapshot(ctx), events }),
+        body: JSON.stringify({ ...snapshot(ctx), ...(withCommands ? { commands: commandList() } : {}), events }),
         signal: AbortSignal.timeout(1500),
       });
     } catch {

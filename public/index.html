@@ -72,19 +72,20 @@
 
       <section class="live" id="live"></section>
 
-      <section class="composer" id="composer" aria-label="Send to Pi">
+      <section class="composer" id="composer" aria-label="Composer">
         <button class="jump" id="jump" hidden>Jump to latest ↓</button>
         <div class="composer-head">
           <button class="composer-toggle" id="composer-toggle" type="button" aria-expanded="true" aria-controls="composer-body">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
-            To Pi
+            <span id="composer-title">Composer</span>
           </button>
           <span class="composer-target" id="composer-target"></span>
           <span class="composer-status" id="composer-status" role="status" aria-live="polite"></span>
         </div>
         <div class="composer-body" id="composer-body">
-          <textarea id="composer-text" rows="3" spellcheck="false" aria-label="Text for Pi"
-            placeholder="Write or paste here, or click Add on code, messages, files and diffs. Ctrl+Enter puts it in Pi's input box; Ctrl+Shift+Enter also sends it."></textarea>
+          <div class="slash-menu" id="slash-menu" role="listbox" aria-label="Slash commands" hidden></div>
+          <textarea id="composer-text" rows="3" spellcheck="false" aria-label="Composer text"
+            placeholder="Write or paste here, or click Add on code, messages, files and diffs. Type / for commands."></textarea>
           <div class="composer-actions">
             <button class="btn" id="composer-clear" type="button">Clear</button>
             <button class="btn primary" id="composer-send" type="button">Put in Pi's input <kbd>Ctrl+Enter</kbd></button>

@@ -91,6 +91,7 @@
     const s = state.session;
     const name = s ? (s.name && !["New thread", "New session"].includes(s.name) ? s.name : (s.cwd ?? "").split(/[\\/]/).pop()) : "";
     const why = blocker();
+    $("composer-title").textContent = !state.selectedId ? "Composer" : isClaude() ? "To Claude Code" : "To Pi";
     targetEl.textContent = why || isClaude() ? "" : `→ ${name || "Pi"}`;
     sendEl.disabled = Boolean(why) || !textEl.value.trim() || busy();
     sendLabelEl.textContent = isClaude() ? "Copy for Claude " : "Put in Pi's input ";
@@ -152,13 +153,21 @@
   async function put(andEnter = false) {
     if (blocker() || !textEl.value.trim() || busy()) return;
     if (isClaude()) {
-      // The draft is kept, so it can be copied again.
-      const ok = await copyText(textEl.value);
-      setStatus(
-        ok ? "Copied ✓ Click in Claude Code, paste (Ctrl+V or right-click), then press Enter." : "Copy failed. Select the text and press Ctrl+C.",
-        ok ? "ok" : "error",
-        true,
-      );
+      const text = textEl.value;
+      if (!(await copyText(text))) {
+        setStatus("Copy failed. Select the text and press Ctrl+C.", "error", true);
+        return;
+      }
+      state.lastSent = text;
+      if (textEl.value === text) {
+        textEl.value = "";
+        savePref("pi-companion.draft", "");
+        autoSize();
+      }
+      statusEl.innerHTML = `Copied ✓ Paste it into Claude Code (Ctrl+V or right-click), then press Enter. <button type="button" class="link" data-restore>Bring text back</button>`;
+      statusEl.dataset.kind = "ok";
+      statusEl.dataset.sticky = "1";
+      renderControls();
       return;
     }
     const text = textEl.value;
@@ -198,8 +207,118 @@
     renderControls();
   }
 
+  /* ── "/" command lookup ───────────────────────────────── */
+
+  // Typing "/" at the start of a line lists the selected CLI's slash commands; ↑/↓ to move,
+  // Enter or Tab to insert, Esc to close. The list comes from /api/commands (cached ~30 s).
+  const menuEl = $("slash-menu");
+  const slash = { cache: new Map(), items: [], index: 0, start: -1 };
+
+  async function commandsFor(id) {
+    const hit = slash.cache.get(id);
+    if (hit && Date.now() - hit.at < 30_000) return hit.commands;
+    try {
+      const res = await fetch(`/api/commands?id=${encodeURIComponent(id)}`, { cache: "no-store" });
+      const commands = res.ok ? ((await res.json()).commands ?? []) : [];
+      slash.cache.set(id, { at: Date.now(), commands });
+      return commands;
+    } catch {
+      return hit?.commands ?? [];
+    }
+  }
+
+  /** The "/word" being typed at the start of the caret's line, or undefined. */
+  function slashQuery() {
+    const caret = textEl.selectionStart;
+    if (caret !== textEl.selectionEnd) return undefined;
+    const lineStart = textEl.value.lastIndexOf("\n", caret - 1) + 1;
+    const typed = textEl.value.slice(lineStart, caret);
+    return /^\/[\w:.-]*$/.test(typed) ? { start: lineStart, query: typed.slice(1).toLowerCase() } : undefined;
+  }
+
+  function closeMenu() {
+    menuEl.hidden = true;
+    slash.items = [];
+  }
+
+  async function updateMenu() {
+    const q = state.selectedId ? slashQuery() : undefined;
+    if (!q) return closeMenu();
+    const id = state.selectedId;
+    const all = await commandsFor(id);
+    const again = slashQuery();
+    if (id !== state.selectedId || !again || again.query !== q.query) return; // typed on meanwhile
+    const starts = all.filter((c) => c.name.toLowerCase().startsWith(q.query));
+    const contains = all.filter((c) => !c.name.toLowerCase().startsWith(q.query) && c.name.toLowerCase().includes(q.query));
+    slash.items = [...starts, ...contains].slice(0, 50);
+    slash.start = q.start;
+    slash.index = 0;
+    if (!slash.items.length) return closeMenu();
+    renderMenu();
+  }
+
+  function renderMenu() {
+    menuEl.innerHTML = slash.items
+      .map(
+        (c, i) => `<div class="slash-item${i === slash.index ? " selected" : ""}" role="option" data-i="${i}" aria-selected="${i === slash.index}">
+          <span class="slash-name">/${window.escapeHtml(c.name)}</span>
+          <span class="slash-desc">${window.escapeHtml(c.description || "")}</span>
+          ${c.source && c.source !== "builtin" ? `<span class="slash-src">${window.escapeHtml(c.source)}</span>` : ""}
+        </div>`,
+      )
+      .join("");
+    menuEl.hidden = false;
+    menuEl.querySelector(".selected")?.scrollIntoView({ block: "nearest" });
+  }
+
+  function pickCommand(i) {
+    const c = slash.items[i];
+    if (!c) return;
+    const caret = textEl.selectionStart;
+    const before = textEl.value.slice(0, slash.start);
+    const after = textEl.value.slice(caret);
+    const insertText = `/${c.name} `;
+    textEl.value = `${before}${insertText}${after.replace(/^ /, "")}`;
+    const pos = before.length + insertText.length;
+    textEl.setSelectionRange(pos, pos);
+    closeMenu();
+    savePref("pi-companion.draft", textEl.value);
+    autoSize();
+    renderControls();
+    textEl.focus();
+  }
+
+  textEl.addEventListener("input", () => void updateMenu());
+  textEl.addEventListener("click", () => void updateMenu());
+  textEl.addEventListener("blur", () => setTimeout(closeMenu, 150));
+  menuEl.addEventListener("mousedown", (event) => {
+    const item = event.target.closest(".slash-item");
+    if (!item) return;
+    event.preventDefault(); // keep focus in the textarea
+    pickCommand(Number(item.dataset.i));
+  });
+
   sendEl.addEventListener("click", () => put(false));
   textEl.addEventListener("keydown", (event) => {
+    if (!menuEl.hidden && slash.items.length && !event.ctrlKey && !event.metaKey) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const n = slash.items.length;
+        slash.index = (slash.index + (event.key === "ArrowDown" ? 1 : n - 1)) % n;
+        renderMenu();
+        return;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault();
+        pickCommand(slash.index);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeMenu();
+        return;
+      }
+    }
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
       put(event.shiftKey);

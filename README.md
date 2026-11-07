@@ -39,13 +39,18 @@ next to it:
   listed under Active as running or idle, and the open transcript follows it within about
   2 seconds. Files and Review work for them as well. Claude Code has no way for
   another program to type into its prompt, so for a Claude Code session the composer's button
-  is **Copy for Claude**: it copies the text for you to paste into Claude Code.
+  is **Copy for Claude**: it copies the text for you to paste into Claude Code and empties
+  the box (**Bring text back** restores it).
 - **Send text to Pi (bottom composer)**: write or collect text, then **Put in Pi's input**
   (**Ctrl+Enter**). It lands in the running Pi CLI's prompt box, with a short notice in the
   terminal; press Enter there to send it. **Ctrl+Shift+Enter** puts the text in and sends it
   in one go. If
   Pi is busy, the message waits until it finishes. `/` commands and `!` shell lines are left
   for you to send from the terminal.
+  Type **/** at the start of a line for a list of the selected CLI's slash commands (↑/↓,
+  Enter or Tab to insert, Esc to close). For Pi: its built-ins plus the extension, prompt and
+  skill commands the running Pi reports. For Claude Code: its common built-ins plus your
+  commands and skills from `~/.claude` and the project's `.claude` folder.
   Every code block, message, tool input/output, file (Files tab) and diff (Review tab) has
   **Copy** and **Add** buttons; Add drops it into the composer as a fenced block. The draft is
   kept if you close the window. Works for running terminal sessions; sessions opened before

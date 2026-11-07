@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { claudeTranscriptItems, findClaudeImage, parseClaudeLines } from "./claude-file.mjs";
 import { findImage, parseEntries, transcriptItems } from "./session-file.mjs";
 import { CLAUDE_PREFIX, groupByWorkspace, scanClaudeSessions, scanSessions } from "./session-index.mjs";
+import { CLAUDE_BUILTINS, claudeCustomCommands, mergeCommands, PI_BUILTINS } from "./slash-commands.mjs";
 import { listDir, readFileForView, reviewDiff, reviewStatus, WorkbenchError } from "./workbench.mjs";
 
 const HOST = "127.0.0.1";
@@ -107,6 +108,7 @@ function applyBatch(batch) {
   if (typeof batch.leafId === "string") session.leafId = batch.leafId;
   if (typeof batch.mode === "string") session.mode = batch.mode;
   if (batch.context && typeof batch.context === "object") session.context = batch.context;
+  if (Array.isArray(batch.commands)) session.commands = batch.commands.slice(0, 500);
   session.lastEventAt = now();
   session.ended = false;
 
@@ -657,6 +659,25 @@ const server = createServer(async (req, res) => {
       }
       const transcript = where.source === "claude" ? claudeTranscriptItems(entries) : transcriptItems(entries, where.leafId);
       sendJson(res, 200, { ...transcript, source: where.source, historyVersion: where.historyVersion });
+      return;
+    }
+
+    if (url.pathname === "/api/commands") {
+      // Slash commands for the composer's "/" lookup, for the selected session's CLI.
+      const id = url.searchParams.get("id") ?? "";
+      if (id.startsWith(CLAUDE_PREFIX)) {
+        if (!savedById.has(id)) await refreshSaved();
+        const cwd = savedById.get(id)?.cwd;
+        const claudeHome = resolve(CLAUDE_DIR ?? join(homedir(), ".claude", "projects"), "..");
+        const [project, user] = await Promise.all([
+          cwd ? claudeCustomCommands(join(cwd, ".claude"), "project") : [],
+          claudeCustomCommands(claudeHome, "user"),
+        ]);
+        sendJson(res, 200, { cli: "claude", commands: mergeCommands(project, user, CLAUDE_BUILTINS) });
+      } else {
+        const reported = sessions.get(id)?.commands ?? [];
+        sendJson(res, 200, { cli: "pi", commands: mergeCommands(PI_BUILTINS, reported) });
+      }
       return;
     }
 
