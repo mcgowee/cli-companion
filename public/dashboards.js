@@ -2,12 +2,13 @@
 // links, kept by the server in ~/.cli-companion/dashboards.json.
 //   #/dashboards              the list, with an Add form
 //   #/dashboards/usage        Usage overview (from /api/usage)
+//   #/dashboards/old          Old sessions: not used for a while (from /api/old-sessions), read-only
 //   #/dashboards/view/<id>    a custom dashboard shown inside the companion
 // menu.js calls dashboardsPage.show(rest) on every route change (rest = null: page hidden).
 (function () {
   const root = document.getElementById("page-dashboards");
   const esc = window.escapeHtml;
-  const state = { list: null, usageDays: 30, usage: null, view: null };
+  const state = { list: null, usageDays: 30, usage: null, view: null, oldDays: 30, oldSort: "oldest", old: null };
 
   const BUILT_IN = [
     {
@@ -16,7 +17,108 @@
       description: "Sessions started per day in each CLI, active days, and your busiest workspaces.",
       href: "#/dashboards/usage",
     },
+    {
+      id: "old",
+      name: "Old sessions",
+      description: "Sessions you haven't used for a while, oldest or largest first: what to clean up.",
+      href: "#/dashboards/old",
+    },
   ];
+
+  /* ── old sessions (cleanup list) ──────────────────────── */
+
+  async function loadOld() {
+    try {
+      const res = await fetch(`/api/old-sessions?days=${state.oldDays}`, { cache: "no-store" });
+      state.old = res.ok ? await res.json() : null;
+    } catch {
+      state.old = null;
+    }
+  }
+
+  function renderOld() {
+    root.className = "page";
+    const o = state.old;
+    const seg = (name, value, label, current) =>
+      `<button class="seg${value === current ? " on" : ""}" type="button" data-${name}="${value}" aria-pressed="${value === current}">${label}</button>`;
+    const list = [...(o?.sessions ?? [])];
+    if (state.oldSort === "largest") list.sort((a, b) => b.size - a.size);
+    else if (state.oldSort === "tokens") list.sort((a, b) => (b.tokens ?? -1) - (a.tokens ?? -1));
+    const byCli = {};
+    for (const s of list) {
+      byCli[s.source] ??= { n: 0, size: 0 };
+      byCli[s.source].n += 1;
+      byCli[s.source].size += s.size;
+    }
+    const base = (p) => String(p ?? "").split(/[\\/]/).filter(Boolean).pop() ?? "";
+    const day = (ms) => new Date(ms).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+    const rows = list
+      .map(
+        (s, i) => `<div class="old-row">
+          <i class="sw ${esc(s.source)}" aria-hidden="true"></i>
+          <div class="old-main">
+            <button class="old-name" type="button" data-open="${esc(s.id)}" title="Open this session">${esc(s.name || "(untitled)")}</button>
+            <span class="old-sub">${esc(cliSources.get(s.source).label)} · <span title="${esc(s.cwd)}">${esc(base(s.cwd) || s.cwd)}</span> · last used ${esc(day(s.lastActivity))} (${esc(fmtAgo(s.lastActivity))})</span>
+          </div>
+          <span class="old-num">${fmtBytes(s.size)}${s.tokens ? ` · ${fmtCount(s.tokens)} tokens` : ""}</span>
+          <button class="btn small" type="button" data-copy-path="${i}" title="${esc(s.file)}">Copy path</button>
+        </div>`,
+      )
+      .join("");
+    const body = !o
+      ? `<p class="page-lead">Couldn't load the list. Is the companion server running?</p>`
+      : `<div class="tiles">
+          <div class="tile"><span class="tile-label">Old sessions</span><span class="tile-value">${fmtInt(list.length)}</span>
+            <span class="tile-delta">${Object.entries(byCli).map(([id, v]) => `${v.n} ${esc(cliSources.get(id).label)}`).join(" · ") || "none"}</span></div>
+          <div class="tile"><span class="tile-label">Space they use</span><span class="tile-value">${fmtBytes(o.totalSize)}</span>
+            <span class="tile-delta">${Object.entries(byCli).map(([id, v]) => `${fmtBytes(v.size)} ${esc(cliSources.get(id).label)}`).join(" · ")}</span></div>
+        </div>
+        <div class="old-tools"><span class="old-sort-label">Sort</span>
+          <div class="segs" role="group" aria-label="Sort">${seg("sort", "oldest", "Oldest first", state.oldSort)}${seg("sort", "largest", "Largest first", state.oldSort)}${seg("sort", "tokens", "Most tokens", state.oldSort)}</div>
+        </div>
+        ${list.length ? `<div class="old-list">${rows}</div>` : `<p class="page-lead">No sessions that old.</p>`}
+        <p class="dash-file">Claude Code deletes its own transcripts after the number of days in its <code>cleanupPeriodDays</code>
+          setting (30 unless you changed it), so old Claude Code sessions may disappear on their own. Token counts show once
+          Usage overview has read the session files.</p>`;
+    root.innerHTML = `<div class="page-inner wide">
+      <p class="crumb"><a href="#/dashboards">← Dashboards</a></p>
+      <div class="usage-head">
+        <h1>Old sessions</h1>
+        <div class="segs" role="group" aria-label="Not used for">${[14, 30, 60, 90].map((d) => seg("days", d, `${d}+ days`, state.oldDays)).join("")}</div>
+      </div>
+      <p class="page-lead">Sessions not used for ${state.oldDays} days or more, and not running. Nothing here is moved or
+        deleted: use the list to decide what to clean up. Open one to read it, or copy its file path.</p>
+      ${body}
+    </div>`;
+    for (const b of root.querySelectorAll("[data-days]")) {
+      b.addEventListener("click", async () => {
+        state.oldDays = Number(b.dataset.days);
+        await loadOld();
+        renderOld();
+      });
+    }
+    for (const b of root.querySelectorAll("[data-sort]")) {
+      b.addEventListener("click", () => {
+        state.oldSort = b.dataset.sort;
+        renderOld();
+      });
+    }
+    for (const b of root.querySelectorAll("[data-open]")) b.addEventListener("click", () => window.openSession?.(b.dataset.open));
+    for (const b of root.querySelectorAll("[data-copy-path]")) {
+      b.addEventListener("click", async () => {
+        const s = list[Number(b.dataset.copyPath)];
+        try {
+          await navigator.clipboard.writeText(s.file);
+          b.textContent = "Copied ✓";
+        } catch {
+          b.textContent = "Copy failed";
+        }
+        setTimeout(() => (b.textContent = "Copy path"), 1500);
+      });
+    }
+  }
+
+
 
   /* ── list ─────────────────────────────────────────────── */
 
@@ -477,7 +579,15 @@
     async show(rest) {
       if (rest === null) return;
       const [sub, id] = rest;
-      if (sub === "usage") {
+      if (sub === "old") {
+        state.view = null;
+        if (!state.old) {
+          root.className = "page";
+          root.innerHTML = `<div class="page-inner"><p class="page-lead">Loading…</p></div>`;
+        }
+        await loadOld();
+        renderOld();
+      } else if (sub === "usage") {
         state.view = null;
         if (!state.usage) {
           root.className = "page";

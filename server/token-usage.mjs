@@ -169,5 +169,11 @@ export function createTokenTracker({ cacheFile } = {}) {
     };
   }
 
-  return { load, update, forSession, updateAll, summary, progress: () => ({ ...progress }) };
+  /** What is already known for a file, without reading it (undefined if never read). */
+  function peek(file) {
+    const entry = files.get(file);
+    return entry ? publicUsage(entry.usage, entry.source) : undefined;
+  }
+
+  return { load, update, forSession, updateAll, summary, peek, progress: () => ({ ...progress }) };
 }

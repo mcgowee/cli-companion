@@ -234,6 +234,22 @@ a.dash-card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--li
 .sr-text { overflow-wrap: anywhere; }
 .sr mark, .find-hit mark { background: color-mix(in srgb, var(--warn) 35%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
 .msg.find-hit { outline: 2px solid var(--warn); outline-offset: 4px; border-radius: 8px; transition: outline-color 1.5s; }
+/* Old sessions (cleanup list) */
+.old-tools { display: flex; align-items: center; gap: 10px; margin: 4px 0 10px; }
+.old-sort-label { color: var(--muted); font-size: 12.5px; }
+.old-list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.old-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 9px 12px; }
+.old-row + .old-row { border-top: 1px solid var(--line); }
+.old-main { display: flex; flex-direction: column; min-width: 0; }
+.old-name { all: unset; cursor: pointer; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.old-name:hover { color: var(--accent); }
+.old-name:focus-visible { outline: 2px solid var(--accent); }
+.old-sub { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.old-num { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (max-width: 640px) {
+  .old-row { grid-template-columns: 10px minmax(0, 1fr); }
+  .old-num, .old-row .btn { grid-column: 2; justify-self: start; }
+}
 /* Usage overview: sessions with the most tokens. */
 .top-sessions { display: flex; flex-direction: column; margin-top: 8px; }
 .top-row { all: unset; cursor: pointer; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; grid-template-rows: auto auto; column-gap: 10px;

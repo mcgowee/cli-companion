@@ -144,6 +144,9 @@ next to it:
     dashboards are links to any page, such as a local server's status page: add them with the
     form, open them inside the companion or in a new tab. Ones on this computer show online
     or offline. The list is kept in `~/.cli-companion/dashboards.json`.
+    **Old sessions** lists saved sessions you have not used for 14, 30, 60 or 90+ days (not running),
+    oldest, largest or most tokens first, with the space they use. Read-only: open one, or copy its
+    file path; nothing is moved or deleted.
   - **Settings**: show or hide each CLI (Pi, Claude Code, Codex), change where its folder is,
     pick the terminal **Open** uses, and switch on suggested replies with a local Ollama model.
     Saved in `~/.cli-companion/settings.json`; changes apply at once.

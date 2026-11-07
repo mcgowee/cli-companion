@@ -904,6 +904,39 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (url.pathname === "/api/old-sessions") {
+      // Cleanup list: saved sessions not used for ?days= (default 30), not running. Read-only:
+      // nothing is moved or deleted; the page lists them so you can decide.
+      await refreshSaved();
+      await tokenUsage.load();
+      const days = Math.max(1, Math.min(3650, Number.parseInt(url.searchParams.get("days") ?? "30", 10) || 30));
+      const cutoff = Date.now() - days * 86_400_000;
+      const running = await runningMap();
+      const enabled = new Set(SOURCES.filter((source) => source.enabled).map((source) => source.id));
+      const list = [];
+      for (const meta of savedById.values()) {
+        const source = meta.source ?? "pi";
+        if (!enabled.has(source) || sessions.has(meta.id) || running.has(meta.id)) continue;
+        if ((meta.mtimeMs ?? 0) > cutoff) continue;
+        const usage = tokenUsage.peek(meta.file);
+        const t = usage?.tokens;
+        list.push({
+          id: meta.id,
+          source,
+          name: meta.name || meta.preview || "",
+          cwd: meta.cwd ?? "",
+          created: meta.created,
+          lastActivity: meta.mtimeMs,
+          size: meta.size ?? 0,
+          file: meta.file,
+          tokens: t ? t.input + t.output + t.cacheRead + t.cacheWrite : undefined,
+        });
+      }
+      list.sort((a, b) => a.lastActivity - b.lastActivity);
+      sendJson(res, 200, { days, sessions: list, totalSize: list.reduce((sum, s) => sum + s.size, 0) });
+      return;
+    }
+
     if (url.pathname === "/api/git") {
       // Branch and uncommitted changes for the sidebar rows: ?ids=a,b,c (session ids, never paths).
       const ids = (url.searchParams.get("ids") ?? "").split(",").filter(Boolean).slice(0, 40);
