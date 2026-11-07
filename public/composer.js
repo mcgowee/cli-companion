@@ -78,11 +78,7 @@
   function blocker() {
     const s = state.session;
     if (!state.selectedId) return "Pick a session first.";
-    if (isClaude()) {
-      if (!s) return "No hooks from this Claude Code session yet. With the companion hooks installed, it connects on its next prompt.";
-      if (s.ended) return "That Claude Code session has ended.";
-      return undefined;
-    }
+    if (state.selectedId.startsWith("claude:")) return "Sending to Claude Code isn't supported yet. Use Copy and paste it into Claude Code.";
     if (!s || s.ended) return "This is a saved session. Open it in Pi (pi -r) to send to it.";
     if (s.mode && s.mode !== "tui") return "This Pi has no terminal input box (pi-gui or RPC). Use Copy instead.";
     if (s.listening === false) return "Pi isn't listening yet. Run /reload in that Pi to load the latest companion extension.";
@@ -93,58 +89,20 @@
     return state.pending.size > 0;
   }
 
-  function isClaude() {
-    return typeof state.selectedId === "string" && state.selectedId.startsWith("claude:");
-  }
-
-  const sendLabelEl = sendEl.firstChild; // the text node before <kbd>
-
   function renderControls() {
     const s = state.session;
     const name = s ? (s.name && !["New thread", "New session"].includes(s.name) ? s.name : (s.cwd ?? "").split(/[\\/]/).pop()) : "";
     const why = blocker();
-    targetEl.textContent = why ? "" : `→ ${name || (isClaude() ? "Claude Code" : "Pi")}`;
+    targetEl.textContent = why ? "" : `→ ${name || "Pi"}`;
     sendEl.disabled = Boolean(why) || !textEl.value.trim() || busy();
-    sendLabelEl.textContent = isClaude() ? "Queue for Claude " : "Put in Pi's input ";
-    sendEl.title =
-      why ??
-      (isClaude()
-        ? "Claude gets this when its current reply ends (Ctrl+Enter)"
-        : "Put this text in Pi's input box (Ctrl+Enter). Ctrl+Shift+Enter also presses Enter for you.");
+    sendEl.title = why ?? "Put this text in Pi's input box (Ctrl+Enter). Ctrl+Shift+Enter also presses Enter for you.";
     if (why && !busy() && !statusEl.dataset.sticky) setStatus(why, "muted");
     else if (!why && statusEl.dataset.kind === "muted") setStatus("");
-    if (isClaude()) renderClaudeStrip();
-    else renderPiInput();
-  }
-
-  /**
-   * Claude Code version of the strip: no input box to show, so it shows Claude's state, what is
-   * queued, and the last prompt Claude received (from its UserPromptSubmit hook) as the check.
-   */
-  function renderClaudeStrip() {
-    const s = state.session;
-    piInputEl.hidden = Boolean(blocker());
-    if (piInputEl.hidden) return;
-    piInputEl.querySelector(".pi-input-label").textContent = "Claude Code";
-    const queued = s.queued ?? 0;
-    const running = s.status === "running" || s.status === "compacting";
-    const when = running ? "Claude gets it when this reply ends" : "Claude is idle: it gets it when its next reply ends";
-    piInputMeta.textContent = queued ? `${queued} queued · ${when}` : running ? "working" : "idle";
-    const last = s.lastPrompt?.text;
-    piInputText.textContent = last ? `Last prompt Claude received${s.lastPrompt.fromCompanion ? " (from here)" : ""}:\n${last}` : "";
-    piInputEl.classList.toggle("empty", !last);
-    piRefreshEl.hidden = true;
-    enterEl.hidden = true;
-    piClearEl.textContent = "Cancel queued";
-    piClearEl.disabled = !queued || busy();
+    renderPiInput();
   }
 
   /** The "Pi's input box" strip: what is in the box now, with Enter / Clear / Refresh. */
   function renderPiInput() {
-    piInputEl.querySelector(".pi-input-label").textContent = "Pi's input box";
-    piRefreshEl.hidden = false;
-    enterEl.hidden = false;
-    piClearEl.textContent = "Clear";
     const why = blocker();
     const known = state.editorFor === state.selectedId && state.editor !== null;
     piInputEl.hidden = Boolean(why);
@@ -224,51 +182,9 @@
     }
   }
 
-  /** cmdId -> text queued for Claude Code (delivered later, at its Stop hook). */
-  const queuedForClaude = new Map();
-
-  async function queueForClaude() {
-    const text = textEl.value;
-    const cmdId = crypto.randomUUID();
-    queuedForClaude.set(cmdId, text);
-    try {
-      const res = await fetch("/api/send", {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-pi-companion-page": "1" },
-        body: JSON.stringify({ id: state.selectedId, type: "queue", text, cmdId }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-      state.lastSent = text;
-      if (textEl.value === text) {
-        textEl.value = "";
-        savePref("pi-companion.draft", "");
-        autoSize();
-      }
-      const running = state.session?.status === "running" || state.session?.status === "compacting";
-      setStatus(running ? "Queued. Claude gets it when this reply ends." : "Queued. Claude is idle, so it gets it when its next reply ends.", "busy", true);
-    } catch (error) {
-      queuedForClaude.delete(cmdId);
-      setStatus(`Not queued: ${error.message}`, "error", true);
-    }
-    renderControls();
-  }
-
-  async function unqueueForClaude() {
-    await fetch("/api/send", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-pi-companion-page": "1" },
-      body: JSON.stringify({ id: state.selectedId, type: "unqueue", cmdId: crypto.randomUUID() }),
-    }).catch(() => undefined);
-  }
-
   /** Put the composer text in Pi's input box; with `andEnter`, also send it. */
   async function put(andEnter = false) {
     if (blocker() || !textEl.value.trim() || busy()) return;
-    if (isClaude()) {
-      await queueForClaude();
-      return;
-    }
     const text = textEl.value;
     const sessionId = state.selectedId;
     setStatus("Putting it in Pi's input…", "busy");
@@ -333,7 +249,7 @@
 
   sendEl.addEventListener("click", () => put(false));
   enterEl.addEventListener("click", () => enter());
-  piClearEl.addEventListener("click", () => (isClaude() ? unqueueForClaude() : clearPi()));
+  piClearEl.addEventListener("click", () => clearPi());
   piRefreshEl.addEventListener("click", () => peek(false));
   textEl.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
@@ -474,13 +390,6 @@
     },
     /** The bridge reported back on a command. */
     delivered(msg) {
-      if (queuedForClaude.has(msg.cmdId)) {
-        queuedForClaude.delete(msg.cmdId);
-        if (msg.ok) setStatus("Delivered to Claude ✓ It's working on it now.", "ok", true);
-        else setStatus(`Not delivered: ${msg.error || "unknown error"}`, msg.error === "Cancelled." ? "" : "error", true);
-        renderControls();
-        return;
-      }
       const pending = state.pending.get(msg.cmdId);
       if (!pending) return;
       state.pending.delete(msg.cmdId);

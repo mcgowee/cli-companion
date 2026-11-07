@@ -218,94 +218,14 @@ function publicSession(session) {
     ended: session.ended,
     hasHistory: Boolean(session.sessionFile),
     mode: session.mode,
-    source: session.source ?? "pi",
     // The bridge polls for commands while the session is open; this says whether it is listening now.
-    listening:
-      session.source === "claude"
-        ? true
-        : (inboxes.get(session.id)?.waiters.length ?? 0) > 0 || now() - (inboxes.get(session.id)?.lastPollAt ?? 0) < 35_000,
-    lastPrompt: session.lastPrompt,
-    queued: session.source === "claude" ? (claudeQueues.get(session.id)?.length ?? 0) : undefined,
+    listening: (inboxes.get(session.id)?.waiters.length ?? 0) > 0 || now() - (inboxes.get(session.id)?.lastPollAt ?? 0) < 35_000,
   };
 }
 
 /* ── page → Pi commands (the bridge long-polls for them) ── */
 
 const COMMAND_TTL_MS = 20_000;
-
-/* ── Claude Code: live status from hooks, and text queued for the Stop hook ── */
-
-/** "claude:<session id>" -> [{ cmdId, text }] waiting for that session's next Stop hook */
-const claudeQueues = new Map();
-
-/** Apply one hook event from hooks/claude-hook.mjs; returns queued messages on Stop. */
-function applyClaudeHook(body) {
-  const rawId = typeof body.sessionId === "string" ? body.sessionId : "";
-  if (!/^[0-9a-f-]{36}$/i.test(rawId)) return undefined;
-  const id = `claude:${rawId}`;
-  let s = sessions.get(id);
-  if (!s) {
-    s = newSession(id);
-    s.source = "claude";
-    s.mode = "claude-hooks";
-    sessions.set(id, s);
-  }
-  // Hooks send no pid (their parent is a short-lived shell); SessionEnd and idle expiry end it.
-  if (isUnderDir(CLAUDE_DIR, body.transcriptPath)) s.sessionFile = body.transcriptPath;
-  if (typeof body.cwd === "string") s.cwd = body.cwd;
-  s.lastEventAt = now();
-  s.ended = false;
-  const event = body.event ?? {};
-  let messages;
-  switch (event.type) {
-    case "session_start":
-      s.status = "idle";
-      break;
-    case "prompt":
-      s.status = "running";
-      s.turnStartedAt = event.at ?? now();
-      s.lastPrompt = { text: event.prompt ?? "", at: event.at ?? now() };
-      s.tools = {};
-      break;
-    case "tool":
-      s.status = s.compaction ? "compacting" : "running";
-      s.tools = { current: { name: event.toolName, args: event.summary ?? "", partial: "", startedAt: event.at ?? now() } };
-      break;
-    case "compaction_start":
-      s.compaction = { reason: event.reason, startedAt: event.at ?? now() };
-      s.status = "compacting";
-      break;
-    case "compaction_end":
-      s.lastCompaction = { ok: true, reason: s.compaction?.reason, startedAt: s.compaction?.startedAt, endedAt: event.at ?? now() };
-      s.compaction = undefined;
-      s.status = "idle";
-      break;
-    case "stop": {
-      const queue = claudeQueues.get(id) ?? [];
-      claudeQueues.delete(id);
-      messages = queue;
-      s.tools = {};
-      s.turnStartedAt = undefined;
-      // Queued text makes Claude keep going, so it is still running.
-      s.status = messages.length ? "running" : "idle";
-      for (const m of messages) broadcast({ type: "delivered", cmdId: m.cmdId, ok: true, detail: "claude" });
-      if (messages.length) s.lastPrompt = { text: messages.map((m) => m.text).join("\n\n"), at: now(), fromCompanion: true };
-      break;
-    }
-    case "shutdown":
-      failClaudeQueue(id, "That Claude Code session ended before it was delivered.");
-      s.ended = true;
-      s.status = "ended";
-      s.tools = {};
-      s.compaction = undefined;
-      break;
-    default:
-      break;
-  }
-  s.historyVersion += 1;
-  scheduleSessionBroadcast(s);
-  return { messages: messages ?? [] };
-}
 
 /** sessionId -> { queue: command[], waiters: res[], lastPollAt } */
 const inboxes = new Map();
@@ -364,28 +284,12 @@ function scheduleSessionBroadcast(session) {
   );
 }
 
-function failClaudeQueue(id, error) {
-  for (const m of claudeQueues.get(id) ?? []) broadcast({ type: "delivered", cmdId: m.cmdId, ok: false, error });
-  claudeQueues.delete(id);
-}
-
-// Claude Code sessions (hooks) have no pid: forget one after SessionEnd plus a short grace,
-// or after a long silence (Claude closed without SessionEnd, e.g. the window was killed).
-const CLAUDE_ENDED_MS = 60_000;
-const CLAUDE_IDLE_MS = 12 * 60 * 60 * 1000;
-
-// Drop sessions whose Pi process has exited, and stale Claude Code hook sessions.
+// Drop sessions whose Pi process has exited.
 setInterval(() => {
   for (const [id, session] of sessions) {
-    const idleFor = now() - (session.lastEventAt ?? 0);
-    const gone =
-      session.source === "claude"
-        ? idleFor > (session.ended ? CLAUDE_ENDED_MS : CLAUDE_IDLE_MS)
-        : session.pid && !isProcessAlive(session.pid);
-    if (gone) {
+    if (session.pid && !isProcessAlive(session.pid)) {
       sessions.delete(id);
       inboxes.delete(id);
-      failClaudeQueue(id, "That Claude Code session closed before it was delivered.");
       broadcast({ type: "removed", id });
     }
   }
@@ -499,10 +403,7 @@ async function refreshSaved() {
 /** Where a session's history lives: a live session first, else the saved index. */
 function locate(id) {
   const live = sessions.get(id);
-  if (live?.sessionFile) {
-    const source = live.source ?? "pi";
-    return { file: live.sessionFile, leafId: source === "pi" ? live.leafId : undefined, historyVersion: live.historyVersion, source };
-  }
+  if (live?.sessionFile) return { file: live.sessionFile, leafId: live.leafId, historyVersion: live.historyVersion, source: "pi" };
   const saved = savedById.get(id);
   if (saved) return { file: saved.file, leafId: undefined, historyVersion: 0, source: saved.source ?? "pi" };
   return undefined;
@@ -582,17 +483,6 @@ const server = createServer(async (req, res) => {
     return;
   }
   try {
-    if (url.pathname === "/claude/hook") {
-      // From hooks/claude-hook.mjs (custom header: a web page can't send this).
-      if (req.method !== "POST" || req.headers["x-pi-companion"] !== "1") {
-        res.writeHead(403).end();
-        return;
-      }
-      const result = applyClaudeHook(JSON.parse(await readBody(req)));
-      sendJson(res, result ? 200 : 400, result ?? { error: "bad session id" });
-      return;
-    }
-
     if (url.pathname === "/bridge/inbox") {
       // Long poll from the bridge extension in Pi: wait up to 25 s for commands for this session.
       if (req.method !== "GET" || req.headers["x-pi-companion"] !== "1") {
@@ -663,29 +553,6 @@ const server = createServer(async (req, res) => {
       const { command, status, error } = commandFromRequest(body);
       if (!command) {
         sendJson(res, status, { error });
-        return;
-      }
-      if (live.source === "claude") {
-        // Claude Code has no input box to paste into: text waits for its next Stop hook.
-        if (command.type === "queue") {
-          const queue = claudeQueues.get(id) ?? [];
-          queue.push({ cmdId: command.cmdId, text: command.text });
-          claudeQueues.set(id, queue);
-        } else if (command.type === "unqueue") {
-          for (const m of claudeQueues.get(id) ?? []) {
-            broadcast({ type: "delivered", cmdId: m.cmdId, ok: false, error: "Cancelled." });
-          }
-          claudeQueues.delete(id);
-        } else {
-          sendJson(res, 400, { error: "Claude Code sessions only support queueing text." });
-          return;
-        }
-        scheduleSessionBroadcast(live);
-        sendJson(res, 202, { cmdId: command.cmdId, queued: claudeQueues.get(id)?.length ?? 0 });
-        return;
-      }
-      if (command.type === "queue" || command.type === "unqueue") {
-        sendJson(res, 400, { error: "Queueing is for Claude Code sessions." });
         return;
       }
       enqueueCommand(id, command);
