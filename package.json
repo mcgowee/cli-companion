@@ -1,7 +1,7 @@
 {
   "name": "cli-companion",
   "version": "0.2.0",
-  "description": "A live side window for coding-agent CLIs (Pi, Claude Code): formatted transcript, tool calls, images, context usage and compaction as it happens.",
+  "description": "A live side window for coding-agent CLIs (Pi, Claude Code, Codex): formatted transcript, tool calls, images, context usage and compaction as it happens.",
   "type": "module",
   "license": "MIT",
   "author": "Earl McGowen",
@@ -17,6 +17,7 @@
     "pi",
     "pi-coding-agent",
     "claude-code",
+    "codex",
     "coding-agent",
     "cli",
     "companion",

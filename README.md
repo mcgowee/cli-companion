@@ -1,6 +1,6 @@
 # CLI Companion
 
-A live side window for coding-agent CLIs: [Pi](https://pi.dev) and Claude Code. Keep
+A live side window for coding-agent CLIs: [Pi](https://pi.dev), Claude Code and Codex. Keep
 working in the terminal; the companion shows the same session with formatted markdown,
 tool calls and their output, images, thinking, context usage, and **compaction as it
 happens**. You don't need Pi to use it.
@@ -50,6 +50,12 @@ next to it:
   another program to type into its prompt, so for a Claude Code session the composer's button
   is **Copy for Claude**: it copies the text for you to paste into Claude Code and empties
   the box (**Bring text back** restores it).
+- **Codex sessions too (read-only)**: sessions from the Codex CLI appear the same way, tagged
+  **CX**, read from `~/.codex/sessions` with titles from `~/.codex/session_index.jsonl`:
+  prompts, replies, reasoning summaries, tool calls with their output, compactions and pasted
+  images. A Codex that is open is listed under Active (on Windows, from the lock Codex holds
+  on the session while it runs), as running or idle from its last task event. The composer's
+  button is **Copy for Codex**. Tested with Codex CLI 0.166.
 - **Send text to Pi (bottom composer)**: write or collect text, then **Put in Pi's input**
   (**Ctrl+Enter**). It lands in the running Pi CLI's prompt box, with a short notice in the
   terminal; press Enter there to send it. **Ctrl+Shift+Enter** puts the text in and sends it
@@ -129,6 +135,10 @@ need `/reload` once. `/companion server` starts the server without opening a win
 
 ## How it works
 
+Each CLI is a *source* in `server/sources/` (`pi.mjs`, `claude.mjs`, `codex.mjs`) with the same
+shape: where its sessions are and how to read one, whether one is running, its start and resume
+commands, and its slash commands. Adding a CLI means adding one module there.
+
 ```
 Pi (interactive) ──events──► companion server ──SSE──► window
  extension/companion.ts      server/server.mjs         public/
@@ -164,6 +174,8 @@ Pi (interactive) ──events──► companion server ──SSE──► windo
 | `PI_CODING_AGENT_DIR` | `~/.pi/agent` | Pi's folder (sessions are read from `sessions/`) |
 | `CLAUDE_CONFIG_DIR` | `~/.claude` | Claude Code's folder (transcripts are read from `projects/`) |
 | `CLI_COMPANION_CLAUDE` | on | Set to `0` to hide Claude Code sessions (`PI_COMPANION_CLAUDE` also works) |
+| `CODEX_HOME` | `~/.codex` | Codex's folder (sessions are read from `sessions/`) |
+| `CLI_COMPANION_CODEX` | on | Set to `0` to hide Codex sessions |
 | `CLI_COMPANION_HOME` | `~/.cli-companion` | The companion's own files: custom dashboards, server log, app-window browser profile |
 
 Older versions kept these files in `~/.pi/agent/companion/`; the dashboard list is copied
@@ -173,8 +185,9 @@ over on first start.
 
 - Images from the composer, and pulling Pi's draft into the composer for editing, are planned.
 - Past sessions open read-only; resume one with the terminal icon beside it.
-- Tested on Windows 11 with Pi 1.4. macOS and Linux use the same code paths but have not
-  been tested yet; reports welcome.
+- Tested on Windows 11 with Pi 1.4, Claude Code 2.1 and Codex CLI 0.166. macOS and Linux use
+  the same code paths but have not been tested yet; reports welcome. There, a running Codex is
+  recognised only by recent writes to its session file.
 
 ## Develop
 

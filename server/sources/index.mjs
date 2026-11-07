@@ -1,4 +1,4 @@
-// The CLIs the companion knows. Each one is a "source" with the same shape, so adding a CLI
+// The CLIs the companion knows (Pi, Claude Code, Codex). Each one is a "source" with the same shape, so adding a CLI
 // means adding one module here, not touching the server or the page.
 //
 // A source:
@@ -22,10 +22,11 @@
 //   slashCommands({ cwd, live })   -> [{ name, description, source }] for the "/" lookup
 
 import { claudeSource } from "./claude.mjs";
+import { codexSource } from "./codex.mjs";
 import { piSource } from "./pi.mjs";
 
 export function createSources(env = process.env) {
-  return [piSource(env), claudeSource(env)];
+  return [piSource(env), claudeSource(env), codexSource(env)];
 }
 
 /** Which source a session id belongs to: a known "<source>:" prefix, else Pi. */

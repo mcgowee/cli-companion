@@ -4,11 +4,17 @@ import { checkSessionId, copyLine, LaunchError, openPlan, quotePath, resumeComma
 import { createSources } from "../server/sources/index.mjs";
 
 test("commands come from the sources' fixed lists; session ids are checked", () => {
-  const sources = createSources({ CLAUDE_CONFIG_DIR: "/nowhere/claude", PI_CODING_AGENT_DIR: "/nowhere/pi" });
+  const sources = createSources({ CLAUDE_CONFIG_DIR: "/nowhere/claude", PI_CODING_AGENT_DIR: "/nowhere/pi", CODEX_HOME: "/nowhere/codex" });
   const [pi, claude] = sources;
+  // Pi is always offered (it can be live before its folder exists); others only when installed.
   assert.deepEqual(
     workspaceActions(sources).map((o) => [o.action, o.command]),
-    [["terminal", ""], ["pi", "pi"], ["pi-continue", "pi -c"], ["claude", "claude"]],
+    [["terminal", ""], ["pi", "pi"], ["pi-continue", "pi -c"]],
+  );
+  const installed = sources.map((s) => Object.defineProperty({ ...s }, "installed", { value: true }));
+  assert.deepEqual(
+    workspaceActions(installed).map((o) => o.command),
+    ["", "pi", "pi -c", "claude", "codex", "codex resume --last"],
   );
   assert.equal(resumeCommand(pi, "01a1b3c9-f58b-76d1"), "pi --session 01a1b3c9-f58b-76d1");
   assert.equal(
@@ -18,8 +24,8 @@ test("commands come from the sources' fixed lists; session ids are checked", () 
   assert.throws(() => resumeCommand(pi, "x; rm -rf /"), LaunchError);
   assert.throws(() => checkSessionId(""), LaunchError);
   // A switched-off source drops out of the workspace menu.
-  const noClaude = createSources({ CLI_COMPANION_CLAUDE: "0" });
-  assert.deepEqual(workspaceActions(noClaude).map((o) => o.action), ["terminal", "pi", "pi-continue"]);
+  const noClaude = createSources({ CLI_COMPANION_CLAUDE: "0", CODEX_HOME: "/nowhere/codex" }).map((s) => Object.defineProperty({ ...s }, "installed", { value: true }));
+  assert.deepEqual(workspaceActions(noClaude).map((o) => o.action), ["terminal", "pi", "pi-continue", "codex", "codex-last"]);
 });
 
 test("copyLine quotes the folder for PowerShell and POSIX shells", () => {

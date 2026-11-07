@@ -48,8 +48,11 @@
         <dt>Claude Code</dt><dd>Transcripts from <code>~/.claude/projects</code>, followed while they grow;
           running or idle from the files Claude Code keeps in <code>~/.claude/sessions</code>.
           <b>Copy for Claude</b> copies text to paste into its prompt.</dd>
+        <dt>Codex</dt><dd>Sessions from <code>~/.codex/sessions</code>, followed while they grow; running or
+          idle from the lock Codex holds on an open session (Windows) and its last task event.
+          <b>Copy for Codex</b> copies text to paste into its prompt.</dd>
         <dt>Terminals</dt><dd>The terminal icon beside a workspace or saved session copies a PowerShell
-          line to start or resume Pi or Claude Code there, or (on Windows) opens it in a new
+          line to start or resume Pi, Claude Code or Codex there, or (on Windows) opens it in a new
           Windows Terminal window.</dd>
       </dl>
 

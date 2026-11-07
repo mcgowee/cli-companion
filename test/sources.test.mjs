@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { createSources, describeSources, nativeId, sourceForId } from "../server/sources/index.mjs";
 import { usageSummary } from "../server/usage.mjs";
 
-const sources = createSources({ PI_CODING_AGENT_DIR: "/nowhere/pi", CLAUDE_CONFIG_DIR: "/nowhere/claude" });
+const sources = createSources({ PI_CODING_AGENT_DIR: "/nowhere/pi", CLAUDE_CONFIG_DIR: "/nowhere/claude", CODEX_HOME: "/nowhere/codex" });
 
 test("every source has the full shape", () => {
   for (const source of sources) {

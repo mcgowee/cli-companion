@@ -18,11 +18,11 @@ export function checkSessionId(sessionId) {
   return String(sessionId);
 }
 
-/** The workspace menu: a plain terminal, then each enabled source's start actions. */
+/** The workspace menu: a plain terminal, then the start actions of each CLI that is on and installed. */
 export function workspaceActions(sources) {
   return [
     { action: "terminal", label: "Terminal here", command: "" },
-    ...sources.filter((s) => s.enabled).flatMap((s) => s.startActions),
+    ...sources.filter((s) => s.enabled && (s.installed || s.live)).flatMap((s) => s.startActions),
   ];
 }
 

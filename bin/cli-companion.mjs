@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { companionPort, companionUrl, ensureServer, isCompanion, isPortUp, openWindow } from "../server/start.mjs";
 
-const HELP = `CLI Companion: a live side window for coding-agent CLIs (Pi, Claude Code).
+const HELP = `CLI Companion: a live side window for coding-agent CLIs (Pi, Claude Code, Codex).
 
 Usage: cli-companion [options]
 
