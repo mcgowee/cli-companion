@@ -33,8 +33,9 @@ next to it:
   appear in the same folders, tagged **CC**, read from `~/.claude/projects`. Open one to read
   the transcript (replies, thinking, tool calls with results, compactions, images); a session
   that is being written to is marked *active* and the open transcript follows it within
-  about 2 seconds. Files and Review work for them as well. Sending into Claude Code isn't
-  supported; use Copy.
+  about 2 seconds. Files and Review work for them as well. Claude Code has no way for
+  another program to type into its prompt, so for a Claude Code session the composer's button
+  is **Copy for Claude**: it copies the text for you to paste into Claude Code.
 - **Send text to Pi (bottom composer)**: write or collect text, then **Put in Pi's input**
   (**Ctrl+Enter**). It lands in the running Pi CLI's prompt box, with a short notice in the
   terminal. The **Pi's input box** strip above the composer shows what that box holds right

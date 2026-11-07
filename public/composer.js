@@ -78,7 +78,9 @@
   function blocker() {
     const s = state.session;
     if (!state.selectedId) return "Pick a session first.";
-    if (state.selectedId.startsWith("claude:")) return "Sending to Claude Code isn't supported yet. Use Copy and paste it into Claude Code.";
+    // Claude Code: nothing can type into its prompt, so the composer copies instead. Any
+    // Claude session, running or saved, is fine.
+    if (isClaude()) return undefined;
     if (!s || s.ended) return "This is a saved session. Open it in Pi (pi -r) to send to it.";
     if (s.mode && s.mode !== "tui") return "This Pi has no terminal input box (pi-gui or RPC). Use Copy instead.";
     if (s.listening === false) return "Pi isn't listening yet. Run /reload in that Pi to load the latest companion extension.";
@@ -89,16 +91,28 @@
     return state.pending.size > 0;
   }
 
+  function isClaude() {
+    return typeof state.selectedId === "string" && state.selectedId.startsWith("claude:");
+  }
+
+  const sendLabelEl = sendEl.firstChild; // the text node before <kbd>
+
   function renderControls() {
     const s = state.session;
     const name = s ? (s.name && !["New thread", "New session"].includes(s.name) ? s.name : (s.cwd ?? "").split(/[\\/]/).pop()) : "";
     const why = blocker();
-    targetEl.textContent = why ? "" : `→ ${name || "Pi"}`;
+    targetEl.textContent = why || isClaude() ? "" : `→ ${name || "Pi"}`;
     sendEl.disabled = Boolean(why) || !textEl.value.trim() || busy();
-    sendEl.title = why ?? "Put this text in Pi's input box (Ctrl+Enter). Ctrl+Shift+Enter also presses Enter for you.";
+    sendLabelEl.textContent = isClaude() ? "Copy for Claude " : "Put in Pi's input ";
+    sendEl.title =
+      why ??
+      (isClaude()
+        ? "Copy this text, then paste it into Claude Code with Ctrl+V or right-click (Ctrl+Enter)"
+        : "Put this text in Pi's input box (Ctrl+Enter). Ctrl+Shift+Enter also presses Enter for you.");
     if (why && !busy() && !statusEl.dataset.sticky) setStatus(why, "muted");
     else if (!why && statusEl.dataset.kind === "muted") setStatus("");
-    renderPiInput();
+    if (isClaude()) piInputEl.hidden = true;
+    else renderPiInput();
   }
 
   /** The "Pi's input box" strip: what is in the box now, with Enter / Clear / Refresh. */
@@ -185,6 +199,16 @@
   /** Put the composer text in Pi's input box; with `andEnter`, also send it. */
   async function put(andEnter = false) {
     if (blocker() || !textEl.value.trim() || busy()) return;
+    if (isClaude()) {
+      // The draft is kept, so it can be copied again.
+      const ok = await copyText(textEl.value);
+      setStatus(
+        ok ? "Copied ✓ Click in Claude Code, paste (Ctrl+V or right-click), then press Enter." : "Copy failed. Select the text and press Ctrl+C.",
+        ok ? "ok" : "error",
+        true,
+      );
+      return;
+    }
     const text = textEl.value;
     const sessionId = state.selectedId;
     setStatus("Putting it in Pi's input…", "busy");
@@ -382,7 +406,7 @@
       }
       renderControls();
       // Look at Pi's input box once when a session becomes reachable (not on every update).
-      if (blocker()) state.peekedFor = null;
+      if (blocker() || isClaude()) state.peekedFor = null;
       else if ((changed || wasBlocked) && state.peekedFor !== selectedId) {
         state.peekedFor = selectedId;
         peek(true);
