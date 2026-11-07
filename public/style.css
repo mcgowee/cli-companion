@@ -468,6 +468,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 /* Active list: the workspace name on a second, smaller line under the title. */
 .stext { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .sws { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sgit, .meta-git { font-variant-numeric: tabular-nums; }
 .side-section { display: flex; align-items: center; gap: 6px; margin: 6px 0 2px; padding: 0 6px; }
 .side-section:first-child { margin-top: 0; }
 .active-list { display: flex; flex-direction: column; gap: 1px; margin-bottom: 8px; }

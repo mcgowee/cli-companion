@@ -24,6 +24,10 @@ next to it:
   compaction becomes a card with the summary the model now sees and the files it lists;
   messages that were summarized are dimmed.
 - **Context meter** and a status pill (Idle, Running, Compacting).
+- **Git at a glance**: rows in Active and Favorites, and the session header, show the folder's
+  branch, commits not yet pushed ("2 ahead") and uncommitted changes ("+140 −3", or a file count
+  when only new files). Hover for the full sentence. Refreshed every 20 seconds; read-only
+  (`git status` and `git diff --numstat`).
 - **Token use** for every session, Pi, Claude Code and Codex alike, read from the CLI's own
   session file: a chip in the header ("308M tokens · ~$66.51") opens the breakdown (new input,
   cache write, cache read, output, context at the last reply). Cost is shown only when the CLI

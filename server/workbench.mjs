@@ -185,6 +185,47 @@ export function parseNumstat(text) {
   return counts;
 }
 
+/** `git status --porcelain=v2 --branch -z` → branch, ahead/behind, changed and untracked file counts. */
+export function parseStatusV2(text) {
+  const out = { branch: undefined, ahead: 0, behind: 0, changed: 0, untracked: 0 };
+  const parts = text.split("\0");
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i];
+    if (p.startsWith("# branch.head ")) out.branch = p.slice(14);
+    else if (p.startsWith("# branch.ab ")) {
+      const m = p.match(/\+(\d+) -(\d+)/);
+      if (m) [out.ahead, out.behind] = [Number(m[1]), Number(m[2])];
+    } else if (p.startsWith("1 ") || p.startsWith("u ")) out.changed += 1;
+    else if (p.startsWith("2 ")) {
+      out.changed += 1;
+      i += 1; // a rename is followed by its old path
+    } else if (p.startsWith("? ")) out.untracked += 1;
+  }
+  if (out.branch === "(detached)") out.branch = "detached";
+  return out;
+}
+
+/**
+ * A one-line git summary of a workspace for the sidebar: branch, ahead/behind its upstream, and
+ * uncommitted changes (+added −removed lines in tracked files, plus untracked files).
+ * undefined when the folder isn't in a git repository.
+ */
+export async function gitSummary(root) {
+  const inside = await git(root, ["rev-parse", "--is-inside-work-tree"]).catch(() => "");
+  if (inside.trim() !== "true") return undefined;
+  const status = parseStatusV2(await git(root, ["status", "--porcelain=v2", "--branch", "-z", "--untracked-files=normal"]));
+  let added = 0;
+  let removed = 0;
+  const hasHead = await git(root, ["rev-parse", "--verify", "HEAD"]).then(() => true, () => false);
+  if (hasHead) {
+    for (const c of parseNumstat(await git(root, ["diff", "--numstat", "-z", "-M", "HEAD"])).values()) {
+      added += c.added ?? 0;
+      removed += c.removed ?? 0;
+    }
+  }
+  return { ...status, added, removed };
+}
+
 async function gitInfo(root) {
   const inside = await git(root, ["rev-parse", "--is-inside-work-tree"]).catch(() => "");
   if (inside.trim() !== "true") return undefined;

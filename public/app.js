@@ -238,6 +238,60 @@
     return Math.max(state.sessions.get(s.id)?.lastEventAt ?? 0, s.lastActivity ?? 0);
   }
 
+  /* ── git branch and uncommitted changes (Active and Favorites rows, the header) ── */
+
+  const gitById = new Map(); // session id -> summary | null (not a git folder)
+  let gitWanted = [];
+  let gitAsked = "";
+
+  /** "main, 2 ahead · +71 −1" (short, for a row) */
+  function gitText(g) {
+    if (!g) return "";
+    let text = g.branch ?? "";
+    if (g.ahead) text += `, ${g.ahead} ahead`;
+    if (g.behind) text += `, ${g.behind} behind`;
+    if (g.added || g.removed) text += ` · +${g.added} −${g.removed}`;
+    else if (g.changed || g.untracked) text += ` · ${g.changed + g.untracked} file${g.changed + g.untracked === 1 ? "" : "s"}`;
+    return text;
+  }
+
+  /** The full sentence for a tooltip. */
+  function gitTip(g) {
+    if (!g) return "";
+    const parts = [`Branch ${g.branch}`];
+    if (g.ahead || g.behind) parts.push(`${g.ahead} commit${g.ahead === 1 ? "" : "s"} ahead, ${g.behind} behind its upstream`);
+    if (g.changed || g.untracked) {
+      parts.push(`uncommitted: ${g.changed} changed file${g.changed === 1 ? "" : "s"} (+${g.added} −${g.removed} lines), ${g.untracked} untracked`);
+    } else parts.push("nothing uncommitted");
+    return parts.join("; ");
+  }
+
+  async function refreshGit(force = false) {
+    const ids = [...new Set([...gitWanted, state.selectedId].filter(Boolean))];
+    const key = ids.join(",");
+    if (!ids.length || (!force && key === gitAsked)) return;
+    gitAsked = key;
+    try {
+      const res = await fetch(`/api/git?ids=${encodeURIComponent(key)}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      let changed = false;
+      for (const [id, g] of Object.entries(data)) {
+        if (JSON.stringify(gitById.get(id)) !== JSON.stringify(g)) changed = true;
+        gitById.set(id, g);
+      }
+      if (changed) {
+        renderSidebar();
+        renderHeader();
+      }
+    } catch {
+      // Server restarting: try again on the next tick.
+    }
+  }
+  setInterval(() => {
+    if (!document.hidden) refreshGit(true);
+  }, 20_000);
+
   /** One session row; `wsName` adds the workspace name (used in the Active list). */
   function sessionRow(s, wsName) {
     const status = liveStatus(s.id);
@@ -246,13 +300,16 @@
     const busy = fileBusy(s);
     const dot = status ? esc(status) : !src.live && s.active ? (busy ? "file-busy" : "file-idle") : "saved";
     const ago = status && status !== "idle" ? statusLabel({ status }) : busy ? "Running" : fmtAgo(s.lastActivity);
-    const tip = `${src.label}: ${rowTitle(s)}${wsName ? ` · ${wsName}` : ""}`;
+    const g = wsName ? gitById.get(s.id) : undefined;
+    const tip = `${src.label}: ${rowTitle(s)}${wsName ? ` · ${wsName}` : ""}${g ? `\n${gitTip(g)}` : ""}`;
     const row = `<button class="session${active}" data-id="${esc(s.id)}" data-src="${esc(src.id)}" title="${esc(tip)}">
       <span class="sdot ${dot}"></span>
       ${src.tag ? `<span class="src-tag" aria-label="${esc(src.label)}">${esc(src.tag)}</span>` : ""}
       ${
         wsName
-          ? `<span class="stext"><span class="sname">${esc(rowTitle(s))}</span><span class="sws">${esc(wsName)}</span></span>`
+          ? `<span class="stext"><span class="sname">${esc(rowTitle(s))}</span><span class="sws">${esc(wsName)}${
+              g ? `<span class="sgit"> · ${esc(gitText(g))}</span>` : ""
+            }</span></span>`
           : `<span class="sname">${esc(rowTitle(s))}</span>`
       }
       <span class="sago">${esc(ago)}</span>
@@ -361,6 +418,8 @@
     // gone (or hidden by the filter) are left out.
     const byId = new Map(groups.flatMap((ws) => ws.sessions.map((s) => [s.id, { s, ws }])));
     const favRows = state.favorites.map((id) => byId.get(id)).filter(Boolean);
+    gitWanted = [...activeRows, ...favRows].map(({ s }) => s.id);
+    void refreshGit();
     const activeHtml = `<div class="section-head side-section">Active${activeRows.length ? ` <span class="ws-count">${activeRows.length}</span>` : ""}</div>
       <div class="active-list">${
         activeRows.length
@@ -640,6 +699,13 @@
   function renderHeader() {
     renderHeaderParts();
     renderUsage();
+    const g = gitById.get(state.selectedId);
+    if (g && !$("topbar").hidden) {
+      $("session-meta").insertAdjacentHTML(
+        "beforeend",
+        `<span class='sep'>·</span><span class="meta-git" title="${esc(gitTip(g))}">${esc(gitText(g))}</span>`,
+      );
+    }
   }
 
   /* ── token use (from the session file, /api/history → usage) ── */

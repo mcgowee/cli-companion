@@ -28,7 +28,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { isProcessAlive } from "./fsutil.mjs";
 import { createSources, describeSources, nativeId, sourceForId } from "./sources/index.mjs";
 import { APP_ID, companionPort, ensureServer, isPortUp, migrateStateFile, stateDir } from "./start.mjs";
-import { listDir, makeFolder, readFileForView, resolveInside, reviewDiff, reviewStatus, WorkbenchError } from "./workbench.mjs";
+import { gitSummary, listDir, makeFolder, readFileForView, resolveInside, reviewDiff, reviewStatus, WorkbenchError } from "./workbench.mjs";
 
 const HOST = "127.0.0.1";
 const PORT = companionPort();
@@ -388,6 +388,18 @@ function fileActivity(source, id, mtimeMs, running) {
   const status = running.get(id);
   if (status) return { active: true, runStatus: status };
   return { active: !running.supported.has(source.id) && now() - mtimeMs < ACTIVE_FALLBACK_MS ? true : undefined };
+}
+
+/** gitSummary per folder, reused for 10 s (several rows share a folder; the page asks often). */
+const gitCache = new Map();
+function gitFor(root) {
+  const key = root.toLowerCase();
+  const hit = gitCache.get(key);
+  if (hit && Date.now() - hit.at < 10_000) return hit.value;
+  const value = gitSummary(root).catch(() => undefined);
+  gitCache.set(key, { at: Date.now(), value });
+  if (gitCache.size > 200) gitCache.delete(gitCache.keys().next().value);
+  return value;
 }
 
 /* ── terminal menu: open a workspace or saved session ── */
@@ -850,6 +862,23 @@ const server = createServer(async (req, res) => {
         if (error instanceof WorkbenchError) sendJson(res, error.status, { error: error.message });
         else sendJson(res, error instanceof SyntaxError ? 400 : 500, { error: error.message });
       }
+      return;
+    }
+
+    if (url.pathname === "/api/git") {
+      // Branch and uncommitted changes for the sidebar rows: ?ids=a,b,c (session ids, never paths).
+      const ids = (url.searchParams.get("ids") ?? "").split(",").filter(Boolean).slice(0, 40);
+      const out = {};
+      await Promise.all(
+        ids.map(async (id) => {
+          try {
+            out[id] = (await gitFor(await workspaceRootFor(id))) ?? null;
+          } catch {
+            out[id] = null;
+          }
+        }),
+      );
+      sendJson(res, 200, out);
       return;
     }
 
