@@ -9,11 +9,12 @@
 // never touch Pi's files except to read them.
 
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findImage, parseEntries, transcriptItems } from "./session-file.mjs";
+import { groupByWorkspace, scanSessions } from "./session-index.mjs";
 
 const HOST = "127.0.0.1";
 const PORT = Number.parseInt(process.env.PI_COMPANION_PORT ?? "30143", 10);
@@ -255,13 +256,83 @@ function readBody(req) {
   });
 }
 
-async function readSessionEntries(session) {
-  if (!session?.sessionFile) return undefined;
+/** Parsed entries of the few most recently opened session files, reused until the file changes. */
+const entriesCache = new Map();
+async function readEntries(file) {
+  if (!isUnderSessionsDir(file)) return undefined;
   try {
-    return parseEntries(await readFile(session.sessionFile, "utf8"));
+    const stats = await stat(file);
+    const cached = entriesCache.get(file);
+    if (cached && cached.mtimeMs === stats.mtimeMs && cached.size === stats.size) return cached.entries;
+    const entries = parseEntries(await readFile(file, "utf8"));
+    entriesCache.delete(file);
+    entriesCache.set(file, { mtimeMs: stats.mtimeMs, size: stats.size, entries });
+    while (entriesCache.size > 4) entriesCache.delete(entriesCache.keys().next().value);
+    return entries;
   } catch {
     return undefined;
   }
+}
+
+/* ── saved sessions (from disk) ───────────────────────── */
+
+/** id -> metadata of the latest scan */
+let savedById = new Map();
+let lastScanAt = 0;
+let scanInFlight;
+async function refreshSaved() {
+  if (Date.now() - lastScanAt < 2000) return;
+  if (!scanInFlight) {
+    scanInFlight = scanSessions(SESSIONS_DIR)
+      .then((metas) => {
+        savedById = new Map(metas.map((meta) => [meta.id, meta]));
+        lastScanAt = Date.now();
+      })
+      .finally(() => {
+        scanInFlight = undefined;
+      });
+  }
+  await scanInFlight;
+}
+
+/** Where a session's history lives: a live session first, else the saved index. */
+function locate(id) {
+  const live = sessions.get(id);
+  if (live?.sessionFile) return { file: live.sessionFile, leafId: live.leafId, historyVersion: live.historyVersion };
+  const saved = savedById.get(id);
+  if (saved) return { file: saved.file, leafId: undefined, historyVersion: 0 };
+  return undefined;
+}
+
+async function workspaceTree() {
+  await refreshSaved();
+  const rows = new Map();
+  for (const meta of savedById.values()) {
+    rows.set(meta.id, {
+      id: meta.id,
+      cwd: meta.cwd,
+      name: meta.name,
+      preview: meta.preview,
+      created: meta.created,
+      lastActivity: meta.mtimeMs,
+      live: undefined,
+    });
+  }
+  for (const live of sessions.values()) {
+    const row = rows.get(live.id) ?? {
+      id: live.id,
+      cwd: live.cwd ?? "",
+      name: undefined,
+      preview: "",
+      created: undefined,
+      lastActivity: 0,
+    };
+    row.live = live.status;
+    if (live.name && !["New thread", "New session"].includes(live.name)) row.name = live.name;
+    row.lastActivity = Math.max(row.lastActivity ?? 0, live.lastEventAt ?? 0);
+    rows.set(live.id, row);
+  }
+  return groupByWorkspace([...rows.values()]).map(({ key, ...group }) => ({ id: key, ...group }));
 }
 
 const MIME = {
@@ -330,20 +401,27 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (url.pathname === "/api/workspaces") {
+      sendJson(res, 200, { workspaces: await workspaceTree() });
+      return;
+    }
+
     if (url.pathname === "/api/history") {
-      const session = sessions.get(url.searchParams.get("id") ?? "");
-      const entries = await readSessionEntries(session);
+      const id = url.searchParams.get("id") ?? "";
+      if (!sessions.has(id) && !savedById.has(id)) await refreshSaved();
+      const where = locate(id);
+      const entries = where ? await readEntries(where.file) : undefined;
       if (!entries) {
         sendJson(res, 404, { error: "no history for that session" });
         return;
       }
-      sendJson(res, 200, { ...transcriptItems(entries, session.leafId), historyVersion: session.historyVersion });
+      sendJson(res, 200, { ...transcriptItems(entries, where.leafId), historyVersion: where.historyVersion });
       return;
     }
 
     if (url.pathname === "/api/image") {
-      const session = sessions.get(url.searchParams.get("id") ?? "");
-      const entries = await readSessionEntries(session);
+      const where = locate(url.searchParams.get("id") ?? "");
+      const entries = where ? await readEntries(where.file) : undefined;
       const image = entries ? findImage(entries, url.searchParams.get("ref")) : undefined;
       if (!image) {
         res.writeHead(404).end();

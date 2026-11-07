@@ -12,7 +12,28 @@
     historyVersionLoaded: -1,
     historyLoading: false,
     stickToBottom: true,
+    workspaces: [],
+    /** workspace id -> true (open) / false (closed), set by the user; remembered per browser. */
+    wsOpen: loadPref("pi-companion.wsOpen", {}),
+    showAll: new Set(),
+    filter: "",
   };
+
+  function loadPref(key, fallback) {
+    try {
+      return JSON.parse(localStorage.getItem(key)) ?? fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  function savePref(key, value) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+      // Storage can be unavailable; the sidebar still works.
+    }
+  }
 
   const transcriptEl = $("transcript");
   const liveEl = $("live");
@@ -80,34 +101,197 @@
     return [...state.sessions.values()].sort((a, b) => (b.lastEventAt ?? 0) - (a.lastEventAt ?? 0));
   }
 
+  const SESSIONS_SHOWN = 6;
+
+  function fmtAgo(ms) {
+    if (!ms) return "";
+    const s = Math.max(0, (Date.now() - ms) / 1000);
+    if (s < 60) return "now";
+    if (s < 3600) return `${Math.floor(s / 60)}m`;
+    if (s < 86400) return `${Math.floor(s / 3600)}h`;
+    if (s < 7 * 86400) return `${Math.floor(s / 86400)}d`;
+    return new Date(ms).toLocaleDateString([], { month: "short", day: "numeric" });
+  }
+
+  function rowTitle(row) {
+    return row.name || row.preview || "Untitled session";
+  }
+
+  /** The sidebar row for a session, with live status from /events when it is running. */
+  function rowFor(id) {
+    for (const ws of state.workspaces) {
+      const row = ws.sessions.find((s) => s.id === id);
+      if (row) return { ws, row };
+    }
+    return undefined;
+  }
+
+  /** Live sessions the tree has not picked up yet (no file on disk at the last scan). */
+  function treeWithLive() {
+    const known = new Set(state.workspaces.flatMap((ws) => ws.sessions.map((s) => s.id)));
+    const groups = state.workspaces.map((ws) => ({ ...ws, sessions: [...ws.sessions] }));
+    for (const live of state.sessions.values()) {
+      if (known.has(live.id) || live.ended) continue;
+      const key = (live.cwd ?? "").replace(/[\\/]+$/, "").toLowerCase();
+      let ws = groups.find((g) => g.id.toLowerCase() === key);
+      if (!ws) {
+        ws = { id: key, cwd: live.cwd, name: basename(live.cwd) || "(unknown)", lastActivity: 0, sessions: [] };
+        groups.unshift(ws);
+      }
+      ws.sessions.unshift({ id: live.id, name: live.name, preview: "", lastActivity: live.lastEventAt });
+    }
+    return groups;
+  }
+
+  function isWsOpen(ws, index) {
+    if (state.filter) return true;
+    if (ws.id in state.wsOpen) return state.wsOpen[ws.id];
+    const hasLive = ws.sessions.some((s) => liveStatus(s.id));
+    const hasSelected = ws.sessions.some((s) => s.id === state.selectedId);
+    return hasLive || hasSelected || index < 3;
+  }
+
+  function liveStatus(id) {
+    const live = state.sessions.get(id);
+    return live && !live.ended ? live.status : undefined;
+  }
+
   function renderSidebar() {
     const list = $("session-list");
-    const sessions = sortedSessions();
-    $("empty-hint").hidden = sessions.length > 0;
-    list.innerHTML = sessions
-      .map((s) => {
-        const active = s.id === state.selectedId ? " active" : "";
-        return `<button class="session${active}" data-id="${esc(s.id)}">
-          <span class="sdot ${esc(s.status)}"></span>
-          <span class="sbody">
-            <span class="sname">${esc(s.name && s.name !== "New thread" ? s.name : basename(s.cwd) || "Pi session")}</span>
-            <span class="ssub">${esc(basename(s.cwd))} · ${esc(statusLabel(s))}</span>
-          </span>
-        </button>`;
+    const filter = state.filter.trim().toLowerCase();
+    let groups = treeWithLive();
+    if (filter) {
+      groups = groups
+        .map((ws) => {
+          const wsMatch = `${ws.name} ${ws.cwd}`.toLowerCase().includes(filter);
+          const sessions = wsMatch
+            ? ws.sessions
+            : ws.sessions.filter((s) => `${s.name ?? ""} ${s.preview ?? ""}`.toLowerCase().includes(filter));
+          return { ...ws, sessions };
+        })
+        .filter((ws) => ws.sessions.length);
+    }
+    // Workspaces with a running session first, then by latest activity.
+    groups.sort((a, b) => {
+      const la = a.sessions.some((s) => liveStatus(s.id)) ? 1 : 0;
+      const lb = b.sessions.some((s) => liveStatus(s.id)) ? 1 : 0;
+      return lb - la || (b.lastActivity ?? 0) - (a.lastActivity ?? 0);
+    });
+
+    $("empty-hint").hidden = groups.length > 0 || Boolean(filter);
+    list.innerHTML = groups
+      .map((ws, index) => {
+        const open = isWsOpen(ws, index);
+        const anyLive = ws.sessions.some((s) => liveStatus(s.id));
+        const showAll = state.showAll.has(ws.id) || Boolean(filter);
+        const shown = showAll ? ws.sessions : ws.sessions.slice(0, SESSIONS_SHOWN);
+        // Keep the selected session visible even past the cut.
+        const selectedRow = ws.sessions.find((s) => s.id === state.selectedId);
+        if (selectedRow && !shown.includes(selectedRow)) shown.push(selectedRow);
+        const hidden = ws.sessions.length - shown.length;
+        const rows = shown
+          .map((s) => {
+            const status = liveStatus(s.id);
+            const active = s.id === state.selectedId ? " active" : "";
+            return `<button class="session${active}" data-id="${esc(s.id)}" title="${esc(rowTitle(s))}">
+              <span class="sdot ${status ? esc(status) : "saved"}"></span>
+              <span class="sname">${esc(rowTitle(s))}</span>
+              <span class="sago">${status && status !== "idle" ? esc(statusLabel({ status })) : esc(fmtAgo(s.lastActivity))}</span>
+            </button>`;
+          })
+          .join("");
+        return `<section class="ws${open ? " open" : ""}">
+          <button class="ws-head" data-ws="${esc(ws.id)}" title="${esc(ws.cwd)}">
+            <span class="chev"></span>
+            <span class="ws-name">${esc(ws.name)}</span>
+            ${anyLive ? `<span class="ws-live"></span>` : ""}
+            <span class="ws-count">${ws.sessions.length}</span>
+          </button>
+          <div class="ws-sessions">${rows}${
+            hidden > 0 ? `<button class="ws-more" data-more="${esc(ws.id)}">Show ${hidden} more</button>` : ""
+          }</div>
+        </section>`;
       })
       .join("");
+
     for (const button of list.querySelectorAll(".session")) {
       button.addEventListener("click", () => {
         state.pinnedByUser = true;
         select(button.dataset.id);
       });
     }
+    for (const head of list.querySelectorAll(".ws-head")) {
+      head.addEventListener("click", () => {
+        const section = head.parentElement;
+        const open = !section.classList.contains("open");
+        state.wsOpen[head.dataset.ws] = open;
+        savePref("pi-companion.wsOpen", state.wsOpen);
+        section.classList.toggle("open", open);
+      });
+    }
+    for (const more of list.querySelectorAll(".ws-more")) {
+      more.addEventListener("click", () => {
+        state.showAll.add(more.dataset.more);
+        renderSidebar();
+      });
+    }
   }
+
+  let workspacesTimer;
+  async function loadWorkspaces() {
+    try {
+      const res = await fetch("/api/workspaces", { cache: "no-store" });
+      if (!res.ok) throw new Error(`workspaces ${res.status}`);
+      state.workspaces = (await res.json()).workspaces ?? [];
+      renderSidebar();
+      if (!state.sessions.has(state.selectedId)) renderHeader();
+    } catch (error) {
+      console.warn(error);
+    }
+  }
+
+  /** Re-read the tree soon (debounced): a session started, ended or was saved for the first time. */
+  function scheduleWorkspaces(delay = 1200) {
+    clearTimeout(workspacesTimer);
+    workspacesTimer = setTimeout(loadWorkspaces, delay);
+  }
+
+  setInterval(loadWorkspaces, 20_000);
+
+  $("filter").addEventListener("input", (event) => {
+    state.filter = event.target.value;
+    renderSidebar();
+  });
 
   /* ── header + banner ─────────────────────────────────── */
 
+  /** Header for a saved session that is not running: title, folder, model from its history. */
+  function renderSavedHeader() {
+    const found = rowFor(state.selectedId);
+    $("topbar").hidden = !found && !state.history;
+    $("compaction-banner").hidden = true;
+    if (!found && !state.history) return;
+    const cwd = state.history?.cwd ?? found?.ws.cwd;
+    $("session-title").textContent = state.history?.name || (found ? rowTitle(found.row) : "Pi session");
+    $("session-meta").innerHTML = [
+      cwd && `<span>${esc(cwd)}</span>`,
+      state.history?.model && `<span>${esc(state.history.model)}</span>`,
+      found?.row.lastActivity && `<span>last active ${esc(new Date(found.row.lastActivity).toLocaleString())}</span>`,
+    ]
+      .filter(Boolean)
+      .join("<span class='sep'>·</span>");
+    $("context").hidden = true;
+    const pill = $("status-pill");
+    pill.textContent = "Saved";
+    pill.className = "pill saved";
+  }
+
   function renderHeader() {
     const s = state.sessions.get(state.selectedId);
+    if (!s && state.selectedId) {
+      renderSavedHeader();
+      return;
+    }
     $("topbar").hidden = !s;
     if (!s) {
       $("compaction-banner").hidden = true;
@@ -304,11 +488,12 @@
     if (s && !s.hasHistory && !state.history) {
       transcriptEl.innerHTML = `<div class="placeholder">Pi hasn't saved this session to disk yet. It will appear after the first reply.</div>`;
     }
-    if (!s || !s.hasHistory || state.historyLoading) return;
-    if (!force && s.historyVersion === state.historyVersionLoaded) return;
+    if (!state.selectedId || (s && !s.hasHistory) || state.historyLoading) return;
+    // A saved (not running) session never changes, so version 0 loads once.
+    const wanted = s ? s.historyVersion : 0;
+    if (!force && wanted === state.historyVersionLoaded) return;
     state.historyLoading = true;
-    const id = s.id;
-    const wanted = s.historyVersion;
+    const id = state.selectedId;
     try {
       const res = await fetch(`/api/history?id=${encodeURIComponent(id)}`, { cache: "no-store" });
       if (!res.ok) throw new Error(`history ${res.status}`);
@@ -318,9 +503,13 @@
       state.history = data;
       state.historyVersionLoaded = wanted;
       renderTranscript();
+      if (!s) renderHeader();
       if (stick) scrollToBottom();
     } catch (error) {
       console.warn(error);
+      if (id === state.selectedId && !state.history) {
+        transcriptEl.innerHTML = `<div class="placeholder">Could not load this session.</div>`;
+      }
     } finally {
       state.historyLoading = false;
       const now = state.sessions.get(state.selectedId);
@@ -343,7 +532,8 @@
   }
 
   function autoSelect() {
-    if (state.selectedId && state.sessions.has(state.selectedId) && state.pinnedByUser) return;
+    // A session the user clicked (running or saved) stays selected.
+    if (state.selectedId && state.pinnedByUser) return;
     const live = sortedSessions().filter((s) => !s.ended);
     const candidate = live[0] ?? sortedSessions()[0];
     if (!state.selectedId || !state.sessions.has(state.selectedId)) {
@@ -355,6 +545,10 @@
   }
 
   function upsert(session) {
+    const previous = state.sessions.get(session.id);
+    if (!previous || !rowFor(session.id) || previous.ended !== session.ended || previous.name !== session.name) {
+      scheduleWorkspaces();
+    }
     state.sessions.set(session.id, session);
     autoSelect();
     renderSidebar();
@@ -392,18 +586,18 @@
         upsert(msg.session);
       } else if (msg.type === "removed") {
         state.sessions.delete(msg.id);
+        // A session that ended stays open as a saved session; its history is on disk.
         if (state.selectedId === msg.id) {
-          state.selectedId = null;
-          state.pinnedByUser = false;
-          transcriptEl.innerHTML = `<div class="placeholder">That Pi session ended.</div>`;
           liveEl.innerHTML = "";
+          state.pinnedByUser = true;
         }
-        autoSelect();
+        scheduleWorkspaces(300);
         renderSidebar();
         renderHeader();
       }
     };
   }
 
+  loadWorkspaces();
   connect();
 })();

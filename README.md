@@ -23,8 +23,11 @@ next to it:
   compaction becomes a card with the summary the model now sees and the files it lists;
   messages that were summarized are dimmed.
 - **Context meter** and a status pill (Idle, Running, Compacting).
-- **Several sessions**: every interactive Pi on the machine shows up in the sidebar; the
-  window follows the most recently active one unless you pick one.
+- **Workspaces and sessions**: the sidebar lists every workspace (project folder) you have
+  used Pi in, with its sessions underneath, newest first, including past sessions you can
+  open and read. Nothing to add by hand: they come from Pi's own sessions folder. Running
+  sessions get a live dot and float to the top; a filter box searches folder names and
+  session titles. The window follows the most recently active session unless you pick one.
 
 ## Install
 
@@ -59,8 +62,9 @@ Pi (interactive) ──events──► companion server ──SSE──► windo
   Pi does. It does nothing in print/JSON mode. If the server is not running, events are
   dropped quietly; a heartbeat every 15 s makes running sessions appear once it starts.
 - The **server** (Node built-ins only, no dependencies) listens on `127.0.0.1` only. It
-  reads history from the session file Pi reports, and only from inside Pi's sessions
-  folder. It keeps no data on disk.
+  builds the workspace list from Pi's sessions folder, reading only the start and end of
+  each file (session files can be hundreds of MB with images), cached until a file
+  changes. It reads history only from inside that folder and keeps no data on disk.
 - The **window** is plain HTML and JavaScript: no build step and no CDN.
 
 ## Settings
@@ -75,7 +79,7 @@ The server log and the app-window browser profile live in `~/.pi/agent/companion
 ## Limits
 
 - Read-only for now. Sending text or images from the window into Pi is planned.
-- Only sessions that are running show up; browsing old sessions is planned.
+- Past sessions open read-only; resume one in Pi with `pi -r`.
 - Tested on Windows 11 with Pi 1.4. macOS and Linux use the same code paths but have not
   been tested yet; reports welcome.
 

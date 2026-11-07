@@ -12,8 +12,9 @@
     <aside class="sidebar">
       <div class="brand"><span class="logo">π</span> Companion</div>
       <div class="conn" id="conn"><span class="dot"></span><span id="conn-text">Connecting…</span></div>
-      <nav id="session-list" class="session-list" aria-label="Live Pi sessions"></nav>
-      <p class="hint" id="empty-hint">No Pi sessions yet. Start <code>pi</code> in a terminal; it shows up here within 15&nbsp;seconds.</p>
+      <input id="filter" class="filter" type="search" placeholder="Filter workspaces and sessions" aria-label="Filter workspaces and sessions">
+      <nav id="session-list" class="session-list" aria-label="Workspaces and sessions"></nav>
+      <p class="hint" id="empty-hint">No Pi sessions found yet. Start <code>pi</code> in a terminal; running sessions show up here within 15&nbsp;seconds.</p>
     </aside>
 
     <main class="main">
