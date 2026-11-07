@@ -38,7 +38,8 @@ next to it:
   so there it's a token count without a bar).
 - **Active and Workspaces**: the sidebar starts with **Active**, a flat list of every running
   session with its folder name under the title. Sessions waiting for you come first, the one
-  that finished most recently on top, then the ones still working. Under it, **Favorites**:
+  that finished most recently on top, then the ones still working. The browser tab title counts
+  the ones waiting with something you haven't seen yet, like "(2) CLI Companion". Under it, **Favorites**:
   click the star beside a session in Active to keep it there, running or not (newest first, with
   its terminal icon); click the filled star to remove it. Kept in `~/.cli-companion/favorites.json`.
   Below that, **Workspaces**, grouped by CLI first: Pi, Claude Code, Codex, each with a caret

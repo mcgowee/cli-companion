@@ -238,6 +238,37 @@
     return Math.max(state.sessions.get(s.id)?.lastEventAt ?? 0, s.lastActivity ?? 0);
   }
 
+  /* ── "Needs you" count in the browser tab title: "(2) CLI Companion" ──
+     Running sessions waiting for you that did something since you last looked at them. A session
+     counts as looked at while it is the one open and this tab is visible. Kept per browser in
+     localStorage (session id -> time), newest 200. */
+  const SEEN_KEY = "pi-companion.seen";
+  const BASE_TITLE = document.title || "CLI Companion";
+  let seenAt = {};
+  try {
+    seenAt = JSON.parse(localStorage.getItem(SEEN_KEY) || "{}") || {};
+  } catch {}
+  let lastActiveRows = [];
+
+  function markSeen() {
+    const id = state.selectedId;
+    if (!id || document.hidden) return;
+    seenAt[id] = Date.now();
+    const ids = Object.keys(seenAt);
+    if (ids.length > 200) for (const old of ids.sort((a, b) => seenAt[a] - seenAt[b]).slice(0, ids.length - 200)) delete seenAt[old];
+    try {
+      localStorage.setItem(SEEN_KEY, JSON.stringify(seenAt));
+    } catch {}
+  }
+
+  function updateTitle() {
+    markSeen();
+    const n = lastActiveRows.filter(({ s }) => !isWorking(s) && activityOf(s) > (seenAt[s.id] ?? 0) + 1000).length;
+    const title = n ? `(${n}) ${BASE_TITLE}` : BASE_TITLE;
+    if (document.title !== title) document.title = title;
+  }
+  document.addEventListener("visibilitychange", updateTitle);
+
   /* ── git branch and uncommitted changes (Active and Favorites rows, the header) ── */
 
   const gitById = new Map(); // session id -> summary | null (not a git folder)
@@ -426,6 +457,8 @@
     // gone (or hidden by the filter) are left out.
     const byId = new Map(groups.flatMap((ws) => ws.sessions.map((s) => [s.id, { s, ws }])));
     const favRows = state.favorites.map((id) => byId.get(id)).filter(Boolean);
+    lastActiveRows = activeRows;
+    updateTitle();
     gitWanted = [...activeRows, ...favRows].map(({ s }) => s.id);
     void refreshGit();
     const activeHtml = `<div class="section-head side-section">Active${activeRows.length ? ` <span class="ws-count">${activeRows.length}</span>` : ""}</div>
