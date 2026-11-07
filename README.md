@@ -67,6 +67,14 @@ next to it:
     a coloured diff per file. **Changed in this session** lists the files Pi edited or
     wrote in the open session.
   - Read-only by design: no editing and no terminal (your terminal is where Pi runs).
+- **Menu bar: Home, Dashboards, About.** Home is the session view.
+  - **Dashboards** has built-in dashboards and your own. **Usage overview** shows sessions
+    started per day in Pi and Claude Code (7, 30 or 90 days, with a table view), active days
+    and your busiest workspaces, all from the session files already indexed. **Custom**
+    dashboards are links to any page, such as a local server's status page: add them with the
+    form, open them inside the companion or in a new tab. Ones on this computer show online
+    or offline. The list is kept in `~/.pi/agent/companion/dashboards.json`.
+  - **About** shows the version, this server's address and folders, shortcuts and privacy.
 
 ## Install
 
@@ -103,7 +111,8 @@ Pi (interactive) ──events──► companion server ──SSE──► windo
 - The **server** (Node built-ins only, no dependencies) listens on `127.0.0.1` only. It
   builds the workspace list from Pi's sessions folder, reading only the start and end of
   each file (session files can be hundreds of MB with images), cached until a file
-  changes. It reads history only from inside that folder and keeps no data on disk.
+  changes. It reads history only from inside that folder and keeps no session data on disk; the one
+  file it writes is your custom dashboard list.
   The right panel only reads inside the folder of a session it knows (the page sends a
   session id, never a path), rejects `..` and symlinks that lead outside it, and runs
   only read-only `git` commands. Requests whose `Host` is not `127.0.0.1`/`localhost`

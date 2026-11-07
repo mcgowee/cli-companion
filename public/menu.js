@@ -6,13 +6,13 @@
   const esc = window.escapeHtml;
   const pages = { home: $("page-home"), dashboards: $("page-dashboards"), about: $("page-about") };
 
-  function current() {
-    const name = location.hash.replace(/^#\/?/, "").split(/[/?]/)[0];
-    return name in pages ? name : "home";
+  function route() {
+    const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
+    return parts[0] in pages ? { page: parts[0], rest: parts.slice(1) } : { page: "home", rest: [] };
   }
 
   function show() {
-    const page = current();
+    const { page, rest } = route();
     for (const [name, el] of Object.entries(pages)) el.hidden = name !== page;
     for (const link of document.querySelectorAll(".menu-item")) {
       const active = link.dataset.page === page;
@@ -22,6 +22,7 @@
     }
     document.title = page === "home" ? "CLI Companion" : `${page[0].toUpperCase()}${page.slice(1)} · CLI Companion`;
     if (page === "about") loadAbout();
+    window.dashboardsPage?.show(page === "dashboards" ? rest : null);
   }
 
   async function loadAbout() {
@@ -71,8 +72,10 @@
       </dl>
 
       <h2>Privacy</h2>
-      <p>Everything stays on this computer: the server listens on 127.0.0.1 only, reads your session
-      files read-only, keeps nothing on disk and makes no outside requests.</p>
+      <p>Everything stays on this computer: the server listens on 127.0.0.1 only and reads your session
+      files read-only. The one file it writes is your list of custom dashboards
+      (<code>~/.pi/agent/companion/dashboards.json</code>). Its only requests are the online check for
+      dashboards on this computer; it never contacts anything outside it.</p>
 
       <h2>Project</h2>
       <p><a href="https://github.com/mcgowee/pi-companion" target="_blank" rel="noopener">github.com/mcgowee/pi-companion</a>

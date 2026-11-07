@@ -19,6 +19,8 @@ import { fileURLToPath } from "node:url";
 import { claudeTranscriptItems, findClaudeImage, parseClaudeLines } from "./claude-file.mjs";
 import { findImage, parseEntries, transcriptItems } from "./session-file.mjs";
 import { CLAUDE_PREFIX, groupByWorkspace, scanClaudeSessions, scanSessions } from "./session-index.mjs";
+import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard } from "./dashboards.mjs";
+import { usageSummary } from "./usage.mjs";
 import { CLAUDE_BUILTINS, claudeCustomCommands, mergeCommands, PI_BUILTINS } from "./slash-commands.mjs";
 import { listDir, readFileForView, reviewDiff, reviewStatus, WorkbenchError } from "./workbench.mjs";
 
@@ -37,6 +39,8 @@ const CLAUDE_RUNNING_DIR = CLAUDE_DIR ? resolve(CLAUDE_DIR, "..", "sessions") : 
 const PUBLIC_DIR = fileURLToPath(new URL("../public/", import.meta.url));
 const MAX_BODY = 4 * 1024 * 1024;
 const SERVER_STARTED_AT = Date.now();
+// The one file the companion writes: your custom dashboard links.
+const DASHBOARDS_FILE = join(AGENT_DIR, "companion", "dashboards.json");
 
 /** Live sessions keyed by Pi session id. */
 const sessions = new Map();
@@ -626,7 +630,8 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (req.method !== "GET") {
+    // Everything below is read-only, except adding/removing custom dashboard links.
+    if (req.method !== "GET" && url.pathname !== "/api/dashboards") {
       res.writeHead(405).end();
       return;
     }
@@ -753,6 +758,53 @@ const server = createServer(async (req, res) => {
 
     if (url.pathname === "/healthz") {
       sendJson(res, 200, { ok: true, sessions: sessions.size, clients: clients.size });
+      return;
+    }
+
+    if (url.pathname === "/api/usage") {
+      await refreshSaved();
+      const days = [7, 30, 90].includes(Number(url.searchParams.get("days"))) ? Number(url.searchParams.get("days")) : 30;
+      const offsetMin = Math.max(-840, Math.min(840, Number.parseInt(url.searchParams.get("tz") ?? "0", 10) || 0));
+      sendJson(res, 200, usageSummary([...savedById.values()], { days, offsetMin }));
+      return;
+    }
+
+    if (url.pathname === "/api/dashboards") {
+      if (req.method === "GET") {
+        const list = await loadDashboards(DASHBOARDS_FILE);
+        // "online" only for addresses on this computer; anything else is left unknown.
+        const withStatus = await Promise.all(
+          list.map(async (d) => {
+            if (!isLoopbackUrl(d.url)) return { ...d, online: null };
+            try {
+              const r = await fetch(d.url, { method: "GET", signal: AbortSignal.timeout(1200), redirect: "manual" });
+              await r.body?.cancel();
+              return { ...d, online: true };
+            } catch {
+              return { ...d, online: false };
+            }
+          }),
+        );
+        sendJson(res, 200, { file: DASHBOARDS_FILE, dashboards: withStatus });
+        return;
+      }
+      // Changes come only from this page (custom header: a cross-site page can't send it).
+      if (req.headers["x-pi-companion-page"] !== "1") {
+        res.writeHead(403).end();
+        return;
+      }
+      try {
+        if (req.method === "POST") {
+          sendJson(res, 201, await addDashboard(DASHBOARDS_FILE, JSON.parse(await readBody(req))));
+        } else if (req.method === "DELETE") {
+          const removed = await removeDashboard(DASHBOARDS_FILE, url.searchParams.get("id") ?? "");
+          sendJson(res, removed ? 200 : 404, { removed });
+        } else {
+          res.writeHead(405).end();
+        }
+      } catch (error) {
+        sendJson(res, error instanceof DashboardError ? 400 : 500, { error: error.message });
+      }
       return;
     }
 
