@@ -617,6 +617,22 @@
     direction: 1,
     reset: () => setSideWidth(SIDE_DEFAULT),
   });
+  /** For the command palette: every session it can jump to, and the left panel switch. */
+  window.companionApp = {
+    sessions: () =>
+      treeWithLive().flatMap((ws) =>
+        ws.sessions.map((s) => ({
+          id: s.id,
+          title: rowTitle(s),
+          ws: ws.name,
+          src: cliSources.forRow(s).id,
+          active: isActive(s),
+          at: activityOf(s),
+        })),
+      ),
+    selectedId: () => state.selectedId,
+    toggleSidebar: () => setSidebarHidden(!appEl.classList.contains("sidebar-hidden")),
+  };
   $("sidebar-hide").addEventListener("click", () => setSidebarHidden(true));
   $("sidebar-show").addEventListener("click", () => setSidebarHidden(false));
   document.addEventListener("keydown", (event) => {

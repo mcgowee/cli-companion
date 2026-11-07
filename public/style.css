@@ -196,6 +196,26 @@ a.dash-card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--li
 .chart-table table { border-collapse: collapse; margin-top: 6px; }
 .chart-table th, .chart-table td { padding: 3px 14px 3px 0; text-align: left; border-bottom: 1px solid var(--line); }
 .chart-table th { color: var(--muted); font-weight: 600; }
+/* Command palette (Ctrl+K): floats over the app. */
+.palette-backdrop { position: fixed; inset: 0; z-index: 100; background: rgb(0 0 0 / 0.28); display: flex; justify-content: center; align-items: flex-start;
+  padding: 12vh 16px 16px; }
+.palette-backdrop[hidden] { display: none; }
+.palette { width: min(620px, 100%); max-height: 70vh; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 14px; box-shadow: 0 24px 60px rgb(0 0 0 / 0.35); overflow: hidden; }
+.palette-input { all: unset; box-sizing: border-box; width: 100%; padding: 14px 16px; font-size: 15px; color: var(--text); border-bottom: 1px solid var(--line); }
+.palette-list { overflow-y: auto; padding: 6px; }
+.palette-group { padding: 8px 10px 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.palette-item { display: grid; grid-template-columns: 18px minmax(0, auto) minmax(0, 1fr); align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; cursor: pointer; }
+.palette-item.on { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.palette-item .sw { justify-self: center; }
+.palette-icon { justify-self: center; color: var(--muted); font: 13px var(--mono); }
+.palette-label { font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 340px; }
+.palette-hint { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.palette-empty { color: var(--muted); padding: 12px; margin: 0; }
+.palette-foot { display: flex; flex-wrap: wrap; gap: 14px; padding: 8px 14px; border-top: 1px solid var(--line); font-size: 11.5px; color: var(--muted); }
+.palette-foot kbd { font: 11px var(--mono); padding: 0 4px; border: 1px solid var(--line); border-radius: 4px; margin-right: 3px; }
+.palette-note { margin-left: auto; color: var(--text); }
+.palette-btn { margin-right: auto; }
 /* Search page */
 .search-form input { box-sizing: border-box; width: 100%; padding: 10px 14px; font: inherit; font-size: 15px; color: var(--text); background: var(--panel);
   border: 1px solid var(--line); border-radius: 10px; }

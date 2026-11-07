@@ -463,7 +463,35 @@
 
   /* ── hooks for app.js ────────────────────────────────── */
 
+  /**
+   * Run a slash command from the palette: into Pi's input (and Enter when `send`), or copied for a
+   * CLI the page can't type into. Resolves to a short message for the palette.
+   */
+  async function runCommand(text, { send = false } = {}) {
+    if (!state.selectedId) return { ok: false, message: "Pick a session first." };
+    if (copyOnly()) {
+      const ok = await copyText(text);
+      setStatus(ok ? `Copied ${text} ✓ Paste it into ${src().label}, then press Enter.` : "Copy failed.", ok ? "ok" : "error", true);
+      return { ok, message: ok ? `Copied ${text}. Paste it into ${src().label}.` : "Copy failed." };
+    }
+    const why = blocker();
+    if (why) return { ok: false, message: why };
+    if (busy()) return { ok: false, message: "Still waiting on Pi for the last command." };
+    setStatus(`Putting ${text} in Pi's input…`, "busy");
+    const result = await command("paste", text);
+    if (!result.ok) {
+      setStatus(`Not delivered: ${result.error || "unknown error"}`, "error", true);
+      renderControls();
+      return { ok: false, message: `Not delivered: ${result.error || "unknown error"}` };
+    }
+    if (send) await enter();
+    else setStatus(`${text} is in Pi's input. Press Enter in Pi's terminal to run it.`, "ok", true);
+    renderControls();
+    return { ok: true, message: send ? `Sent ${text}.` : `${text} is in Pi's input.` };
+  }
+
   window.composer = {
+    runCommand,
     textRefs,
     insert,
     fenced,

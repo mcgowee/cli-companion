@@ -123,6 +123,10 @@ next to it:
   - Otherwise read-only by design: no editing of files and no terminal inside the page (your terminal is where Pi runs).
 - **First run**: with no sessions anywhere yet, the window shows which CLIs it found, where it
   looked, and how to start each one.
+- **Command palette** (Ctrl+K, or **⌘ Commands** in the composer): a box over the app to find
+  things by typing. The selected session's CLI commands (`/compact`, `/model`, …): Enter puts
+  the command in Pi's input, Ctrl+Enter also runs it; for Claude Code and Codex it is copied to
+  paste. Also every session (running ones first) and the companion's pages and panels.
 - **Menu bar: Home, Search, Dashboards, Settings, About.** Home is the session view.
   - **Search** (Ctrl+Shift+F) finds words in every session of every CLI: what you typed and
     the replies, not tool output or thinking. All words must be in one message; "quotes" for a

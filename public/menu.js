@@ -122,6 +122,7 @@
         <dt><kbd>Ctrl+Enter</kbd></dt><dd>Put the composer text in Pi's input, or copy it for Claude</dd>
         <dt><kbd>Ctrl+Shift+Enter</kbd></dt><dd>Put it in Pi's input and send it</dd>
         <dt><kbd>/</kbd></dt><dd>At the start of a composer line: slash commands for the selected CLI</dd>
+        <dt><kbd>Ctrl+K</kbd></dt><dd>Command palette: the session's CLI commands (/compact…), sessions, actions</dd>
         <dt><kbd>Ctrl+Shift+F</kbd></dt><dd>Search all sessions</dd>
         <dt><kbd>Ctrl+B</kbd></dt><dd>Show or hide the left panel</dd>
         <dt><kbd>Ctrl+Alt+B</kbd></dt><dd>Show or hide Files and Review</dd>
