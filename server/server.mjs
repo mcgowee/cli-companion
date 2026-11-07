@@ -5,7 +5,7 @@
 // - The page subscribes to /events (Server-Sent Events) and fetches history
 //   from the session JSONL through /api/history.
 //
-// Rules (same as the dashboard): bind 127.0.0.1 only, Node built-ins only,
+// Rules: bind 127.0.0.1 only, Node built-ins only,
 // never touch Pi's files except to read them.
 
 import { createServer } from "node:http";

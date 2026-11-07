@@ -190,7 +190,10 @@
   function toolHtml(call) {
     const r = call.result;
     const status = !r ? "pending" : r.isError ? "error" : "ok";
-    const dur = r?.durationMs ? `<span class="tdur">${(r.durationMs / 1000).toFixed(1)}s</span>` : "";
+    const dur =
+      typeof r?.durationMs === "number"
+        ? `<span class="tdur">${r.durationMs < 1000 ? `${Math.round(r.durationMs)} ms` : `${(r.durationMs / 1000).toFixed(1)}s`}</span>`
+        : "";
     const firstArg = (() => {
       try {
         const parsed = JSON.parse(call.args);

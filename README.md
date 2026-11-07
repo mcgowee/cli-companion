@@ -1,62 +1,92 @@
 # Pi Companion
 
-A live, read-only window onto the Pi CLI sessions you are running. You code in the
-terminal; the companion shows the same session with formatted markdown, images, tool
-calls, thinking and compaction, including a **"Compacting context…" banner while a
-compaction runs** (Pi CLI or pi-gui never showed this in a second window).
+A live side window for [Pi](https://pi.dev) coding agent sessions. Keep working in the
+terminal; the companion shows the same session with formatted markdown, tool calls and
+their output, images, thinking, context usage, and **compaction as it happens**.
 
-Built 2026-11-06 as phase 1 of replacing pi-gui-as-viewer. Same pattern as
-`C:\AI\pi\dashboard`: localhost-only Node server, Chrome `--app` window, small global
-Pi extension.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
+  <img alt="Pi Companion showing a session with a compaction in progress" src="docs/screenshot-light.png">
+</picture>
+
+## Why
+
+The Pi CLI is great to drive, but a long session is hard to read back in a terminal, and a
+compaction gives you little to look at while it runs. The companion is a read-only window
+next to it:
+
+- **Live transcript**: your prompts, replies rendered as markdown, thinking (collapsed),
+  and every tool call with its input and output. Streaming text and running tools appear
+  as they happen.
+- **Compaction you can see**: a "Compacting context…" banner with the reason (`/compact`,
+  context near its limit, or overflow) and a timer, then "finished" or "failed". Each
+  compaction becomes a card with the summary the model now sees and the files it lists;
+  messages that were summarized are dimmed.
+- **Context meter** and a status pill (Idle, Running, Compacting).
+- **Several sessions**: every interactive Pi on the machine shows up in the sidebar; the
+  window follows the most recently active one unless you pick one.
+
+## Install
+
+```bash
+pi install git:github.com/mcgowee/pi-companion
+```
+
+Then, in any Pi session:
+
+```
+/companion
+```
+
+This starts the companion server if it is not running and opens the window. It opens as
+an app window if Chrome, Chromium or Edge is installed, otherwise in your default browser.
+Sessions that were already open when you installed need `/reload` once.
+
+`/companion server` starts the server without opening a window. You can also open
+<http://127.0.0.1:30143> yourself.
 
 ## How it works
 
 ```
-Pi CLI ──(bridge extension: events)──► server :30143 ──(SSE)──► companion window
-            ~/.pi/agent/extensions/       server/server.mjs        public/*
-            companion.ts                  reads session JSONL ◄─── /api/history
+Pi (interactive) ──events──► companion server ──SSE──► window
+ extension/companion.ts      server/server.mjs         public/
+                             reads the session file ◄── history
 ```
 
-- **Bridge extension** (`extension/companion.ts`, installed to
-  `~/.pi/agent/extensions/companion.ts`): forwards streaming text, tool start/update/end,
-  turns, model and context usage, and compaction start / end / failure. It never returns a
-  value from a handler, so it cannot cancel or change anything in Pi. It does nothing in
-  print/json mode (`ctx.hasUI` false). If the server is down it drops events quietly and
-  retries after 5 s; a 15 s heartbeat makes an already-running Pi show up once the
-  server starts.
-- **Server** (`server/server.mjs`, Node built-ins only): binds `127.0.0.1:30143`. `/ingest`
-  requires the `x-pi-companion: 1` header (a browser page cannot send that without a CORS
-  preflight, which is never answered). History is read from the session file Pi reports,
-  and only if it is under `~/.pi/agent/sessions`. Sessions whose Pi process exited are
-  dropped within 10 s.
-- **Page** (`public/`): no build step, no CDN. Follows the most recently active session
-  unless you click one. Messages that a compaction summarized are dimmed; the compaction
-  card shows the summary the model now sees and the files it lists.
+- The **extension** forwards live events (streaming text, tool start/update/end, turns,
+  model, context usage, compaction start/end/failure) to the server with a short HTTP POST.
+  It never returns a value from an event handler, so it cannot cancel or change anything
+  Pi does. It does nothing in print/JSON mode. If the server is not running, events are
+  dropped quietly; a heartbeat every 15 s makes running sessions appear once it starts.
+- The **server** (Node built-ins only, no dependencies) listens on `127.0.0.1` only. It
+  reads history from the session file Pi reports, and only from inside Pi's sessions
+  folder. It keeps no data on disk.
+- The **window** is plain HTML and JavaScript: no build step and no CDN.
 
-## Use
+## Settings
 
-```powershell
-pwsh -File C:\AI\pi\companion\launcher\open-companion.ps1      # start server if needed + open window
-pwsh -File C:\AI\pi\companion\launcher\install-extension.ps1   # (re)install the bridge
+| Variable | Default | Meaning |
+|---|---|---|
+| `PI_COMPANION_PORT` | `30143` | Port for the server and the extension |
+| `PI_CODING_AGENT_DIR` | `~/.pi/agent` | Pi's folder (sessions are read from `sessions/`) |
+
+The server log and the app-window browser profile live in `~/.pi/agent/companion/`.
+
+## Limits
+
+- Read-only for now. Sending text or images from the window into Pi is planned.
+- Only sessions that are running show up; browsing old sessions is planned.
+- Tested on Windows 11 with Pi 1.4. macOS and Linux use the same code paths but have not
+  been tested yet; reports welcome.
+
+## Develop
+
+```bash
+npm test              # session-file parser tests (node:test)
+npm start             # run the server in the foreground
+pi -e ./ ...          # try the extension from a checkout without installing it
 ```
 
-Inside Pi: `/companion` does the same as `open-companion.ps1`. Already-open Pi sessions
-need `/reload` once to load the bridge.
+## License
 
-Settings: `PI_COMPANION_PORT` (default 30143) for both server and bridge.
-
-## Test
-
-```powershell
-cd C:\AI\pi\companion; npm test
-```
-
-Verified 2026-11-06 with real Pi 1.4.0 RPC runs (prompt + bash tool + markdown reply; a
-"nothing to compact" failure; a real manual compaction of 47k tokens) and a simulated
-9-second threshold compaction for the banner/timer.
-
-## Not yet (later phases)
-
-- Phase 2: paste/drop images and text in the window → `pi.sendUserMessage()` into the CLI.
-- Phase 3: browse past (not running) sessions; logon task so the server is always up.
-- The server keeps no state on disk; restarting it forgets live status until the next event.
+MIT

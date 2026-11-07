@@ -1,9 +1,29 @@
 {
   "name": "pi-companion",
   "version": "0.1.0",
-  "private": true,
-  "description": "Live, read-only view of running Pi CLI sessions (dashboard-style companion).",
+  "description": "A live side window for Pi coding agent sessions: formatted transcript, tool calls, images, context usage and compaction as it happens.",
   "type": "module",
+  "license": "MIT",
+  "author": "Earl McGowen",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "companion",
+    "viewer"
+  ],
+  "pi": {
+    "extensions": [
+      "./extension/companion.ts"
+    ]
+  },
+  "files": [
+    "extension/",
+    "server/",
+    "public/",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "start": "node server/server.mjs",
     "test": "node --test test/*.test.mjs"

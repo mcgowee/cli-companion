@@ -1,9 +1,10 @@
 /**
- * Global Pi extension: bridge to the Pi companion (C:\AI\pi\companion).
+ * Pi extension: bridge to the Pi companion window.
  *
  * Mirrors live session events (streaming text, tools, turns, compaction) to the
- * companion server on 127.0.0.1:30143 so its window can show what the CLI is
- * doing. Also adds `/companion` to open that window.
+ * companion server on 127.0.0.1:30143 so its window can show what Pi is doing.
+ * `/companion` starts that server (from this package) if it is not running and
+ * opens the window.
  *
  * Rules:
  *  1. Non-interactive modes (json/print) are never affected: every handler
@@ -16,16 +17,25 @@
  *     carries the current state (idle, model, context, leaf), so the view heals.
  *  4. The heartbeat timer starts on session start and is unref'd, so it never
  *     keeps Pi alive; it stops on session shutdown.
- *
- * Source of truth: C:\AI\pi\companion\extension\companion.ts. The copy in
- * ~/.pi/agent/extensions is installed by launcher\install-extension.ps1.
+ *  5. Nothing starts on load. The server and browser window start only when
+ *     you run `/companion`.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { execFileSync, spawn } from "node:child_process";
+import { existsSync, mkdirSync, openSync } from "node:fs";
+import { createConnection } from "node:net";
+import { homedir } from "node:os";
+import { basename, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const PORT = Number.parseInt(process.env.PI_COMPANION_PORT ?? "30143", 10);
-const INGEST_URL = `http://127.0.0.1:${PORT}/ingest`;
-const OPEN_SCRIPT = "C:\\AI\\pi\\companion\\launcher\\open-companion.ps1";
+const URL_BASE = `http://127.0.0.1:${PORT}`;
+const INGEST_URL = `${URL_BASE}/ingest`;
+const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const SERVER_SCRIPT = join(PACKAGE_ROOT, "server", "server.mjs");
+const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+const STATE_DIR = join(AGENT_DIR, "companion");
 const FLUSH_MS = 80;
 const HEARTBEAT_MS = 15_000;
 const BACKOFF_MS = 5_000;
@@ -58,6 +68,106 @@ function short(value: unknown, max: number): string {
 function tail(value: unknown, max: number): string {
   const text = typeof value === "string" ? value : textOf((value as { content?: unknown })?.content, "text");
   return text.length > max ? `…${text.slice(-max)}` : text;
+}
+
+/** TCP probe: true only if something accepts a connection. */
+function isPortUp(timeoutMs = 600): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = createConnection({ host: "127.0.0.1", port: PORT });
+    let settled = false;
+    const finish = (value: boolean) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(value);
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once("connect", () => finish(true));
+    socket.once("timeout", () => finish(false));
+    socket.once("error", () => finish(false));
+  });
+}
+
+/** Pi usually runs on Node; if it is a standalone binary, fall back to `node` on PATH. */
+function nodeBinary(): string {
+  return /^node(\.exe)?$/i.test(basename(process.execPath)) ? process.execPath : "node";
+}
+
+/** Start the server detached (it outlives this Pi). Returns an error message, or undefined. */
+async function ensureServer(): Promise<string | undefined> {
+  if (await isPortUp()) return undefined;
+  mkdirSync(STATE_DIR, { recursive: true });
+  const logPath = join(STATE_DIR, "server.log");
+  const log = openSync(logPath, "a");
+  const child = spawn(nodeBinary(), [SERVER_SCRIPT], {
+    detached: true,
+    stdio: ["ignore", log, log],
+    windowsHide: true,
+    env: { ...process.env, PI_COMPANION_PORT: String(PORT) },
+  });
+  child.unref();
+  for (let i = 0; i < 40; i++) {
+    await new Promise((r) => setTimeout(r, 250));
+    if (await isPortUp()) return undefined;
+  }
+  return `The companion server did not start on ${URL_BASE}. See ${logPath}.`;
+}
+
+function which(command: string): string | undefined {
+  try {
+    const out = execFileSync(process.platform === "win32" ? "where" : "which", [command], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return out.split(/\r?\n/).find(Boolean);
+  } catch {
+    return undefined;
+  }
+}
+
+/** A Chromium-based browser that supports --app windows, if one is installed. */
+function findAppBrowser(): string | undefined {
+  if (process.platform === "win32") {
+    const roots = [process.env.ProgramFiles, process.env["ProgramFiles(x86)"], process.env.LOCALAPPDATA].filter(
+      (root): root is string => Boolean(root),
+    );
+    for (const root of roots) {
+      for (const rel of ["Google\\Chrome\\Application\\chrome.exe", "Microsoft\\Edge\\Application\\msedge.exe"]) {
+        const candidate = join(root, rel);
+        if (existsSync(candidate)) return candidate;
+      }
+    }
+    return undefined;
+  }
+  if (process.platform === "darwin") {
+    return [
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "/Applications/Chromium.app/Contents/MacOS/Chromium",
+      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+    ].find((candidate) => existsSync(candidate));
+  }
+  for (const name of ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge"]) {
+    const found = which(name);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/** Open the companion as an app window (own browser profile), or in the default browser. */
+function openWindow(): void {
+  const browser = findAppBrowser();
+  const detached = { detached: true, stdio: "ignore" as const, windowsHide: true };
+  if (browser) {
+    spawn(
+      browser,
+      [`--app=${URL_BASE}`, `--user-data-dir=${join(STATE_DIR, "browser-profile")}`, "--window-size=1100,900"],
+      detached,
+    ).unref();
+  } else if (process.platform === "win32") {
+    spawn("explorer.exe", [URL_BASE], detached).unref();
+  } else {
+    spawn(process.platform === "darwin" ? "open" : "xdg-open", [URL_BASE], detached).unref();
+  }
 }
 
 export default function companionBridge(pi: ExtensionAPI): void {
@@ -216,20 +326,27 @@ export default function companionBridge(pi: ExtensionAPI): void {
 
   pi.registerCommand("companion", {
     description: "Open the Pi companion window (live view of this session); starts its server if needed",
-    handler: async (_args, ctx) => {
+    handler: async (args, ctx) => {
       if (!ctx.hasUI) return;
-      const result = await pi.exec(
-        "pwsh.exe",
-        ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", OPEN_SCRIPT, "-Port", String(PORT)],
-        { timeout: 30_000 },
-      );
-      if (result.code !== 0) {
-        ctx.ui.notify(`[companion] ${result.stderr.trim() || result.stdout.trim() || `exit ${result.code}`}`, "error");
+      const wasUp = await isPortUp();
+      const error = await ensureServer();
+      if (error) {
+        ctx.ui.notify(`[companion] ${error}`, "error");
         return;
       }
       offlineUntil = 0;
       push(ctx, { type: "hello" });
-      ctx.ui.notify("[companion] Opened.", "info");
+      if (/\b(server|no-?open)\b/i.test(args)) {
+        ctx.ui.notify(`[companion] Server ${wasUp ? "already running" : "started"} on ${URL_BASE}.`, "info");
+        return;
+      }
+      try {
+        openWindow();
+      } catch (err) {
+        ctx.ui.notify(`[companion] Open ${URL_BASE} in a browser (could not launch one: ${String(err)}).`, "warning");
+        return;
+      }
+      ctx.ui.notify(`[companion] ${wasUp ? "Opened" : "Started the server and opened"} ${URL_BASE}.`, "info");
     },
   });
 }
