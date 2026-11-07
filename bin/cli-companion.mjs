@@ -3,7 +3,7 @@
 // Works without Pi; the Pi extension's /companion command does the same thing from inside Pi.
 
 import { readFileSync } from "node:fs";
-import { companionPort, companionUrl, ensureServer, isCompanion, isPortUp, openWindow } from "../server/start.mjs";
+import { companionPort, companionUrl, ensureServer, isCompanion, isPortUp, openWindow, stopServer } from "../server/start.mjs";
 
 const HELP = `CLI Companion: a live side window for coding-agent CLIs (Pi, Claude Code, Codex).
 
@@ -11,6 +11,8 @@ Usage: cli-companion [options]
 
   (no options)      Start the server if needed and open the window
   --no-open         Start the server only; print its address
+  --restart         Stop the running server, start a fresh one, open the window
+  --stop            Stop the running server
   --foreground      Run the server in this terminal (Ctrl+C stops it)
   --port <n>        Use another port (default 30143, or CLI_COMPANION_PORT)
   --version         Print the version
@@ -24,7 +26,7 @@ function fail(message) {
 }
 
 const args = process.argv.slice(2);
-const opts = { open: true, foreground: false, port: undefined };
+const opts = { open: true, foreground: false, port: undefined, restart: false, stop: false };
 for (let i = 0; i < args.length; i++) {
   const arg = args[i];
   if (arg === "--help" || arg === "-h") {
@@ -36,6 +38,8 @@ for (let i = 0; i < args.length; i++) {
     process.exit(0);
   } else if (arg === "--no-open") opts.open = false;
   else if (arg === "--foreground") opts.foreground = true;
+  else if (arg === "--restart") opts.restart = true;
+  else if (arg === "--stop") opts.stop = true;
   else if (arg === "--port" || arg.startsWith("--port=")) {
     const value = arg.includes("=") ? arg.split("=")[1] : args[++i];
     const port = /^\d+$/.test(value ?? "") ? Number(value) : NaN;
@@ -47,6 +51,16 @@ for (let i = 0; i < args.length; i++) {
 if (opts.port) process.env.CLI_COMPANION_PORT = String(opts.port);
 const port = companionPort();
 const url = companionUrl(port);
+
+if (opts.stop || opts.restart) {
+  const result = await stopServer(port);
+  if (result.error) fail(result.error);
+  if (opts.stop) {
+    console.log(result.stopped ? `Stopped ${url}` : `No companion was running on ${url}.`);
+    process.exit(0);
+  }
+  if (result.stopped) console.log(`Stopped ${url}`);
+}
 
 if (opts.foreground) {
   if (await isPortUp(port)) fail(`something is already listening on ${url}.`);

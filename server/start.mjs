@@ -77,6 +77,30 @@ export async function isCompanion(port = companionPort()) {
   }
 }
 
+/**
+ * Ask the companion on the port to stop, and wait until the port is free.
+ * Returns { stopped: boolean, error?: string }; stopped is false when none was running.
+ */
+export async function stopServer(port = companionPort()) {
+  if (!(await isCompanion(port))) return { stopped: false };
+  try {
+    const res = await fetch(`${companionUrl(port)}/api/server`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-pi-companion-page": "1" },
+      body: JSON.stringify({ action: "stop" }),
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return { stopped: false, error: `The server refused to stop (HTTP ${res.status}). Is it an older version?` };
+  } catch (error) {
+    return { stopped: false, error: `Couldn't reach the server: ${error.message}` };
+  }
+  for (let i = 0; i < 40; i++) {
+    if (!(await isPortUp(port))) return { stopped: true };
+    await new Promise((r) => setTimeout(r, 125));
+  }
+  return { stopped: false, error: `The server on ${companionUrl(port)} didn't stop.` };
+}
+
 /** The running Node if it is plain `node`, else `node` on PATH (Pi may be a standalone binary). */
 export function nodeBinary() {
   return /^node(\.exe)?$/i.test(basename(process.execPath)) ? process.execPath : "node";

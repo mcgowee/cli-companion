@@ -98,7 +98,8 @@ next to it:
   - **Settings**: show or hide each CLI (Pi, Claude Code, Codex), change where its folder is,
     and pick the terminal **Open** uses. Saved in `~/.cli-companion/settings.json`; changes
     apply at once.
-  - **About** shows the version, this server's address and folders, shortcuts and privacy.
+  - **About** shows the version, this server's address and folders, shortcuts and privacy,
+    and has **Restart server** (picks up new code; open sessions stay open).
 
 ## Install
 
@@ -119,10 +120,13 @@ npm install -g github:mcgowee/cli-companion
 cli-companion              # start (if needed) and open the window
 cli-companion --no-open    # start the server only
 cli-companion --foreground # run the server in this terminal; Ctrl+C stops it
+cli-companion --restart    # stop the running server, start a fresh one, open the window
+cli-companion --stop       # stop the running server
 cli-companion --help
 ```
 
-The server keeps running in the background after the command exits. You can also open
+The server keeps running in the background after the command exits (closing the window
+doesn't stop it; use `--stop`, or **Restart server** on the About page). You can also open
 <http://127.0.0.1:30143> yourself.
 
 **With Pi**, install it as a Pi package. This adds the live view of Pi sessions (status,

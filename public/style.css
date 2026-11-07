@@ -572,3 +572,4 @@ kbd { font: 11px var(--mono); padding: 1px 5px; border-radius: 4px; background: 
   .banner { margin: 12px 16px 0; }
   .context-bar { width: 60px; }
 }
+.about-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 12px 0 0; }

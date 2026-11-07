@@ -23,7 +23,7 @@ import { loadSettings, saveSettings, SettingsError, sourceEnv, validateSettings 
 import { execFileSync, spawn } from "node:child_process";
 import { isProcessAlive } from "./fsutil.mjs";
 import { createSources, describeSources, nativeId, sourceForId } from "./sources/index.mjs";
-import { APP_ID, companionPort, migrateStateFile, stateDir } from "./start.mjs";
+import { APP_ID, companionPort, ensureServer, isPortUp, migrateStateFile, stateDir } from "./start.mjs";
 import { listDir, readFileForView, reviewDiff, reviewStatus, WorkbenchError } from "./workbench.mjs";
 
 const HOST = "127.0.0.1";
@@ -631,6 +631,22 @@ const server = createServer(async (req, res) => {
     }
 
     // Everything below is read-only, except adding/removing custom dashboard links.
+    if (url.pathname === "/api/server" && req.method === "POST") {
+      // Stop or restart this server (About page's Restart, `cli-companion --stop/--restart`).
+      if (req.headers["x-pi-companion-page"] !== "1") {
+        res.writeHead(403).end();
+        return;
+      }
+      const { action } = JSON.parse(await readBody(req));
+      if (action !== "stop" && action !== "restart") {
+        sendJson(res, 400, { error: "action must be stop or restart" });
+        return;
+      }
+      sendJson(res, 202, { ok: true, action });
+      shutDown(action === "restart");
+      return;
+    }
+
     if (req.method !== "GET" && !["/api/dashboards", "/api/launch", "/api/settings"].includes(url.pathname)) {
       res.writeHead(405).end();
       return;
@@ -893,6 +909,28 @@ const server = createServer(async (req, res) => {
     res.end();
   }
 });
+
+/**
+ * Close the port and exit; with `restart`, first start a fresh server (detached, logging to
+ * server.log) once the port is free. Live Pis reconnect on their own; open pages reconnect too.
+ */
+let shuttingDown = false;
+function shutDown(restart) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[companion] ${restart ? "restarting" : "stopping"} on request`);
+  setTimeout(async () => {
+    for (const client of clients) client.end();
+    server.close();
+    server.closeAllConnections();
+    if (restart) {
+      for (let i = 0; i < 20 && (await isPortUp(PORT)); i++) await new Promise((r) => setTimeout(r, 100));
+      const result = await ensureServer({ port: PORT, env: process.env });
+      if (result.error) console.error(`[companion] restart failed: ${result.error}`);
+    }
+    process.exit(0);
+  }, 100);
+}
 
 server.on("error", (error) => {
   if (error.code === "EADDRINUSE") {
