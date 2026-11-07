@@ -28,6 +28,7 @@ next to it:
   open and read. Nothing to add by hand: they come from Pi's own sessions folder. Running
   sessions get a live dot and float to the top; a filter box searches folder names and
   session titles. The window follows the most recently active session unless you pick one.
+  The left panel can be hidden with its button or **Ctrl+B** (⌘B on macOS).
 
 ## Install
 

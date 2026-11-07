@@ -201,8 +201,9 @@
           })
           .join("");
         return `<section class="ws${open ? " open" : ""}">
-          <button class="ws-head" data-ws="${esc(ws.id)}" title="${esc(ws.cwd)}">
-            <span class="chev"></span>
+          <button class="ws-head" data-ws="${esc(ws.id)}" title="${esc(ws.cwd)}" aria-expanded="${open}">
+            <svg class="ws-icon closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.6l2 2h7.4a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>
+            <svg class="ws-icon opened" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 17.5V7.5a2 2 0 0 1 2-2h3.6l2 2h6.4a2 2 0 0 1 2 2v1"/><path d="M3.5 17.5l2.3-5.6a2 2 0 0 1 1.9-1.3H21a1 1 0 0 1 .9 1.4l-2.2 5.3a2 2 0 0 1-1.9 1.2H5.5a2 2 0 0 1-2-1z"/></svg>
             <span class="ws-name">${esc(ws.name)}</span>
             ${anyLive ? `<span class="ws-live"></span>` : ""}
             <span class="ws-count">${ws.sessions.length}</span>
@@ -227,6 +228,7 @@
         state.wsOpen[head.dataset.ws] = open;
         savePref("pi-companion.wsOpen", state.wsOpen);
         section.classList.toggle("open", open);
+        head.setAttribute("aria-expanded", String(open));
       });
     }
     for (const more of list.querySelectorAll(".ws-more")) {
@@ -257,6 +259,23 @@
   }
 
   setInterval(loadWorkspaces, 20_000);
+
+  /* ── left panel: hide / show ─────────────────────────── */
+
+  const appEl = document.querySelector(".app");
+  function setSidebarHidden(hidden) {
+    appEl.classList.toggle("sidebar-hidden", hidden);
+    savePref("pi-companion.sidebarHidden", hidden);
+  }
+  setSidebarHidden(loadPref("pi-companion.sidebarHidden", false) === true);
+  $("sidebar-hide").addEventListener("click", () => setSidebarHidden(true));
+  $("sidebar-show").addEventListener("click", () => setSidebarHidden(false));
+  document.addEventListener("keydown", (event) => {
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "b") {
+      event.preventDefault();
+      setSidebarHidden(!appEl.classList.contains("sidebar-hidden"));
+    }
+  });
 
   $("filter").addEventListener("input", (event) => {
     state.filter = event.target.value;
