@@ -177,6 +177,7 @@ export default function companionBridge(pi: ExtensionAPI): void {
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   let offlineUntil = 0;
   let posting = false;
+  let agentRunning = false;
 
   const snapshot = (ctx: ExtensionContext) => {
     let context: unknown;
@@ -194,7 +195,9 @@ export default function companionBridge(pi: ExtensionAPI): void {
       cwd: ctx.cwd,
       name: sm.getSessionName(),
       model: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined,
-      idle: ctx.isIdle(),
+      // Our own flag: true from agent_start until agent_settled. ctx.isIdle() only means "not
+      // streaming", so it is true while a tool runs and can't tell working from idle.
+      running: agentRunning,
       mode: ctx.mode,
       context,
     };
@@ -407,8 +410,14 @@ export default function companionBridge(pi: ExtensionAPI): void {
   pi.on("session_info_changed", async (_event, ctx) => push(ctx, { type: "hello" }));
   pi.on("model_select", async (_event, ctx) => push(ctx, { type: "hello" }));
 
-  pi.on("agent_start", async (_event, ctx) => push(ctx, { type: "agent_start" }));
-  pi.on("agent_settled", async (event, ctx) => push(ctx, { type: "agent_settled", aborted: event.aborted }));
+  pi.on("agent_start", async (_event, ctx) => {
+    agentRunning = true;
+    push(ctx, { type: "agent_start" });
+  });
+  pi.on("agent_settled", async (event, ctx) => {
+    agentRunning = false;
+    push(ctx, { type: "agent_settled", aborted: event.aborted });
+  });
   pi.on("turn_end", async (_event, ctx) => push(ctx, { type: "turn_end" }));
 
   pi.on("message_update", async (event, ctx) => {

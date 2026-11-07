@@ -193,11 +193,19 @@ function applyBatch(batch) {
         break;
     }
   }
-  // Self-heal from missed events: the bridge reports whether Pi is idle on every batch.
-  if (batch.idle === true && session.status === "running" && !session.compaction) {
-    session.status = "idle";
-    session.stream = undefined;
-    session.tools = {};
+  // Self-heal from missed events: every batch says whether Pi is working (agent_start until
+  // agent_settled). Older extensions sent `idle` (ctx.isIdle(), "not streaming"), which is also
+  // true while a tool runs, so it is no longer used: it showed Idle while Pi was working.
+  if (typeof batch.running === "boolean" && !session.compaction && session.status !== "ended") {
+    if (batch.running && session.status !== "running") {
+      session.status = "running";
+      session.turnStartedAt ??= now();
+    } else if (!batch.running && session.status === "running") {
+      session.status = "idle";
+      session.stream = undefined;
+      session.tools = {};
+      session.turnStartedAt = undefined;
+    }
   }
   if (persisted) session.historyVersion += 1;
   return session;
