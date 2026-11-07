@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pi Companion</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%237c6cff'/%3E%3Ctext x='16' y='23' font-family='Georgia' font-size='20' text-anchor='middle' fill='white'%3E%CF%80%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand"><span class="logo">π</span> Companion</div>
+      <div class="conn" id="conn"><span class="dot"></span><span id="conn-text">Connecting…</span></div>
+      <nav id="session-list" class="session-list" aria-label="Live Pi sessions"></nav>
+      <p class="hint" id="empty-hint">No Pi sessions yet. Start <code>pi</code> in a terminal; it shows up here within 15&nbsp;seconds.</p>
+    </aside>
+
+    <main class="main">
+      <header class="topbar" id="topbar" hidden>
+        <div class="title-block">
+          <h1 id="session-title">—</h1>
+          <div class="meta" id="session-meta"></div>
+        </div>
+        <div class="status-block">
+          <div class="context" id="context" title="Context used">
+            <div class="context-bar"><div class="context-fill" id="context-fill"></div></div>
+            <span id="context-text"></span>
+          </div>
+          <span class="pill" id="status-pill">Idle</span>
+        </div>
+      </header>
+
+      <section class="banner" id="compaction-banner" hidden>
+        <div class="spinner"></div>
+        <div>
+          <strong>Compacting context…</strong>
+          <span id="compaction-detail"></span>
+        </div>
+        <span class="timer" id="compaction-timer">0:00</span>
+      </section>
+
+      <section class="transcript" id="transcript" aria-live="polite">
+        <div class="placeholder" id="placeholder">Pick a session on the left.</div>
+      </section>
+
+      <section class="live" id="live"></section>
+
+      <button class="jump" id="jump" hidden>Jump to latest ↓</button>
+    </main>
+  </div>
+  <script src="markdown.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

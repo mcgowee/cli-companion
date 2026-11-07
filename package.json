@@ -1,0 +1,14 @@
+{
+  "name": "pi-companion",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Live, read-only view of running Pi CLI sessions (dashboard-style companion).",
+  "type": "module",
+  "scripts": {
+    "start": "node server/server.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
