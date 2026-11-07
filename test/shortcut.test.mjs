@@ -35,3 +35,10 @@ test("setShortcut on Linux writes and removes the .desktop file; status follows"
   await assert.rejects(setShortcut("startup", true, opts), /unknown place/);
   await assert.rejects(setShortcut("start", true, { platform: "darwin", env: {} }), /aren't supported/);
 });
+
+test("windowAppId: Chrome's id for the companion window; none for Edge or no browser", async () => {
+  const { windowAppId } = await import("../server/shortcut.mjs");
+  assert.equal(windowAppId("C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"), "Chrome.127.0.0.1_/.browserprole.Default");
+  assert.equal(windowAppId("C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"), "");
+  assert.equal(windowAppId(undefined), "");
+});

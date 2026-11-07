@@ -198,7 +198,8 @@ doesn't stop it; use `--stop`, or **Restart server** on the About page). You can
 **A shortcut to click:** Settings → **Shortcut** → **Add** (or `cli-companion --shortcut`) puts
 a **CLI Companion** shortcut, with its own icon, in the Start menu, or on the desktop. It starts
 the companion if it isn't running and opens the window, with no terminal; right-click it to pin
-it to the taskbar or Start. On Linux it is a `.desktop` file in `~/.local/share/applications`;
+it to the taskbar or Start. With Chrome, the window groups under that pin, and pinning the open
+window pins the shortcut (not plain Chrome); with Edge, pin the shortcut itself. On Linux it is a `.desktop` file in `~/.local/share/applications`;
 macOS isn't supported yet. The shortcut runs the copy that made it, so remove it in Settings
 before you uninstall.
 
