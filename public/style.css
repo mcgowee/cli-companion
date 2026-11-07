@@ -460,6 +460,9 @@ body.resizing { cursor: col-resize; user-select: none; }
 .note { color: var(--muted); font-size: 12px; text-align: center; margin: 10px 0 4px; }
 
 .msg { margin: 18px 0; }
+/* Long transcripts: the browser skips layout and paint for messages off screen, so typing and
+   other changes stay quick with thousands of messages. The last size seen is kept for scrolling. */
+#transcript > .msg:not(.streaming) { content-visibility: auto; contain-intrinsic-size: auto 120px; }
 .who { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 4px; display: flex; gap: 8px; align-items: baseline; }
 .who time { font-weight: 400; opacity: 0.8; }
 .msg.user { display: flex; flex-direction: column; align-items: flex-end; }
@@ -560,6 +563,10 @@ body.resizing { cursor: col-resize; user-select: none; }
 .slash-src { color: var(--muted); font-size: 11px; flex: none; }
 .composer textarea { display: block; width: 100%; min-height: 64px; resize: vertical; padding: 10px 12px; border-radius: 10px;
   border: 1px solid var(--line); background: var(--panel); color: var(--text); font: 13px/1.5 var(--mono); }
+/* Grows with its text without script (Chrome, Edge); composer.js sizes it elsewhere. */
+@supports (field-sizing: content) {
+  .composer textarea { field-sizing: content; max-height: 40vh; }
+}
 .composer textarea:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 0; }
 .btn.small { padding: 4px 11px; font-size: 12.5px; }
 .mini:disabled { opacity: 0.45; cursor: not-allowed; }

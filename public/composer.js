@@ -49,7 +49,11 @@
     renderControls();
   });
 
+  // Where the browser can size the box to its text (field-sizing), let it: setting the height by
+  // script makes the whole transcript lay out again on every keystroke, which lags long sessions.
+  const cssSized = typeof CSS !== "undefined" && CSS.supports?.("field-sizing", "content");
   function autoSize() {
+    if (cssSized) return;
     textEl.style.height = "auto";
     textEl.style.height = `${Math.min(textEl.scrollHeight + 2, Math.round(window.innerHeight * 0.4))}px`;
   }
