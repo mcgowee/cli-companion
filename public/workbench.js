@@ -1,5 +1,6 @@
-// Right panel ("workbench", like pi-gui's): Files and Review for the selected session's folder.
-// Read-only. The server resolves the folder from the session id, never from a path we send.
+// Right panel ("workbench", like pi-gui's): Files and Review for the selected session's folder,
+// and Apps: web addresses and .html files in the session's final reply, to open here or pin to
+// Dashboards. Read-only. The server resolves the folder from the session id, never from a path we send.
 (function () {
   const $ = (id) => document.getElementById(id);
   const esc = window.escapeHtml;
@@ -44,6 +45,12 @@
     review: null,
     diff: null, // { path, text }
     reviewLoading: false,
+    // Apps (from the final reply)
+    apps: null, // { for, apps } | { error }
+    appsKey: "", // "<session> <reply id> <length>" the list is for (or loading)
+    appView: null, // the app shown in the panel
+    pinned: new Set(), // dashboard URLs
+    seenApps: new Set(), // keys whose apps you've looked at (no dot)
   };
 
   function api(path, params) {
@@ -119,6 +126,8 @@
     }
     $("wb-files").hidden = wb.tool !== "files";
     $("wb-review").hidden = wb.tool !== "review";
+    $("wb-apps").hidden = wb.tool !== "apps";
+    renderAppsDot();
   }
 
   function refreshTool() {
@@ -126,6 +135,11 @@
     if (wb.tool === "files") {
       if (!wb.dirs.has("")) loadDir("");
       renderFiles();
+    } else if (wb.tool === "apps") {
+      if (wb.appsKey) wb.seenApps.add(wb.appsKey);
+      void loadPinned();
+      renderApps();
+      renderAppsDot();
     } else {
       loadReview();
     }
@@ -408,11 +422,172 @@
     }
   }
 
+  /* ── Apps ────────────────────────────────────────────── */
+
+  /** The CLI's last text after your last message (same rule as the server): its key, or "". */
+  function finalReplyKey(sessionId, items) {
+    if (!Array.isArray(items)) return "";
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i];
+      const text = String(item?.text ?? "").trim();
+      if (item?.kind === "user" && text) return "";
+      if (item?.kind === "assistant" && text) return `${sessionId} ${item.id ?? i} ${text.length}`;
+    }
+    return "";
+  }
+
+  async function loadApps(key) {
+    wb.appsKey = key;
+    wb.apps = null;
+    if (wb.tool === "apps" && wb.open) wb.seenApps.add(key);
+    renderApps();
+    let data;
+    try {
+      const res = await fetch(`/api/apps?id=${encodeURIComponent(wb.sessionId)}`, {
+        cache: "no-store",
+        headers: { "x-pi-companion-page": "1" },
+      });
+      data = await res.json().catch(() => ({}));
+      if (!res.ok) data = { error: data.error || `HTTP ${res.status}` };
+    } catch {
+      data = { error: "Couldn't reach the companion server." };
+    }
+    if (key !== wb.appsKey) return;
+    wb.apps = data;
+    if (wb.appView && !data.apps?.some((a) => a.url === wb.appView.url)) wb.appView = null;
+    renderApps();
+    renderAppsDot();
+  }
+
+  async function loadPinned() {
+    try {
+      const res = await fetch("/api/dashboards", { cache: "no-store" });
+      const data = await res.json();
+      wb.pinned = new Set((data.dashboards ?? []).map((d) => d.url));
+      renderApps();
+    } catch {
+      // keep what we had
+    }
+  }
+
+  const absUrl = (app) => new URL(app.url, location.origin).href;
+
+  async function pinApp(app, button) {
+    button.disabled = true;
+    try {
+      const res = await fetch("/api/dashboards", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-pi-companion-page": "1" },
+        body: JSON.stringify({ name: app.name.slice(0, 80), url: absUrl(app), description: wb.cwd ? `From ${wb.cwd}` : "" }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `HTTP ${res.status}`);
+      wb.pinned.add(out.url);
+    } catch (error) {
+      button.title = error.message;
+    }
+    renderApps();
+  }
+
+  function renderAppsDot() {
+    const list = wb.apps?.apps ?? [];
+    const fresh = list.length > 0 && Boolean(wb.appsKey) && !wb.seenApps.has(wb.appsKey);
+    $("apps-dot").hidden = !fresh;
+    $("wb-toggle")?.classList.toggle("has-apps", fresh && !wb.open);
+  }
+
+  function renderApps() {
+    const el = $("wb-apps");
+    if (wb.tool !== "apps") return;
+    if (wb.appView) {
+      const app = wb.appView;
+      el.innerHTML = `<div class="app-bar">
+          <button class="app-back" type="button">← Apps</button>
+          <span class="app-title" title="${esc(app.name)}">${esc(app.name)}</span>
+          <a class="btn small" href="${esc(app.url)}" target="_blank" rel="noopener">Open in browser</a>
+        </div>
+        <iframe class="app-frame" src="${esc(app.url)}" title="${esc(app.name)}"
+          sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads${app.kind === "url" ? " allow-same-origin" : ""}"></iframe>`;
+      el.querySelector(".app-back").addEventListener("click", () => {
+        wb.appView = null;
+        renderApps();
+      });
+      return;
+    }
+    if (!wb.appsKey) {
+      el.innerHTML = `<p class="wb-empty">Apps appear here when the session's last reply links to one: a local web
+        address (like http://localhost:5173) or an .html file in its folder.</p>`;
+      return;
+    }
+    if (!wb.apps) {
+      el.innerHTML = `<p class="wb-empty">Looking at the last reply…</p>`;
+      return;
+    }
+    if (wb.apps.error) {
+      el.innerHTML = `<p class="wb-empty error">${esc(wb.apps.error)}</p>`;
+      return;
+    }
+    const list = wb.apps.apps ?? [];
+    if (!list.length) {
+      el.innerHTML = `<p class="wb-empty">No apps in the last reply. When it links to a local web address or an .html
+        file in this folder, it shows up here.</p>`;
+      return;
+    }
+    el.innerHTML = `<p class="wb-note">From the session's last reply.</p><div class="app-list">${list
+      .map((app, i) => {
+        const pinned = wb.pinned.has(absUrl(app));
+        const state =
+          app.kind === "file"
+            ? `<span class="app-kind">HTML file</span>`
+            : app.online === false
+              ? `<span class="app-kind off">Not running</span>`
+              : `<span class="app-kind on">Running</span>`;
+        return `<div class="app-row">
+          <button class="app-open" type="button" data-i="${i}" title="Open ${esc(app.name)} here">
+            <span class="app-name">${esc(app.name)}</span>${state}
+          </button>
+          <a class="app-ext" href="${esc(app.url)}" target="_blank" rel="noopener" title="Open in browser" aria-label="Open ${esc(app.name)} in browser">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></svg>
+          </a>
+          <button class="btn small app-pin" type="button" data-i="${i}" ${pinned ? "disabled" : ""}>${pinned ? "Pinned ✓" : "Pin to Dashboards"}</button>
+        </div>`;
+      })
+      .join("")}</div>`;
+    for (const button of el.querySelectorAll(".app-open")) {
+      button.addEventListener("click", () => {
+        wb.appView = list[Number(button.dataset.i)];
+        renderApps();
+      });
+    }
+    for (const button of el.querySelectorAll(".app-pin")) {
+      button.addEventListener("click", () => void pinApp(list[Number(button.dataset.i)], button));
+    }
+  }
+
+  /** A turn finished: look for apps in its final reply (once per reply). */
+  function considerApps(history, working) {
+    if (!wb.sessionId) return;
+    const key = working ? "" : finalReplyKey(wb.sessionId, history?.items);
+    if (key === wb.appsKey) return;
+    if (!key) {
+      // Working, or the session ends on your message: keep this session's last list.
+      if (!wb.appsKey.startsWith(`${wb.sessionId} `)) {
+        wb.appsKey = "";
+        wb.apps = null;
+        wb.appView = null;
+        renderApps();
+        renderAppsDot();
+      }
+      return;
+    }
+    void loadApps(key);
+  }
+
   /* ── hooks from app.js ───────────────────────────────── */
 
   window.workbench = {
     /** The selected session changed (or its history reloaded). */
-    update({ sessionId, cwd, history, historyChanged }) {
+    update({ sessionId, cwd, history, historyChanged, working = false }) {
       const workspaceChanged = (cwd ?? "").toLowerCase() !== (wb.cwd ?? "").toLowerCase();
       const sessionChanged = sessionId !== wb.sessionId;
       wb.sessionId = sessionId;
@@ -425,7 +600,10 @@
         wb.review = null;
         wb.diff = null;
       }
+      if (sessionChanged) wb.appView = null;
+      considerApps(history, working);
       applyLayout();
+      renderAppsDot();
       if (!wb.open || !sessionId) return;
       if (workspaceChanged || sessionChanged) refreshTool();
       else if (historyChanged && wb.tool === "review") loadReview();

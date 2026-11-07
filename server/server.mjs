@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { groupByWorkspace, workspaceKey } from "./session-index.mjs";
 import { lastExchange, localModels, ollamaUrl, SuggestError, suggestionCache, suggestReplies } from "./suggest.mjs";
 import { addFavorite, FavoriteError, loadFavorites, removeFavorite } from "./favorites.mjs";
+import { APP_FILE_HEADERS, APP_MIME, findApps, resolveAppFile, urlName } from "./apps.mjs";
 import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard } from "./dashboards.mjs";
 import { usageSummary } from "./usage.mjs";
 import { copyLine, LaunchError, openPlan, resumeCommand, terminalsFor, workspaceActions } from "./launch.mjs";
@@ -26,7 +27,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { isProcessAlive } from "./fsutil.mjs";
 import { createSources, describeSources, nativeId, sourceForId } from "./sources/index.mjs";
 import { APP_ID, companionPort, ensureServer, isPortUp, migrateStateFile, stateDir } from "./start.mjs";
-import { listDir, readFileForView, reviewDiff, reviewStatus, WorkbenchError } from "./workbench.mjs";
+import { listDir, readFileForView, resolveInside, reviewDiff, reviewStatus, WorkbenchError } from "./workbench.mjs";
 
 const HOST = "127.0.0.1";
 const PORT = companionPort();
@@ -537,6 +538,69 @@ const MIME = {
   ".svg": "image/svg+xml",
 };
 
+/** Is a web address answering? Only addresses on this computer are tried. */
+async function isOnline(href) {
+  if (!isLoopbackUrl(href)) return null;
+  try {
+    const r = await fetch(href, { method: "GET", signal: AbortSignal.timeout(1200), redirect: "manual" });
+    await r.body?.cancel();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Apps found in a session's final reply, cached per reply (online status is checked each time). */
+const appsByReply = new Map();
+async function appsFor(id) {
+  if (!sessions.has(id) && !savedById.has(id)) await refreshSaved();
+  const where = locate(id);
+  const entries = where ? await where.source.readEntries(where.file) : undefined;
+  if (!entries) throw new WorkbenchError(404, "no history for that session");
+  const exchange = lastExchange(where.source.transcript(entries, { leafId: where.leafId }).items);
+  if (!exchange) return { for: null, apps: [] };
+  const key = `${id} ${exchange.id} ${exchange.reply.length}`;
+  let found = appsByReply.get(key);
+  if (!found) {
+    const own = [`http://${HOST}:${PORT}`, `http://localhost:${PORT}`, `http://[::1]:${PORT}`];
+    const { urls, files } = findApps(exchange.reply, { exclude: own });
+    const root = await workspaceRootFor(id).catch(() => null);
+    const resolved = root ? await Promise.all(files.map((f) => resolveAppFile(root, f))) : [];
+    const seen = new Set();
+    found = [
+      ...urls.map((url) => ({ kind: "url", name: urlName(url), url })),
+      ...resolved
+        .filter((rel) => rel && !seen.has(rel.toLowerCase()) && seen.add(rel.toLowerCase()))
+        .map((rel) => ({
+          kind: "file",
+          name: rel,
+          path: rel,
+          url: `/app-files/${encodeURIComponent(id)}/${rel.split("/").map(encodeURIComponent).join("/")}`,
+        })),
+    ];
+    appsByReply.set(key, found);
+    while (appsByReply.size > 100) appsByReply.delete(appsByReply.keys().next().value);
+  }
+  const apps = await Promise.all(found.map(async (a) => (a.kind === "url" ? { ...a, online: await isOnline(a.url) } : a)));
+  return { for: exchange.id, apps };
+}
+
+/** /app-files/<session id>/<path>: a file from inside that session's folder, sandboxed. */
+async function serveAppFile(res, pathname) {
+  const [, , encodedId, ...parts] = pathname.split("/");
+  try {
+    const id = decodeURIComponent(encodedId ?? "");
+    const root = await workspaceRootFor(id);
+    const file = await resolveInside(root, parts.map(decodeURIComponent).join("/"));
+    if (!(await stat(file)).isFile()) throw new WorkbenchError(404, "not a file");
+    res.writeHead(200, { "content-type": APP_MIME[extname(file).toLowerCase()] ?? "application/octet-stream", ...APP_FILE_HEADERS });
+    res.end(await readFile(file));
+  } catch (error) {
+    res.writeHead(error instanceof WorkbenchError ? error.status : 400, { "content-type": "text/plain; charset=utf-8", ...APP_FILE_HEADERS });
+    res.end(error instanceof WorkbenchError ? error.message : "bad path");
+  }
+}
+
 async function serveStatic(res, pathname) {
   const rel = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
   const file = resolve(PUBLIC_DIR, rel);
@@ -900,6 +964,26 @@ const server = createServer(async (req, res) => {
       } catch (error) {
         sendJson(res, error instanceof SuggestError ? 502 : 500, { enabled: true, error: error.message });
       }
+      return;
+    }
+
+    if (url.pathname === "/api/apps") {
+      // Apps in the selected session's final reply (right panel). Page header required: it
+      // checks local web addresses, and a cross-site page shouldn't be able to make it do that.
+      if (req.headers["x-pi-companion-page"] !== "1") {
+        res.writeHead(403).end();
+        return;
+      }
+      try {
+        sendJson(res, 200, await appsFor(url.searchParams.get("id") ?? ""));
+      } catch (error) {
+        sendJson(res, error instanceof WorkbenchError ? error.status : 500, { error: error.message });
+      }
+      return;
+    }
+
+    if (url.pathname.startsWith("/app-files/")) {
+      await serveAppFile(res, url.pathname);
       return;
     }
 

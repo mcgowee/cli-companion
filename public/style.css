@@ -256,6 +256,30 @@ body.resizing { cursor: col-resize; user-select: none; }
 .chip { all: unset; cursor: pointer; font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--text); flex: none; }
 .chip:hover { border-color: var(--accent); }
 .wb-empty { color: var(--muted); padding: 18px 14px; font-size: 13px; }
+/* Apps tab */
+.wb-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-left: 2px; }
+.wb-dot[hidden] { display: none; }
+#wb-toggle.has-apps { position: relative; }
+#wb-toggle.has-apps::after { content: ""; position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.wb-note { color: var(--muted); font-size: 12px; margin: 12px 14px 4px; }
+.app-list { display: flex; flex-direction: column; gap: 6px; padding: 4px 10px 14px; }
+.app-row { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 9px; padding: 6px 6px 6px 4px; }
+.app-open { all: unset; box-sizing: border-box; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 3px 8px;
+  border-radius: 7px; cursor: pointer; }
+.app-open:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.app-open:focus-visible { outline: 2px solid var(--accent); }
+.app-name { font: 12.5px/1.4 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.app-kind { font-size: 11.5px; color: var(--muted); }
+.app-kind.on { color: var(--ok); }
+.app-kind.off { color: var(--bad); }
+.app-ext { flex: none; display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; color: var(--muted); }
+.app-ext:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.app-ext svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.app-pin { flex: none; }
+.app-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.app-back { all: unset; cursor: pointer; color: var(--accent); font-size: 12.5px; flex: none; }
+.app-title { flex: 1; min-width: 0; font: 12px/1.4 var(--mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.app-frame { flex: 1; width: 100%; min-height: 0; border: 0; background: #fff; }
 .wb-empty.error, .ft-row.error { color: var(--bad); }
 .wb-section { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 14px 12px 6px; }
 

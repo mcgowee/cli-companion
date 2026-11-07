@@ -118,7 +118,7 @@
       </section>
     </main>
 
-    <aside class="workbench" id="workbench" aria-label="Files and review" hidden>
+    <aside class="workbench" id="workbench" aria-label="Files, review and apps" hidden>
       <div class="panel-resize wb-resize" id="wb-resize" role="separator" aria-orientation="vertical"
         aria-label="Resize right panel" tabindex="0" title="Drag to resize · double-click to reset"></div>
       <div class="wb-tabs" role="tablist">
@@ -130,6 +130,10 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4v10"/><path d="M3 9h10"/><path d="M11 19h10"/><path d="M18 4l-12 16"/></svg>
           Review
         </button>
+        <button class="wb-tab" type="button" role="tab" data-tool="apps">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M3.5 9h17M7 6.8h.01M9.5 6.8h.01"/></svg>
+          Apps<span class="wb-dot" id="apps-dot" hidden></span>
+        </button>
         <span class="wb-spacer"></span>
         <button class="icon-btn" id="wb-close" type="button" aria-label="Close panel" title="Close (Ctrl+Alt+B)">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
@@ -137,6 +141,7 @@
       </div>
       <div class="wb-body" id="wb-files" role="tabpanel"></div>
       <div class="wb-body" id="wb-review" role="tabpanel" hidden></div>
+      <div class="wb-body" id="wb-apps" role="tabpanel" hidden></div>
     </aside>
   </div>
   <script src="sources.js"></script>

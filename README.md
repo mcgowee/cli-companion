@@ -88,7 +88,7 @@ next to it:
 - **Resizable panels**: drag the inner edge of the left or right panel (or focus it and use
   ←/→; Shift for bigger steps). Double-click an edge to reset its width. Widths are
   remembered, and the transcript always keeps at least 360 px.
-- **Right panel (Files and Review)**, like pi-gui's workbench, for the selected session's
+- **Right panel (Files, Review and Apps)**, like pi-gui's workbench, for the selected session's
   folder. Toggle it with the button at the top right or **Ctrl+Alt+B**.
   - **Files**: browse the folder tree and read files with line numbers. Markdown is
     rendered (with a Source toggle) and images are shown.
@@ -96,6 +96,13 @@ next to it:
     **Branch** (everything since the branch split from main/master), with +/− counts and
     a coloured diff per file. **Changed in this session** lists the files Pi edited or
     wrote in the open session.
+  - **Apps**: when the session's **final reply** links to an app it made, the app is listed here
+    (only the last reply is read, to keep noise down): local web addresses such as
+    `http://localhost:5173` (marked Running or Not running) and `.html` files inside the session's
+    folder. A dot on the tab means new apps. Click one to open it in the panel, open it in the
+    browser, or **Pin to Dashboards** to keep it in the Dashboards menu (never added by itself).
+    HTML files are served from `/app-files/…` in a sandbox (its own origin, so its scripts can't
+    use the companion; browser storage and loading local JSON with fetch don't work there).
   - Read-only by design: no editing and no terminal inside the page (your terminal is where Pi runs).
 - **First run**: with no sessions anywhere yet, the window shows which CLIs it found, where it
   looked, and how to start each one.
@@ -181,7 +188,7 @@ Pi (interactive) ──events──► companion server ──SSE──► windo
   files it writes are its own settings and custom dashboard list, in `~/.cli-companion`.
   The right panel only reads inside the folder of a session it knows (the page sends a
   session id, never a path), rejects `..` and symlinks that lead outside it, and runs
-  only read-only `git` commands. Requests whose `Host` is not `127.0.0.1`/`localhost`
+  only read-only `git` commands. App files from that folder are sent with a sandbox policy. Requests whose `Host` is not `127.0.0.1`/`localhost`
   are refused, which blocks DNS-rebinding attacks from web pages.
 - **Sending to Pi**: Pi never opens a port. The extension in each interactive Pi keeps one
   request open to the server (`/bridge/inbox`) and receives only commands for its own

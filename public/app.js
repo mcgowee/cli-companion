@@ -856,7 +856,9 @@
   function notifyWorkbench(historyChanged) {
     const live = state.sessions.get(state.selectedId);
     const cwd = live?.cwd ?? state.history?.cwd ?? rowFor(state.selectedId)?.ws.cwd;
-    window.workbench?.update({ sessionId: state.selectedId, cwd, history: state.history, historyChanged });
+    const row = rowFor(state.selectedId)?.row ?? { id: state.selectedId };
+    const working = Boolean(state.selectedId) && (live ? !live.ended && live.status !== "idle" : isWorking(row));
+    window.workbench?.update({ sessionId: state.selectedId, cwd, history: state.history, historyChanged, working });
     notifyComposer();
   }
 

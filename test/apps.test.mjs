@@ -1,0 +1,53 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { findApps, resolveAppFile, urlName } from "../server/apps.mjs";
+
+test("findApps: local web addresses, in order, without repeats or trailing punctuation", () => {
+  const text = `Started the dev server at http://localhost:5173/. Also see **http://127.0.0.1:8080/report?x=1**,
+and (http://localhost:5173/) again. Not https://example.com or http://192.168.1.4:3000.`;
+  assert.deepEqual(findApps(text).urls, ["http://localhost:5173/", "http://127.0.0.1:8080/report?x=1"]);
+});
+
+test("findApps: leaves out the companion's own address", () => {
+  const text = "Open http://127.0.0.1:30143/ and http://127.0.0.1:30142/";
+  assert.deepEqual(findApps(text, { exclude: ["http://127.0.0.1:30143"] }).urls, ["http://127.0.0.1:30142/"]);
+});
+
+test("findApps: .html paths — bare, relative, absolute, in backticks with spaces, file:// URLs", () => {
+  const text = [
+    "I wrote `out/My Report.html` and viewer/index.html.",
+    "Open C:\\AI\\pi\\charloop\\docs\\chart.html, or file:///C:/AI/pi/charloop/a%20b.html.",
+    "Same again: viewer/index.html. A stylesheet style.css is not an app.",
+  ].join("\n");
+  assert.deepEqual(findApps(text).files, [
+    "C:/AI/pi/charloop/a b.html",
+    "out/My Report.html",
+    "viewer/index.html",
+    "C:\\AI\\pi\\charloop\\docs\\chart.html",
+  ]);
+});
+
+test("findApps: an .html address on a web server is a URL, not a file", () => {
+  const found = findApps("See http://localhost:8000/index.html");
+  assert.deepEqual(found.urls, ["http://localhost:8000/index.html"]);
+  assert.deepEqual(found.files, []);
+});
+
+test("resolveAppFile: only existing files inside the workspace", async () => {
+  const root = await mkdtemp(join(tmpdir(), "apps-"));
+  await mkdir(join(root, "viewer"));
+  await writeFile(join(root, "viewer", "index.html"), "<h1>hi</h1>");
+  assert.equal(await resolveAppFile(root, "viewer/index.html"), "viewer/index.html");
+  assert.equal(await resolveAppFile(root, join(root, "viewer", "index.html")), "viewer/index.html");
+  assert.equal(await resolveAppFile(root, "viewer/missing.html"), null);
+  assert.equal(await resolveAppFile(root, "../outside.html"), null);
+  assert.equal(await resolveAppFile(root, join(tmpdir(), "elsewhere.html")), null);
+});
+
+test("urlName: host and path", () => {
+  assert.equal(urlName("http://localhost:5173/"), "localhost:5173");
+  assert.equal(urlName("http://127.0.0.1:8080/report?x=1"), "127.0.0.1:8080/report?x=1");
+});
