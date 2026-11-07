@@ -1,4 +1,4 @@
-// Pi companion server: a live view of Pi CLI sessions, plus read-only Claude Code sessions.
+// CLI Companion server: a live view of Pi CLI sessions, plus read-only Claude Code sessions.
 //
 // - The bridge extension (extension/companion.ts) POSTs event batches to /ingest
 //   and long-polls /bridge/inbox for text the page sends. Pi stays the source of truth.
@@ -24,15 +24,16 @@ import { usageSummary } from "./usage.mjs";
 import { cliCommand, copyLine, LaunchError, openPlan } from "./launch.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import { CLAUDE_BUILTINS, claudeCustomCommands, mergeCommands, PI_BUILTINS } from "./slash-commands.mjs";
+import { APP_ID, companionPort, migrateStateFile, stateDir } from "./start.mjs";
 import { listDir, readFileForView, reviewDiff, reviewStatus, WorkbenchError } from "./workbench.mjs";
 
 const HOST = "127.0.0.1";
-const PORT = Number.parseInt(process.env.PI_COMPANION_PORT ?? "30143", 10);
+const PORT = companionPort();
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
 const SESSIONS_DIR = resolve(AGENT_DIR, "sessions");
-// Claude Code transcripts (read-only). PI_COMPANION_CLAUDE=0 turns this source off.
+// Claude Code transcripts (read-only). CLI_COMPANION_CLAUDE=0 turns this source off.
 const CLAUDE_DIR =
-  process.env.PI_COMPANION_CLAUDE === "0"
+  (process.env.CLI_COMPANION_CLAUDE ?? process.env.PI_COMPANION_CLAUDE) === "0"
     ? undefined
     : resolve(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "projects");
 const CLAUDE_ACTIVE_MS = 2 * 60_000;
@@ -42,7 +43,8 @@ const PUBLIC_DIR = fileURLToPath(new URL("../public/", import.meta.url));
 const MAX_BODY = 4 * 1024 * 1024;
 const SERVER_STARTED_AT = Date.now();
 // The one file the companion writes: your custom dashboard links.
-const DASHBOARDS_FILE = join(AGENT_DIR, "companion", "dashboards.json");
+migrateStateFile("dashboards.json");
+const DASHBOARDS_FILE = join(stateDir(), "dashboards.json");
 
 /** Live sessions keyed by Pi session id. */
 const sessions = new Map();
@@ -843,7 +845,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === "/healthz") {
-      sendJson(res, 200, { ok: true, sessions: sessions.size, clients: clients.size });
+      sendJson(res, 200, { ok: true, app: APP_ID, sessions: sessions.size, clients: clients.size });
       return;
     }
 
@@ -935,6 +937,7 @@ const server = createServer(async (req, res) => {
         platform: process.platform,
         piSessionsDir: SESSIONS_DIR,
         claudeProjectsDir: CLAUDE_DIR ?? null,
+        dashboardsFile: DASHBOARDS_FILE,
         livePi: [...sessions.values()].filter((s) => s.source !== "claude" && !s.ended).length,
         runningClaude: running.size,
         startedAt: SERVER_STARTED_AT,

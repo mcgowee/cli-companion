@@ -1,9 +1,9 @@
 # CLI Companion
 
-A live side window for [Pi](https://pi.dev) coding agent sessions, and for Claude Code
-sessions too. Keep working in the terminal; the companion shows the same session with
-formatted markdown, tool calls and their output, images, thinking, context usage, and
-**compaction as it happens**. (Installed as the Pi package `pi-companion`.)
+A live side window for coding-agent CLIs: [Pi](https://pi.dev) and Claude Code. Keep
+working in the terminal; the companion shows the same session with formatted markdown,
+tool calls and their output, images, thinking, context usage, and **compaction as it
+happens**. You don't need Pi to use it.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
@@ -82,13 +82,39 @@ next to it:
     and your busiest workspaces, all from the session files already indexed. **Custom**
     dashboards are links to any page, such as a local server's status page: add them with the
     form, open them inside the companion or in a new tab. Ones on this computer show online
-    or offline. The list is kept in `~/.pi/agent/companion/dashboards.json`.
+    or offline. The list is kept in `~/.cli-companion/dashboards.json`.
   - **About** shows the version, this server's address and folders, shortcuts and privacy.
 
 ## Install
 
+Needs [Node.js](https://nodejs.org) 20 or newer.
+
+**Without Pi** (Claude Code, or just to look around):
+
 ```bash
-pi install git:github.com/mcgowee/pi-companion
+npx github:mcgowee/cli-companion
+```
+
+This starts the companion server if it is not running and opens the window. It opens as an
+app window if Chrome, Chromium or Edge is installed, otherwise in your default browser. To
+have the `cli-companion` command on your PATH, install it once:
+
+```bash
+npm install -g github:mcgowee/cli-companion
+cli-companion              # start (if needed) and open the window
+cli-companion --no-open    # start the server only
+cli-companion --foreground # run the server in this terminal; Ctrl+C stops it
+cli-companion --help
+```
+
+The server keeps running in the background after the command exits. You can also open
+<http://127.0.0.1:30143> yourself.
+
+**With Pi**, install it as a Pi package. This adds the live view of Pi sessions (status,
+streaming text, tools, compaction) and **Put in Pi's input**:
+
+```bash
+pi install git:github.com/mcgowee/cli-companion
 ```
 
 Then, in any Pi session:
@@ -97,12 +123,9 @@ Then, in any Pi session:
 /companion
 ```
 
-This starts the companion server if it is not running and opens the window. It opens as
-an app window if Chrome, Chromium or Edge is installed, otherwise in your default browser.
-Sessions that were already open when you installed need `/reload` once.
-
-`/companion server` starts the server without opening a window. You can also open
-<http://127.0.0.1:30143> yourself.
+This does the same as `cli-companion`. Sessions that were already open when you installed
+need `/reload` once. `/companion server` starts the server without opening a window.
+(Installs from the old name, `pi-companion`, keep working.)
 
 ## How it works
 
@@ -137,25 +160,28 @@ Pi (interactive) ──events──► companion server ──SSE──► windo
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `PI_COMPANION_PORT` | `30143` | Port for the server and the extension |
+| `CLI_COMPANION_PORT` | `30143` | Port for the server and the extension (`PI_COMPANION_PORT` also works) |
 | `PI_CODING_AGENT_DIR` | `~/.pi/agent` | Pi's folder (sessions are read from `sessions/`) |
 | `CLAUDE_CONFIG_DIR` | `~/.claude` | Claude Code's folder (transcripts are read from `projects/`) |
-| `PI_COMPANION_CLAUDE` | on | Set to `0` to hide Claude Code sessions |
+| `CLI_COMPANION_CLAUDE` | on | Set to `0` to hide Claude Code sessions (`PI_COMPANION_CLAUDE` also works) |
+| `CLI_COMPANION_HOME` | `~/.cli-companion` | The companion's own files: custom dashboards, server log, app-window browser profile |
 
-The server log and the app-window browser profile live in `~/.pi/agent/companion/`.
+Older versions kept these files in `~/.pi/agent/companion/`; the dashboard list is copied
+over on first start.
 
 ## Limits
 
 - Images from the composer, and pulling Pi's draft into the composer for editing, are planned.
-- Past sessions open read-only; resume one in Pi with `pi -r`.
+- Past sessions open read-only; resume one with the terminal icon beside it.
 - Tested on Windows 11 with Pi 1.4. macOS and Linux use the same code paths but have not
   been tested yet; reports welcome.
 
 ## Develop
 
 ```bash
-npm test              # session-file parser tests (node:test)
+npm test              # tests (node:test)
 npm start             # run the server in the foreground
+node bin/cli-companion.mjs   # the standalone command from a checkout
 pi -e ./ ...          # try the extension from a checkout without installing it
 ```
 

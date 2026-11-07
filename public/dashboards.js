@@ -1,5 +1,5 @@
 // Dashboards page (#/dashboards): built-in dashboards (Usage overview) and your own dashboard
-// links, kept by the server in ~/.pi/agent/companion/dashboards.json.
+// links, kept by the server in ~/.cli-companion/dashboards.json.
 //   #/dashboards              the list, with an Add form
 //   #/dashboards/usage        Usage overview (from /api/usage)
 //   #/dashboards/view/<id>    a custom dashboard shown inside the companion

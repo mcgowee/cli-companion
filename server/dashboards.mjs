@@ -1,5 +1,5 @@
 // Custom dashboards for the Dashboards page: a small list of links kept in
-// ~/.pi/agent/companion/dashboards.json ({ "dashboards": [{ id, name, url, description }] }).
+// ~/.cli-companion/dashboards.json ({ "dashboards": [{ id, name, url, description }] }).
 // You can edit that file by hand too. Only http(s) URLs are accepted.
 
 import { randomUUID } from "node:crypto";

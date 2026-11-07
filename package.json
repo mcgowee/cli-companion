@@ -1,14 +1,24 @@
 {
-  "name": "pi-companion",
-  "version": "0.1.0",
-  "description": "A live side window for Pi coding agent sessions: formatted transcript, tool calls, images, context usage and compaction as it happens.",
+  "name": "cli-companion",
+  "version": "0.2.0",
+  "description": "A live side window for coding-agent CLIs (Pi, Claude Code): formatted transcript, tool calls, images, context usage and compaction as it happens.",
   "type": "module",
   "license": "MIT",
   "author": "Earl McGowen",
+  "bin": {
+    "cli-companion": "bin/cli-companion.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mcgowee/cli-companion.git"
+  },
   "keywords": [
     "pi-package",
     "pi",
     "pi-coding-agent",
+    "claude-code",
+    "coding-agent",
+    "cli",
     "companion",
     "viewer"
   ],
@@ -18,6 +28,7 @@
     ]
   },
   "files": [
+    "bin/",
     "extension/",
     "server/",
     "public/",

@@ -60,7 +60,7 @@
         ${row("Running Pi sessions", info.livePi === undefined ? "" : esc(String(info.livePi)))}
         ${row("Running Claude Code", info.runningClaude === undefined ? "" : esc(String(info.runningClaude)))}
         ${row("Pi sessions folder", code(info.piSessionsDir))}
-        ${row("Claude Code folder", info.claudeProjectsDir === null ? "off (PI_COMPANION_CLAUDE=0)" : code(info.claudeProjectsDir))}
+        ${row("Claude Code folder", info.claudeProjectsDir === null ? "off (CLI_COMPANION_CLAUDE=0)" : code(info.claudeProjectsDir))}
         ${row("Node", code(info.node && `${info.node} · ${info.platform}`))}
         ${row("Started", info.startedAt ? esc(new Date(info.startedAt).toLocaleString()) : "")}
       </dl>
@@ -77,14 +77,14 @@
       <h2>Privacy</h2>
       <p>Everything stays on this computer: the server listens on 127.0.0.1 only and reads your session
       files read-only. The one file it writes is your list of custom dashboards
-      (<code>~/.pi/agent/companion/dashboards.json</code>). Its only requests are the online check for
+      (<code>${esc(info.dashboardsFile || "~/.cli-companion/dashboards.json")}</code>). Its only requests are the online check for
       dashboards on this computer; it never contacts anything outside it. It starts a program only when
       you click <b>Open</b> in a terminal menu, and only one of a fixed set of commands
       (a shell, <code>pi</code>, <code>pi -c</code>, <code>claude</code>, or resuming a listed session).</p>
 
       <h2>Project</h2>
-      <p><a href="https://github.com/mcgowee/pi-companion" target="_blank" rel="noopener">github.com/mcgowee/pi-companion</a>
-      · MIT license · installed in Pi with <code>pi install git:github.com/mcgowee/pi-companion</code></p>`;
+      <p><a href="https://github.com/mcgowee/cli-companion" target="_blank" rel="noopener">github.com/mcgowee/cli-companion</a>
+      · MIT license · run it with <code>npx github:mcgowee/cli-companion</code>, or in Pi with <code>pi install git:github.com/mcgowee/cli-companion</code></p>`;
   }
 
   window.addEventListener("hashchange", show);
