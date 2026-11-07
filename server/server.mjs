@@ -36,6 +36,7 @@ const CLAUDE_ACTIVE_MS = 2 * 60_000;
 const CLAUDE_RUNNING_DIR = CLAUDE_DIR ? resolve(CLAUDE_DIR, "..", "sessions") : undefined;
 const PUBLIC_DIR = fileURLToPath(new URL("../public/", import.meta.url));
 const MAX_BODY = 4 * 1024 * 1024;
+const SERVER_STARTED_AT = Date.now();
 
 /** Live sessions keyed by Pi session id. */
 const sessions = new Map();
@@ -752,6 +753,29 @@ const server = createServer(async (req, res) => {
 
     if (url.pathname === "/healthz") {
       sendJson(res, 200, { ok: true, sessions: sessions.size, clients: clients.size });
+      return;
+    }
+
+    if (url.pathname === "/api/about") {
+      // For the About page: version and where this server reads from.
+      let version;
+      try {
+        version = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")).version;
+      } catch {
+        version = undefined;
+      }
+      const running = await claudeRunning();
+      sendJson(res, 200, {
+        version,
+        address: `http://${HOST}:${PORT}`,
+        node: process.version,
+        platform: process.platform,
+        piSessionsDir: SESSIONS_DIR,
+        claudeProjectsDir: CLAUDE_DIR ?? null,
+        livePi: [...sessions.values()].filter((s) => s.source !== "claude" && !s.ended).length,
+        runningClaude: running.size,
+        startedAt: SERVER_STARTED_AT,
+      });
       return;
     }
 
