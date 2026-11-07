@@ -309,6 +309,13 @@ body.resizing { cursor: col-resize; user-select: none; }
 .app-back { all: unset; cursor: pointer; color: var(--accent); font-size: 12.5px; flex: none; }
 .app-title { flex: 1; min-width: 0; font: 12px/1.4 var(--mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .app-frame { flex: 1; width: 100%; min-height: 0; border: 0; background: #fff; }
+/* Images, video and audio from the session's folder, fitted to the panel. */
+.app-media { flex: 1; min-height: 0; display: grid; place-items: center; padding: 10px; overflow: auto;
+  background: color-mix(in srgb, var(--text) 4%, transparent); }
+.app-media img, .app-media video { max-width: 100%; max-height: 100%; border-radius: 6px; }
+.app-media audio { width: 100%; }
+.app-text { flex: 1; min-height: 0; overflow: auto; padding: 10px 14px; font-size: 13px; }
+.app-text pre { margin: 0; font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .wb-empty.error, .ft-row.error { color: var(--bad); }
 .wb-section { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 14px 12px 6px; }
 

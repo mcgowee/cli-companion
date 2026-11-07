@@ -94,8 +94,9 @@ next to it:
   skill commands the running Pi reports. For Claude Code: its common built-ins plus your
   commands and skills from `~/.claude` and the project's `.claude` folder.
   Every code block, message, tool input/output, file (Files tab) and diff (Review tab) has
-  **Copy** and **Add** buttons; Add drops it into the composer as a fenced block. The draft is
-  kept if you close the window. Works for running terminal sessions; sessions opened before
+  **Copy** and **Add** buttons; Add drops it into the composer as a fenced block. Each session has
+  its own draft (text typed for one session doesn't follow you to another), kept if you close
+  the window. Works for running terminal sessions; sessions opened before
   the extension was updated need `/reload` once.
 - **Resizable panels**: drag the inner edge of the left or right panel (or focus it and use
   ←/→; Shift for bigger steps). Double-click an edge to reset its width. Widths are
@@ -112,8 +113,10 @@ next to it:
     wrote in the open session.
   - **Apps**: when the session's **final reply** links to an app it made, the app is listed here
     (only the last reply is read, to keep noise down): local web addresses such as
-    `http://localhost:5173` (marked Running or Not running) and `.html` files inside the session's
-    folder. A dot on the tab means new apps. Click one to open it in the panel, open it in the
+    `http://localhost:5173` (marked Running or Not running), and files inside the session's
+    folder that the panel can show: `.html` pages, images, video, audio, PDFs and text (`.txt`,
+    `.md`, `.csv`, `.log`; code files are left out). Video can be seeked; Markdown is rendered.
+    Files outside the session's folder are never served. A dot on the tab means something new. Click one to open it in the panel, open it in the
     browser, or **Pin to Dashboards** to keep it in the Dashboards menu (never added by itself).
     HTML files are served from `/app-files/…` in a sandbox (its own origin, so its scripts can't
     use the companion; browser storage and loading local JSON with fetch don't work there).

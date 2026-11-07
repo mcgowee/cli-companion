@@ -1,21 +1,41 @@
 // Apps a session made, for the right panel's Apps tab: links found in the CLI's FINAL reply only
 // (the last text after your last message), not the whole session, to keep noise down.
-// Two kinds, found by pattern (no model):
+// Found by pattern (no model):
 //   - web addresses on this computer (localhost, 127.0.0.1, [::1]), e.g. a dev server;
-//   - .html files, served by the companion from inside the session's own folder.
+//   - files inside the session's own folder that the panel can show: .html pages, images, video,
+//     audio, PDFs and plain text (.txt .md .csv .log). Code files are left out (too noisy).
 
 import { isAbsolute, relative, resolve } from "node:path";
 import { resolveInside } from "./workbench.mjs";
 
-const MAX_APPS = 12;
+const MAX_APPS = 20;
+
+/** File types the panel can show, by extension. */
+const KINDS = {
+  html: ["html", "htm"],
+  image: ["png", "jpg", "jpeg", "gif", "webp", "svg"],
+  video: ["mp4", "webm", "mov", "m4v"],
+  audio: ["mp3", "wav", "ogg", "m4a"],
+  pdf: ["pdf"],
+  text: ["txt", "md", "csv", "log"],
+};
+const EXT_KIND = new Map(Object.entries(KINDS).flatMap(([kind, exts]) => exts.map((ext) => [ext, kind])));
+// Longest first, so "jpeg" wins over "jpe…" and "html" over "htm".
+const EXT = `(?:${[...EXT_KIND.keys()].sort((a, b) => b.length - a.length).join("|")})`;
+
+/** "html" | "image" | "video" | "audio" | "pdf" | "text", or undefined for anything else. */
+export function fileKind(path) {
+  const m = String(path ?? "").match(/\.([a-z0-9]+)$/i);
+  return m ? EXT_KIND.get(m[1].toLowerCase()) : undefined;
+}
 
 // Characters that end a link or path in prose and markdown.
 const TRAILING = /[.,;:!?'"`)\]}>*_]+$/;
 const LOCAL_URL = /\bhttps?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5})?(?:[/?#][^\s<>"'`|)\]]*)?/gi;
-const FILE_URL = /\bfile:\/\/\/?[^\s<>"'`|)\]]+?\.html?\b/gi;
+const FILE_URL = new RegExp(String.raw`\bfile:\/\/\/?[^\s<>"'` + "`" + String.raw`|)\]]+?\.${EXT}\b`, "gi");
 // In backticks or quotes a path may hold spaces; elsewhere it ends at whitespace.
-const QUOTED_HTML = /[`"']([^`"'\n<>|]+?\.html?)[`"']/gi;
-const BARE_HTML = /(?:[A-Za-z]:[\\/]|\.{0,2}[\\/])?(?:[\w.@~+-]+[\\/])*[\w.@~+-]+\.html?\b/gi;
+const QUOTED_FILE = new RegExp("[`\"']([^`\"'\\n<>|]+?\\." + EXT + ")[`\"']", "gi");
+const BARE_FILE = new RegExp(String.raw`(?:[A-Za-z]:[\\/]|\.{0,2}[\\/])?(?:[\w.@~+-]+[\\/])*[\w.@~+-]+\.${EXT}\b`, "gi");
 
 /**
  * Links and .html paths in a reply, in the order they appear, without repeats.
@@ -52,7 +72,7 @@ export function findApps(text, { exclude = [] } = {}) {
         return;
       }
     }
-    if (!/\.html?$/i.test(path)) return;
+    if (!fileKind(path)) return;
     const key = path.replace(/\\/g, "/").toLowerCase();
     if (seenFiles.has(key)) return;
     seenFiles.add(key);
@@ -60,8 +80,8 @@ export function findApps(text, { exclude = [] } = {}) {
   };
   for (const match of rest.matchAll(FILE_URL)) addFile(match[0]);
   const withoutFileUrls = rest.replace(FILE_URL, " ");
-  for (const match of withoutFileUrls.matchAll(QUOTED_HTML)) addFile(match[1]);
-  for (const match of withoutFileUrls.replace(QUOTED_HTML, " ").matchAll(BARE_HTML)) addFile(match[0]);
+  for (const match of withoutFileUrls.matchAll(QUOTED_FILE)) addFile(match[1]);
+  for (const match of withoutFileUrls.replace(QUOTED_FILE, " ").matchAll(BARE_FILE)) addFile(match[0]);
   return { urls: urls.slice(0, MAX_APPS), files: files.slice(0, MAX_APPS) };
 }
 
@@ -114,6 +134,17 @@ export const APP_MIME = {
   ".woff": "font/woff",
   ".woff2": "font/woff2",
   ".txt": "text/plain; charset=utf-8",
+  ".md": "text/plain; charset=utf-8",
+  ".log": "text/plain; charset=utf-8",
+  ".mp4": "video/mp4",
+  ".m4v": "video/mp4",
+  ".webm": "video/webm",
+  ".mov": "video/quicktime",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".ogg": "audio/ogg",
+  ".m4a": "audio/mp4",
+  ".pdf": "application/pdf",
   ".csv": "text/csv; charset=utf-8",
   ".wasm": "application/wasm",
 };

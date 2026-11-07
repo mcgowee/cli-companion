@@ -578,6 +578,46 @@
     $("wb-toggle")?.classList.toggle("has-apps", fresh && !wb.open);
   }
 
+  const TYPE_LABEL = { html: "HTML file", image: "Image", video: "Video", audio: "Audio", pdf: "PDF", text: "Text" };
+
+  /** What an opened item shows: web pages sandboxed; media in players; text as text. */
+  function appViewer(app) {
+    const src = esc(app.url);
+    const title = esc(app.name);
+    switch (app.kind === "url" ? "url" : app.type) {
+      case "image":
+        return `<div class="app-media"><img src="${src}" alt="${title}"></div>`;
+      case "video":
+        return `<div class="app-media"><video src="${src}" controls preload="metadata" title="${title}"></video></div>`;
+      case "audio":
+        return `<div class="app-media"><audio src="${src}" controls preload="metadata" title="${title}"></audio></div>`;
+      case "pdf":
+        return `<iframe class="app-frame" src="${src}" title="${title}"></iframe>`;
+      case "text":
+        return `<div class="app-text">Loading…</div>`;
+      default:
+        return `<iframe class="app-frame" src="${src}" title="${title}"
+          sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads${app.kind === "url" ? " allow-same-origin" : ""}"></iframe>`;
+    }
+  }
+
+  async function loadAppText(app, box) {
+    try {
+      const res = await fetch(app.url, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      let text = await res.text();
+      const cut = text.length > 400_000;
+      if (cut) text = text.slice(0, 400_000);
+      if (!box.isConnected) return;
+      box.innerHTML = /.md$/i.test(app.path ?? "")
+        ? `<div class="prose">${window.renderMarkdown(text)}</div>`
+        : `<pre>${esc(text)}</pre>`;
+      if (cut) box.insertAdjacentHTML("beforeend", `<p class="wb-note">Only the first 400 KB is shown.</p>`);
+    } catch (error) {
+      if (box.isConnected) box.innerHTML = `<p class="wb-empty error">Couldn't load it: ${esc(error.message)}</p>`;
+    }
+  }
+
   function renderApps() {
     const el = $("wb-apps");
     if (wb.tool !== "apps") return;
@@ -588,8 +628,8 @@
           <span class="app-title" title="${esc(app.name)}">${esc(app.name)}</span>
           <a class="btn small" href="${esc(app.url)}" target="_blank" rel="noopener">Open in browser</a>
         </div>
-        <iframe class="app-frame" src="${esc(app.url)}" title="${esc(app.name)}"
-          sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads${app.kind === "url" ? " allow-same-origin" : ""}"></iframe>`;
+        ${appViewer(app)}`;
+      if (app.type === "text") void loadAppText(app, el.querySelector(".app-text"));
       el.querySelector(".app-back").addEventListener("click", () => {
         wb.appView = null;
         renderApps();
@@ -597,8 +637,8 @@
       return;
     }
     if (!wb.appsKey) {
-      el.innerHTML = `<p class="wb-empty">Apps appear here when the session's last reply links to one: a local web
-        address (like http://localhost:5173) or an .html file in its folder.</p>`;
+      el.innerHTML = `<p class="wb-empty">Apps and files appear here when the session's last reply mentions one: a local
+        web address (like http://localhost:5173), or a page, image, video, audio, PDF or text file in its folder.</p>`;
       return;
     }
     if (!wb.apps) {
@@ -611,8 +651,8 @@
     }
     const list = wb.apps.apps ?? [];
     if (!list.length) {
-      el.innerHTML = `<p class="wb-empty">No apps in the last reply. When it links to a local web address or an .html
-        file in this folder, it shows up here.</p>`;
+      el.innerHTML = `<p class="wb-empty">Nothing in the last reply. When it mentions a local web address, or a page,
+        image, video, audio, PDF or text file in this folder, it shows up here.</p>`;
       return;
     }
     el.innerHTML = `<p class="wb-note">From the session's last reply.</p><div class="app-list">${list
@@ -620,7 +660,7 @@
         const pinned = wb.pinned.has(absUrl(app));
         const state =
           app.kind === "file"
-            ? `<span class="app-kind">HTML file</span>`
+            ? `<span class="app-kind">${esc(TYPE_LABEL[app.type] ?? "File")}</span>`
             : app.online === false
               ? `<span class="app-kind off">Not running</span>`
               : `<span class="app-kind on">Running</span>`;
@@ -631,7 +671,11 @@
           <a class="app-ext" href="${esc(app.url)}" target="_blank" rel="noopener" title="Open in browser" aria-label="Open ${esc(app.name)} in browser">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></svg>
           </a>
-          <button class="btn small app-pin" type="button" data-i="${i}" ${pinned ? "disabled" : ""}>${pinned ? "Pinned ✓" : "Pin to Dashboards"}</button>
+          ${
+            app.kind === "url" || app.type === "html"
+              ? `<button class="btn small app-pin" type="button" data-i="${i}" ${pinned ? "disabled" : ""}>${pinned ? "Pinned ✓" : "Pin to Dashboards"}</button>`
+              : ""
+          }
         </div>`;
       })
       .join("")}</div>`;

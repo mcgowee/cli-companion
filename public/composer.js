@@ -40,11 +40,31 @@
 
   /* ── draft, size, collapse ───────────────────────────── */
 
-  textEl.value = loadPref("pi-companion.draft", "");
+  // One draft per session (id -> { text, at }), so text typed for one session doesn't follow you
+  // to another. "" holds the draft while no session is selected.
+  const DRAFTS_KEY = "pi-companion.drafts";
+  const MAX_DRAFTS = 100;
+  function saveDraft(text, id = state.selectedId ?? "") {
+    const drafts = loadPref(DRAFTS_KEY, {});
+    if (text) drafts[id] = { text, at: Date.now() };
+    else delete drafts[id];
+    // Keep the newest ones only.
+    const ids = Object.keys(drafts).sort((a, b) => drafts[b].at - drafts[a].at);
+    for (const old of ids.slice(MAX_DRAFTS)) delete drafts[old];
+    savePref(DRAFTS_KEY, drafts);
+  }
+  function loadDraft(id) {
+    return loadPref(DRAFTS_KEY, {})[id ?? ""]?.text ?? "";
+  }
+  // Before drafts were per session there was one shared draft: it goes to the first session shown.
+  let legacyDraft = loadPref("pi-companion.draft", "");
+
+  textEl.value = loadDraft("");
   let draftTimer;
   textEl.addEventListener("input", () => {
     clearTimeout(draftTimer);
-    draftTimer = setTimeout(() => savePref("pi-companion.draft", textEl.value), 300);
+    const id = state.selectedId ?? "";
+    draftTimer = setTimeout(() => saveDraft(textEl.value, id), 300);
     autoSize();
     renderControls();
   });
@@ -171,7 +191,7 @@
       state.lastSent = text;
       if (textEl.value === text) {
         textEl.value = "";
-        savePref("pi-companion.draft", "");
+        saveDraft("");
         autoSize();
       }
       statusEl.innerHTML = `Copied ✓ Paste it into ${window.escapeHtml(src().label)} (Ctrl+V or right-click), then press Enter. <button type="button" class="link" data-restore>Bring text back</button>`;
@@ -191,7 +211,7 @@
     state.lastSent = text;
     if (textEl.value === text) {
       textEl.value = "";
-      savePref("pi-companion.draft", "");
+      saveDraft("");
       autoSize();
     }
     if (andEnter) {
@@ -292,7 +312,7 @@
     const pos = before.length + insertText.length;
     textEl.setSelectionRange(pos, pos);
     closeMenu();
-    savePref("pi-companion.draft", textEl.value);
+    saveDraft(textEl.value);
     autoSize();
     renderControls();
     textEl.focus();
@@ -337,7 +357,7 @@
   $("composer-clear").addEventListener("click", () => {
     if (textEl.value) state.lastSent = textEl.value;
     textEl.value = "";
-    savePref("pi-companion.draft", "");
+    saveDraft("");
     autoSize();
     setStatus(state.lastSent ? "Cleared." : "", "", false);
     renderControls();
@@ -419,7 +439,7 @@
     const caret = before.length + pre.length + text.length;
     textEl.focus();
     textEl.setSelectionRange(caret, caret);
-    savePref("pi-companion.draft", textEl.value);
+    saveDraft(textEl.value);
     autoSize();
     renderControls();
   }
@@ -449,7 +469,31 @@
     fenced,
     /** The selected session changed or its live state updated. */
     update({ selectedId, session }) {
-      if (selectedId !== state.selectedId) delete statusEl.dataset.sticky;
+      if (selectedId !== state.selectedId) {
+        delete statusEl.dataset.sticky;
+        // Keep the text with the session it was typed for, and show the new session's own draft.
+        clearTimeout(draftTimer);
+        saveDraft(textEl.value, state.selectedId ?? "");
+        state.selectedId = selectedId;
+        closeMenu?.();
+        let draft = loadDraft(selectedId);
+        if (legacyDraft && selectedId) {
+          draft = draft ? `${draft}
+
+${legacyDraft}` : legacyDraft;
+          legacyDraft = "";
+          saveDraft(draft, selectedId);
+          try {
+            localStorage.removeItem("pi-companion.draft");
+          } catch {
+            // ignore
+          }
+        }
+        textEl.value = draft;
+        state.lastSent = "";
+        setStatus(draft ? "Draft for this session." : "", "", false);
+        autoSize();
+      }
       state.selectedId = selectedId;
       state.session = session ?? null;
       renderControls();

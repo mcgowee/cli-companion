@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { findApps, resolveAppFile, urlName } from "../server/apps.mjs";
+import { fileKind, findApps, resolveAppFile, urlName } from "../server/apps.mjs";
 
 test("findApps: local web addresses, in order, without repeats or trailing punctuation", () => {
   const text = `Started the dev server at http://localhost:5173/. Also see **http://127.0.0.1:8080/report?x=1**,
@@ -28,6 +28,12 @@ test("findApps: .html paths — bare, relative, absolute, in backticks with spac
     "viewer/index.html",
     "C:\\AI\\pi\\charloop\\docs\\chart.html",
   ]);
+});
+
+test("findApps: images, video, audio, PDFs and text files too; code files are left out", () => {
+  const text = "Rendered `C:/AI/codex/studio/renders/opening v01.mp4`, out/shot.PNG and song.mp3; notes in notes.md and a.pdf. Edited server.mjs, app.js and package.json.";
+  assert.deepEqual(findApps(text).files, ["C:/AI/codex/studio/renders/opening v01.mp4", "out/shot.PNG", "song.mp3", "notes.md", "a.pdf"]);
+  assert.deepEqual(["x.html", "y.JPEG", "z.webm", "w.wav", "v.pdf", "u.csv", "t.js"].map(fileKind), ["html", "image", "video", "audio", "pdf", "text", undefined]);
 });
 
 test("findApps: an .html address on a web server is a URL, not a file", () => {

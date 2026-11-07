@@ -18,7 +18,8 @@ import { fileURLToPath } from "node:url";
 import { groupByWorkspace, workspaceKey } from "./session-index.mjs";
 import { lastExchange, localModels, ollamaUrl, SuggestError, suggestionCache, suggestReplies } from "./suggest.mjs";
 import { addFavorite, FavoriteError, loadFavorites, removeFavorite } from "./favorites.mjs";
-import { APP_FILE_HEADERS, APP_MIME, findApps, resolveAppFile, urlName } from "./apps.mjs";
+import { APP_FILE_HEADERS, APP_MIME, fileKind, findApps, resolveAppFile, urlName } from "./apps.mjs";
+import { createReadStream } from "node:fs";
 import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard } from "./dashboards.mjs";
 import { usageSummary } from "./usage.mjs";
 import { createTokenTracker } from "./token-usage.mjs";
@@ -591,6 +592,7 @@ async function appsFor(id) {
         .filter((rel) => rel && !seen.has(rel.toLowerCase()) && seen.add(rel.toLowerCase()))
         .map((rel) => ({
           kind: "file",
+          type: fileKind(rel),
           name: rel,
           path: rel,
           url: `/app-files/${encodeURIComponent(id)}/${rel.split("/").map(encodeURIComponent).join("/")}`,
@@ -604,15 +606,34 @@ async function appsFor(id) {
 }
 
 /** /app-files/<session id>/<path>: a file from inside that session's folder, sandboxed. */
-async function serveAppFile(res, pathname) {
+async function serveAppFile(req, res, pathname) {
   const [, , encodedId, ...parts] = pathname.split("/");
   try {
     const id = decodeURIComponent(encodedId ?? "");
     const root = await workspaceRootFor(id);
     const file = await resolveInside(root, parts.map(decodeURIComponent).join("/"));
-    if (!(await stat(file)).isFile()) throw new WorkbenchError(404, "not a file");
-    res.writeHead(200, { "content-type": APP_MIME[extname(file).toLowerCase()] ?? "application/octet-stream", ...APP_FILE_HEADERS });
-    res.end(await readFile(file));
+    const info = await stat(file);
+    if (!info.isFile()) throw new WorkbenchError(404, "not a file");
+    const ext = extname(file).toLowerCase();
+    const headers = { "content-type": APP_MIME[ext] ?? "application/octet-stream", "accept-ranges": "bytes", ...APP_FILE_HEADERS };
+    // Chrome's PDF viewer refuses to run inside a sandboxed response; PDFs get nosniff only.
+    if (ext === ".pdf") delete headers["content-security-policy"];
+    // Videos can be large and are seeked: stream them and answer byte ranges.
+    const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? ""));
+    if (range && (range[1] || range[2])) {
+      let start = range[1] ? Number(range[1]) : Math.max(0, info.size - Number(range[2]));
+      let end = range[1] && range[2] ? Number(range[2]) : info.size - 1;
+      end = Math.min(end, info.size - 1);
+      if (start > end || start >= info.size) {
+        res.writeHead(416, { "content-range": `bytes */${info.size}` }).end();
+        return;
+      }
+      res.writeHead(206, { ...headers, "content-range": `bytes ${start}-${end}/${info.size}`, "content-length": end - start + 1 });
+      createReadStream(file, { start, end }).pipe(res);
+      return;
+    }
+    res.writeHead(200, { ...headers, "content-length": info.size });
+    createReadStream(file).pipe(res);
   } catch (error) {
     res.writeHead(error instanceof WorkbenchError ? error.status : 400, { "content-type": "text/plain; charset=utf-8", ...APP_FILE_HEADERS });
     res.end(error instanceof WorkbenchError ? error.message : "bad path");
@@ -1069,7 +1090,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname.startsWith("/app-files/")) {
-      await serveAppFile(res, url.pathname);
+      await serveAppFile(req, res, url.pathname);
       return;
     }
 
