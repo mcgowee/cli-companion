@@ -279,7 +279,7 @@
 
         <h2>Port</h2>
         <label class="set-field narrow">The companion listens on
-          <input name="port" inputmode="numeric" value="${esc(data.settings.port ?? "")}" placeholder="30143 (usual)" spellcheck="false" autocomplete="off">
+          <input name="port" inputmode="numeric" value="${esc(String(data.settings.port ?? ""))}" placeholder="30143 (usual)" spellcheck="false" autocomplete="off">
         </label>
         <p class="set-hint">Change it only if something else uses ${esc(String(data.port))}. It takes effect the next time
           the companion starts (Restart the server, or open it again from the shortcut).${

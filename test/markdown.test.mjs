@@ -4,6 +4,15 @@ import { test } from "node:test";
 globalThis.window = globalThis.window ?? {};
 await import("../public/markdown.js");
 const md = (text) => globalThis.window.renderMarkdown(text);
+const esc = (text) => globalThis.window.escapeHtml(text);
+
+test("escapeHtml: escapes the five characters and coerces non-strings (a number, null, undefined)", () => {
+  assert.equal(esc(`a & b < c > "d" 'e'`), "a &amp; b &lt; c &gt; &quot;d&quot; &#39;e&#39;");
+  // A number (e.g. a port) or null must not throw — a bare .replace on them would blank the page.
+  assert.equal(esc(30144), "30144");
+  assert.equal(esc(null), "");
+  assert.equal(esc(undefined), "");
+});
 
 test("markdown: [text](local path) becomes a file link for the side panel", () => {
   assert.match(md("[Play the demo](C:/work/studio/videos/x/riff-preview.html)"), /<a href="#" class="file-link" data-file-path="C:\/work\/studio\/videos\/x\/riff-preview\.html"[^>]*>Play the demo<\/a>/);

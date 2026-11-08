@@ -2,7 +2,9 @@
 // limited set of constructs is turned into tags. No external libraries.
 (function () {
   function escapeHtml(text) {
-    return text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+    // Coerce first: callers sometimes pass a number (e.g. a port) or null, and a bare
+    // .replace on a non-string throws — which, mid-template, would blank the whole page.
+    return String(text ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   }
 
   function inline(text) {
