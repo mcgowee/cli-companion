@@ -62,10 +62,11 @@ next to it:
   Terminal or iTerm2 on macOS, and the first terminal found on Linux (x-terminal-emulator,
   GNOME Terminal, Konsole, Xfce Terminal, kitty, Alacritty, WezTerm, xterm). Which one is set
   in **Settings**. On a computer with no graphical session (a headless Linux server), **Open**
-  is hidden: the menu says why and keeps the Copy lines to paste over SSH — a running Pi
-  session inside tmux gets an `ssh -t <host> tmux attach -t <name>` line at the top. The host
-  is **SSH name for this computer** in Settings (what your other machines type after `ssh`,
-  like `aegis` or `me@100.64.1.2`); unset, it's `user@hostname`.
+  is hidden: instead the menu gives two lines to paste on another computer — step 1
+  `ssh -t <host>` to open a terminal on this one, step 2 a `tmux new-session -A -s <name> …`
+  line per action that attaches to (or creates, and keeps alive across SSH drops) a tmux
+  session for that folder. The host is **SSH name for this computer** in Settings (what your
+  other machines type after `ssh`, like `aegis` or `me@100.64.1.2`); unset, it's `user@hostname`.
   The commands come from a fixed list in the server; the page only picks one.
 - **Claude Code sessions too (read-only)**: sessions from Claude Code (CLI or desktop app)
   appear in the same folders, tagged **CC**, read from `~/.claude/projects`. Open one to read

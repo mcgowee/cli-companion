@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkSessionId, copyLine, defaultSshHost, headlessNote, isHeadless, LaunchError, openPlan, pidAncestry, quotePath, resumeCommand, sshAttachOption, tmuxSessionFromPanes, workspaceActions } from "../server/launch.mjs";
+import { checkSessionId, copyLine, defaultSshHost, headlessNote, isHeadless, LaunchError, openPlan, pidAncestry, quotePath, resumeCommand, sshLine, tmuxName, tmuxRunLine, tmuxSessionFromPanes, workspaceActions } from "../server/launch.mjs";
 import { createSources } from "../server/sources/index.mjs";
 
 test("commands come from the sources' fixed lists; session ids are checked", () => {
@@ -90,22 +90,36 @@ test("tmuxSessionFromPanes: the pane whose shell is an ancestor names the sessio
   assert.equal(tmuxSessionFromPanes(undefined, [400]), "");
 });
 
-test("the headless menu: an ssh attach line for tmux, and a note naming the host", () => {
-  const option = sshAttachOption("charloop", "aegis");
-  assert.equal(option.copy, "ssh -t aegis tmux attach -t 'charloop'");
-  assert.equal(option.action, "ssh-attach");
-  assert.equal(option.label, "Attach over SSH (tmux: charloop)");
-  assert.equal(option.command, "", "nothing for Open to run — it's a line to paste elsewhere");
+test("the headless menu's two lines: ssh to get a terminal here, then attach-or-create tmux", () => {
+  assert.equal(sshLine("aegis"), "ssh -t aegis");
+  // Step 2 attaches to (or creates) a tmux session in the folder; -A never fails with "no sessions",
+  // and the command runs only when the session is created.
+  assert.equal(
+    tmuxRunLine("charloop", "/home/me/charloop", "pi --session 01a1ba50-f58b-76d1"),
+    "tmux new-session -A -s 'charloop' -c '/home/me/charloop' 'pi --session 01a1ba50-f58b-76d1'",
+  );
+  // No command (Terminal here, or attaching to a running session): just a shell in the folder.
+  assert.equal(tmuxRunLine("charloop", "/home/me/charloop"), "tmux new-session -A -s 'charloop' -c '/home/me/charloop'");
+  // Always POSIX-quoted — it is for the Linux server's own shell, not the pasting computer's.
+  assert.equal(tmuxRunLine("a b", "/home/me/it's"), "tmux new-session -A -s 'a b' -c '/home/me/it'\\''s'");
   assert.match(headlessNote("aegis"), /no graphical terminal/i);
   assert.match(headlessNote("aegis"), /aegis/);
+});
+
+test("tmuxName: the folder's basename, with tmux-illegal . and : turned to -", () => {
+  assert.equal(tmuxName("/home/me/charloop"), "charloop");
+  assert.equal(tmuxName("/home/me/charloop/"), "charloop");
+  assert.equal(tmuxName("/srv/my.app"), "my-app");
+  assert.equal(tmuxName("/srv/a:b.c"), "a-b-c");
+  assert.equal(tmuxName("/"), "session");
 });
 
 test("the SSH name: user@hostname unless Settings says otherwise, and only the default hints at Settings", () => {
   // Not set in Settings: user@hostname, so at least the user is right.
   const def = defaultSshHost();
   assert.match(def, /^.+@.+$/);
-  assert.equal(sshAttachOption("charloop").copy, `ssh -t ${def} tmux attach -t 'charloop'`);
-  assert.equal(sshAttachOption("charloop", "aegis").copy, "ssh -t aegis tmux attach -t 'charloop'");
+  assert.equal(sshLine(), `ssh -t ${def}`);
+  assert.equal(sshLine("aegis"), "ssh -t aegis");
   // The note points at Settings only while the name is the guessed default.
   assert.match(headlessNote(), /SSH name for this computer/);
   assert.match(headlessNote(def, { custom: false }), /Settings/);

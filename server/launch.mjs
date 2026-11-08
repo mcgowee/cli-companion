@@ -9,11 +9,14 @@
 // window); on macOS, Terminal or iTerm2 (through osascript); on Linux, the first terminal
 // program found. Copy always works. macOS and Linux are less tested than Windows.
 //
-// Headless (Linux/BSD with no graphical session): Open can't work, so the menu says why and
-// offers only the lines to paste over SSH — for a Pi running inside tmux, an attach line.
+// Headless (Linux/BSD with no graphical session): Open can't work, so the menu shows two lines
+// to paste on another computer instead — step 1 `ssh -t <host>` to get a terminal here, step 2
+// an attach-or-create `tmux new-session -A` line per action (durable across SSH drops). These
+// lines are a Linux-server affair; Windows/macOS/desktop-Linux keep their own `copyLine` forms.
 
 import { readFileSync } from "node:fs";
 import { hostname, userInfo } from "node:os";
+import { basename } from "node:path";
 
 const SESSION_ID = /^[0-9a-f][0-9a-f-]{7,63}$/i;
 
@@ -202,14 +205,26 @@ export function tmuxSessionFromPanes(panes, ancestry) {
   return "";
 }
 
-/** The menu entry that reaches a running tmux session from another computer. */
-export function sshAttachOption(tmuxSession, host = defaultSshHost()) {
-  return {
-    action: "ssh-attach",
-    label: `Attach over SSH (tmux: ${tmuxSession})`,
-    command: "",
-    copy: `ssh -t ${host} tmux attach -t ${quotePath(tmuxSession, "linux")}`,
-  };
+/** A tmux session name from a folder: its basename, with tmux-illegal "." and ":" turned to "-". */
+export function tmuxName(cwd) {
+  return basename(String(cwd)).replace(/[.:]/g, "-") || "session";
+}
+
+/** Step 1 of the headless pair: open a terminal on this computer (paste it on another machine). */
+export function sshLine(host = defaultSshHost()) {
+  return `ssh -t ${host}`;
+}
+
+/**
+ * Step 2: attach to the tmux session `name` in `cwd`, creating it (and running `command`) if it
+ * isn't there yet. `-A` means attach-or-create, so it never fails with "no sessions"; the command
+ * runs only when the session is created (an attach ignores it). tmux keeps the session alive when
+ * the SSH connection drops. Always POSIX-quoted — this line is for the Linux server's own shell.
+ */
+export function tmuxRunLine(name, cwd, command = "") {
+  const parts = ["tmux", "new-session", "-A", "-s", quotePath(name, "linux"), "-c", quotePath(cwd, "linux")];
+  if (command) parts.push(quotePath(command, "linux"));
+  return parts.join(" ");
 }
 
 /**

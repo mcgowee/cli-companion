@@ -24,7 +24,7 @@ import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDash
 import { usageSummary } from "./usage.mjs";
 import { createTokenTracker } from "./token-usage.mjs";
 import { createSearchIndex } from "./search.mjs";
-import { copyLine, defaultSshHost, headlessNote, isHeadless, LaunchError, openPlan, pidAncestry, quotePath, resumeCommand, sshAttachOption, terminalsFor, tmuxSessionFromPanes, workspaceActions } from "./launch.mjs";
+import { copyLine, defaultSshHost, headlessNote, isHeadless, LaunchError, openPlan, pidAncestry, quotePath, resumeCommand, sshLine, terminalsFor, tmuxName, tmuxRunLine, tmuxSessionFromPanes, workspaceActions } from "./launch.mjs";
 import { handoffBrief, handoffFileName, saveHandoff, sessionMarkdown } from "./handoff.mjs";
 import { PLACES, setShortcut, shortcutStatus } from "./shortcut.mjs";
 import { frequentPrompts, loadPrompts, PromptError, savePrompts, validatePrompts } from "./prompts.mjs";
@@ -1416,22 +1416,21 @@ const server = createServer(async (req, res) => {
       try {
         const target = await launchTarget(String(params.kind ?? ""), String(params.id ?? ""));
         if (req.method === "GET") {
-          // Headless (no graphical session to open a terminal in): hide Open, say why, and lead
-          // with the line that reaches a running tmux session from another computer.
+          // Headless (no graphical session to open a terminal in): hide Open, say why, and give
+          // two lines to paste on another computer — `ssh -t <host>` (step 1), then an
+          // attach-or-create tmux line per action (step 2). A running session's own tmux session
+          // (if it's in one) names the step-2 target, so "Terminal here" attaches to it; otherwise
+          // the tmux session is named after the folder.
           const headless = isHeadless();
           const options = launchOptions(target);
           const sshHost = settings.sshHost || defaultSshHost();
-          if (headless && target.running) {
-            const tmux = tmuxSessionOf(target.pid);
-            if (tmux) options.unshift(sshAttachOption(tmux, sshHost));
+          let extra = {};
+          if (headless) {
+            const name = (target.running && tmuxSessionOf(target.pid)) || tmuxName(target.cwd);
+            for (const o of options) o.copy = o.disabled ? "" : tmuxRunLine(name, target.cwd, o.command);
+            extra = { ssh: sshLine(sshHost), tmux: name, note: headlessNote(sshHost, { custom: Boolean(settings.sshHost) }) };
           }
-          sendJson(res, 200, {
-            cwd: target.cwd,
-            canOpen: !headless,
-            platform: process.platform,
-            ...(headless ? { note: headlessNote(sshHost, { custom: Boolean(settings.sshHost) }) } : {}),
-            options,
-          });
+          sendJson(res, 200, { cwd: target.cwd, canOpen: !headless, platform: process.platform, ...extra, options });
           return;
         }
         if (isHeadless()) throw new LaunchError(headlessNote(settings.sshHost || defaultSshHost(), { custom: Boolean(settings.sshHost) }));

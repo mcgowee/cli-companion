@@ -40,6 +40,16 @@
       <div class="launch-head"><span>${kind === "workspace" || data.options?.some((o) => o.action === "terminal") ? "Open in a terminal" : "Resume in a terminal"}</span>
         <code title="${esc(data.cwd)}">${esc(data.cwd)}</code></div>
       ${data.note ? `<div class="launch-msg">${esc(data.note)}</div>` : ""}
+      ${
+        data.ssh
+          ? `<div class="launch-step">Step 1 — open a terminal on this computer</div>
+             <div class="launch-item" role="none">
+               <div class="launch-text"><code class="launch-cmd">${esc(data.ssh)}</code></div>
+               <button class="btn small" type="button" role="menuitem" data-copy-ssh>Copy</button>
+             </div>
+             <div class="launch-step">Step 2 — then run one of these there${data.tmux ? ` (tmux: ${esc(data.tmux)})` : ""}</div>`
+          : ""
+      }
       ${data.options
         .map(
           (o, i) => `<div class="launch-item${o.disabled ? " disabled" : ""}" role="none">
@@ -107,6 +117,10 @@
     const copyBtn = event.target.closest("[data-copy-line]");
     if (event.target.closest("[data-copy-path]")) {
       say((await copy(current.data.cwd)) ? "Folder path copied ✓" : "Copy failed.", "ok");
+      return;
+    }
+    if (event.target.closest("[data-copy-ssh]")) {
+      say((await copy(current.data.ssh)) ? "Copied ✓ Step 1 — run it in a terminal on another computer." : "Copy failed.", "ok");
       return;
     }
     if (copyBtn) {
