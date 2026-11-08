@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { groupByWorkspace, workspaceKey } from "./session-index.mjs";
 import { lastExchange, localModels, ollamaUrl, SuggestError, suggestionCache, suggestReplies } from "./suggest.mjs";
 import { addFavorite, FavoriteError, loadFavorites, removeFavorite } from "./favorites.mjs";
-import { APP_FILE_HEADERS, APP_MIME, fileKind, findApps, resolveAppFile, urlName } from "./apps.mjs";
+import { APP_FILE_HEADERS, APP_MIME, exchangeText, fileKind, findApps, resolveAppFile, urlName } from "./apps.mjs";
 import { createReadStream } from "node:fs";
 import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard } from "./dashboards.mjs";
 import { usageSummary } from "./usage.mjs";
@@ -577,7 +577,7 @@ async function isOnline(href) {
   }
 }
 
-/** Apps found in a session's final reply, cached per reply (online status is checked each time). */
+/** Apps found in a session's last exchange (reply + your message), cached per exchange (online status is checked each time). */
 const appsByReply = new Map();
 async function appsFor(id) {
   if (!sessions.has(id) && !savedById.has(id)) await refreshSaved();
@@ -586,11 +586,11 @@ async function appsFor(id) {
   if (!entries) throw new WorkbenchError(404, "no history for that session");
   const exchange = lastExchange(where.source.transcript(entries, { leafId: where.leafId }).items);
   if (!exchange) return { for: null, apps: [] };
-  const key = `${id} ${exchange.id} ${exchange.reply.length}`;
+  const key = `${id} ${exchange.id} ${exchange.reply.length} ${exchange.ask.length}`;
   let found = appsByReply.get(key);
   if (!found) {
     const own = [`http://${HOST}:${PORT}`, `http://localhost:${PORT}`, `http://[::1]:${PORT}`];
-    const { urls, files } = findApps(exchange.reply, { exclude: own });
+    const { urls, files } = findApps(exchangeText(exchange), { exclude: own });
     const root = await workspaceRootFor(id).catch(() => null);
     const resolved = root ? await Promise.all(files.map((f) => resolveAppFile(root, f))) : [];
     const seen = new Set();
@@ -1260,7 +1260,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/apps") {
-      // Apps in the selected session's final reply (right panel). Page header required: it
+      // Apps in the selected session's last exchange (right panel). Page header required: it
       // checks local web addresses, and a cross-site page shouldn't be able to make it do that.
       if (req.headers["x-pi-companion-page"] !== "1") {
         res.writeHead(403).end();

@@ -112,8 +112,8 @@ next to it:
     **Branch** (everything since the branch split from main/master), with +/− counts and
     a coloured diff per file. **Changed in this session** lists the files Pi edited or
     wrote in the open session.
-  - **Apps**: when the session's **final reply** links to an app it made, the app is listed here
-    (only the last reply is read, to keep noise down): local web addresses such as
+  - **Apps**: when the **last exchange** (your last message and the reply to it) names an app, the app
+    is listed here (only that exchange is read, to keep noise down): local web addresses such as
     `http://localhost:5173` (marked Running or Not running), and files inside the session's
     folder that the panel can show: `.html` pages, images, video, audio, PDFs and text (`.txt`,
     `.md`, `.csv`, `.log`; code files are left out). Video can be seeked; Markdown is rendered.

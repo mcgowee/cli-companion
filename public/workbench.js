@@ -1,5 +1,5 @@
 // Right panel ("workbench", like pi-gui's): Files and Review for the selected session's folder,
-// and Apps: web addresses and .html files in the session's final reply, to open here or pin to
+// and Apps: web addresses and .html files in the session's last exchange (reply and your message), to open here or pin to
 // Dashboards. Read-only except New folder in Files. The server resolves the folder from the
 // session id, never from a full path we send.
 (function () {
@@ -49,7 +49,7 @@
     review: null,
     diff: null, // { path, text }
     reviewLoading: false,
-    // Apps (from the final reply)
+    // Apps (from the last exchange)
     apps: null, // { for, apps } | { error }
     appsKey: "", // "<session> <reply id> <length>" the list is for (or loading)
     appView: null, // the app shown in the panel

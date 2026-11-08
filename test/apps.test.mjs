@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileKind, findApps, resolveAppFile, urlName } from "../server/apps.mjs";
+import { exchangeText, fileKind, findApps, resolveAppFile, urlName } from "../server/apps.mjs";
 
 test("findApps: local web addresses, in order, without repeats or trailing punctuation", () => {
   const text = `Started the dev server at http://localhost:5173/. Also see **http://127.0.0.1:8080/report?x=1**,
@@ -56,4 +56,10 @@ test("resolveAppFile: only existing files inside the workspace", async () => {
 test("urlName: host and path", () => {
   assert.equal(urlName("http://localhost:5173/"), "localhost:5173");
   assert.equal(urlName("http://127.0.0.1:8080/report?x=1"), "127.0.0.1:8080/report?x=1");
+});
+
+test("exchangeText: a path in your own message is found too, after the reply's", () => {
+  const exchange = { id: "m1", reply: "Built it: out/chart.png", ask: "Make it look like C:/work/site/videos/x/riff-preview.html" };
+  assert.deepEqual(findApps(exchangeText(exchange)).files, ["out/chart.png", "C:/work/site/videos/x/riff-preview.html"]);
+  assert.equal(exchangeText({ reply: "only a reply", ask: "" }), "only a reply");
 });

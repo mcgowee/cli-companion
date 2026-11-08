@@ -1,5 +1,6 @@
-// Apps a session made, for the right panel's Apps tab: links found in the CLI's FINAL reply only
-// (the last text after your last message), not the whole session, to keep noise down.
+// Apps a session made, for the right panel's Apps tab: links found in the last exchange only (your
+// last message and the CLI's reply to it), not the whole session, to keep noise down. The reply's
+// come first; a path you typed yourself ("look at videos/x/preview.html") shows up too.
 // Found by pattern (no model):
 //   - web addresses on this computer (localhost, 127.0.0.1, [::1]), e.g. a dev server;
 //   - files inside the session's own folder that the panel can show: .html pages, images, video,
@@ -41,6 +42,11 @@ const BARE_FILE = new RegExp(String.raw`(?:[A-Za-z]:[\\/]|\.{0,2}[\\/])?(?:[\w.@
  * Links and .html paths in a reply, in the order they appear, without repeats.
  * `exclude` holds origins never to list (the companion itself).
  */
+/** The text the Apps tab scans for an exchange from lastExchange(): the reply, then your message. */
+export function exchangeText(exchange) {
+  return [exchange?.reply, exchange?.ask].filter(Boolean).join("\n\n");
+}
+
 export function findApps(text, { exclude = [] } = {}) {
   const source = String(text ?? "");
   const urls = [];
