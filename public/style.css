@@ -860,21 +860,46 @@ a.file-link.missing { text-decoration: line-through; opacity: 0.7; cursor: help;
 .term-btn { display: none; }
 .can-run .term-btn { display: inline-flex; }
 .remote-view .term-btn { display: none; }
-.term { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; }
+/* Looks like pi-gui's terminal: a thin toolbar strip, then one full-bleed monospace screen. */
+:root { --term-bg: #fbfbfd; --term-fg: #24242c; --term-ps: #1f8a4c; --term-dim: #8a8a98; --term-font: Menlo, Monaco, Consolas, "Cascadia Mono", "Liberation Mono", monospace; }
+:root[data-theme="dark"] { --term-bg: #101015; --term-fg: #d9d9e3; --term-ps: #5fd38d; --term-dim: #7a7a8c; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --term-bg: #101015; --term-fg: #d9d9e3; --term-ps: #5fd38d; --term-dim: #7a7a8c; } }
+#wb-terminal { overflow: hidden; }
+.term { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--term-bg); color: var(--term-fg); }
 .term-off { padding: 14px; color: var(--muted); line-height: 1.5; }
-.term-cmd { width: 100%; box-sizing: border-box; font: 12.5px/1.45 var(--mono); padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line);
-  background: var(--code); color: var(--text); resize: vertical; min-height: 54px; }
-.term-cmd:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); }
-.term-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.term-hint { margin: 0; font-size: 12px; color: var(--warn); }
-.term-run { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-.term-head { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; padding: 6px 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
-.term-cmdline { font: 12px var(--mono); white-space: pre-wrap; word-break: break-all; }
-.term-st { font-size: 12px; white-space: nowrap; color: var(--muted); }
-.term-st.ok { color: var(--ok); } .term-st.failed { color: var(--bad); } .term-st.running { color: var(--accent); }
-.term-out { margin: 0; padding: 8px 10px; max-height: 50vh; overflow: auto; font: 12px/1.45 var(--mono); white-space: pre-wrap; word-break: break-word; background: var(--code); }
-.term-history { display: flex; flex-direction: column; gap: 2px; }
-.term-past { display: flex; gap: 8px; align-items: center; text-align: left; border: 0; background: none; padding: 4px 6px; border-radius: 6px; cursor: pointer; color: var(--text); }
-.term-past:hover { background: var(--accent-soft); }
-.term-past code { font: 12px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.term-past-st.done { color: var(--ok); } .term-past-st.failed { color: var(--bad); } .term-past-st.stopped { color: var(--muted); }
+.term-bar { flex: none; min-height: 38px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 5px 8px 5px 10px;
+  border-bottom: 1px solid var(--line); background: var(--panel); color: var(--text); }
+.term-tab { flex: none; display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 10px; border: 1px solid var(--line);
+  border-radius: 6px; font-size: 12px; font-weight: 560; background: color-mix(in srgb, var(--text) 5%, transparent); }
+.term-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--ok); }
+.term-dot.running { background: var(--accent); animation: term-pulse 1.2s ease-in-out infinite; }
+@keyframes term-pulse { 50% { opacity: .35; } }
+.term-cwd { flex: 1; min-width: 0; font: 11.5px var(--term-font); color: var(--muted); direction: rtl; text-align: left;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.term-tools { flex: none; display: flex; gap: 3px; }
+.term-tool svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#term-run svg, #term-stop svg { fill: currentColor; stroke: none; }
+.term-tool:disabled { opacity: .35; cursor: default; background: none; }
+#term-run:not(:disabled) { color: var(--ok); }
+#term-stop:not(:disabled) { color: var(--bad); }
+.term-screen { flex: 1; min-height: 0; overflow: auto; padding: 8px 10px 14px; font: 12px/1.5 var(--term-font); cursor: text; }
+.term-block { margin-bottom: 10px; }
+/* Prompt and command flow as one line of text that wraps under the prompt, like a real terminal. */
+.term-line { white-space: pre-wrap; word-break: break-all; }
+.term-ps { color: var(--term-ps); white-space: pre; }
+.term-ps::after { content: " "; }
+.term-in { font-weight: 600; }
+.term-prompt { position: relative; }
+.term-prompt .term-ps { position: absolute; left: 0; top: 0; pointer-events: none; }
+.term-out { margin: 0; padding: 0; background: none; border: 0; font: inherit; color: inherit; white-space: pre-wrap; word-break: break-word; }
+.term-end { color: var(--term-dim); white-space: pre-wrap; }
+.term-end.ok { color: color-mix(in srgb, var(--term-ps) 75%, var(--term-dim)); }
+.term-end.failed { color: var(--bad); }
+.term-end.warn { color: var(--warn); margin-bottom: 4px; }
+.term-end.running { color: var(--term-dim); }
+.term-caret { width: .6em; height: 1.15em; vertical-align: text-bottom; background: var(--term-fg); animation: term-blink 1s steps(1) infinite; }
+@keyframes term-blink { 50% { opacity: 0; } }
+.term-cmd { display: block; width: 100%; box-sizing: border-box; margin: 0; padding: 0; border: 0; outline: 0; resize: none; overflow: hidden; background: transparent;
+  color: var(--term-fg); caret-color: var(--term-fg); font: inherit; line-height: inherit; white-space: pre-wrap; word-break: break-all; }
+.term-cmd::placeholder { color: var(--term-dim); font-style: italic; }
+.term-prompt.busy .term-ps { opacity: .5; }

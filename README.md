@@ -121,9 +121,9 @@ next to it:
     wrote in the open session.
   - **Terminal** (off until you turn it on in Settings → **Terminal tab**): run a command in the
     session's folder (PowerShell on Windows, your login shell elsewhere) and watch its output, with
-    **Stop** and the last few commands to look at again. Code blocks in replies (PowerShell, shell,
-    cmd…) get a **▶ Terminal** button that puts the command in the box; **nothing runs until you
-    press Run**. Commands get no input, so programs you type into (codex, pi, ssh, a REPL) go to
+    **Stop** (or Ctrl+C), ↑/↓ for earlier commands and a terminal-style screen of the recent runs. Code
+    blocks in replies (PowerShell, shell, cmd…) get a **▶ Terminal** button that puts the command at
+    the prompt; **nothing runs until you press Enter (or ▶)**. Commands get no input, so programs you type into (codex, pi, ssh, a REPL) go to
     **Open in terminal**, which opens a real terminal window in that folder with the command. Output
     is kept in memory only. Not available from the phone.
   - **Apps**: when the **last exchange** (your last message and the reply to it) names an app, the app
