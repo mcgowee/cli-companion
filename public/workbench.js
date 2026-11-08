@@ -72,6 +72,8 @@
     appEl.classList.toggle("bench-open", wb.open && Boolean(wb.sessionId));
     appEl.style.setProperty("--bench-size", `${wb.width}px`);
     $("workbench").hidden = !(wb.open && wb.sessionId);
+    // The topbar toggle flips its chevron on `.on`: a right-chevron "collapse" when open,
+    // a left-chevron "open" when closed — always on the chat page, in both states.
     $("wb-toggle")?.classList.toggle("on", wb.open);
   }
 
