@@ -29,7 +29,7 @@ import { handoffBrief, handoffFileName, saveHandoff, sessionMarkdown } from "./h
 import { PLACES, setShortcut, shortcutStatus } from "./shortcut.mjs";
 import { frequentPrompts, loadPrompts, PromptError, savePrompts, validatePrompts } from "./prompts.mjs";
 import { classifyRequest, loadRemote, remoteAllowed, saveRemote, serveOff, serveOn, serving, tailscaleSelf } from "./remote.mjs";
-import { loadSettings, saveSettings, SettingsError, sourceEnv, validateSettings } from "./settings.mjs";
+import { loadSettings, saveSettings, SettingsError, settingsStamp, sourceEnv, validateSettings } from "./settings.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import { isProcessAlive } from "./fsutil.mjs";
 import { createSources, describeSources, nativeId, sourceForId } from "./sources/index.mjs";
@@ -46,6 +46,8 @@ const ACCESS_KEY = accessKey();
 // Your settings (the Settings page): which CLIs to read, their folders, the terminal for Open.
 const SETTINGS_FILE = join(stateDir(), "settings.json");
 let settings = await loadSettings(SETTINGS_FILE);
+// The file's stamp when `settings` was read; moves on disk mean a hand edit to pick up.
+let settingsRev = await settingsStamp(SETTINGS_FILE);
 // Phone access over Tailscale (server/remote.mjs): off unless switched on in Settings.
 const REMOTE_FILE = join(stateDir(), "remote.json");
 let remote = await loadRemote(REMOTE_FILE);
@@ -54,6 +56,22 @@ let remote = await loadRemote(REMOTE_FILE);
 let SOURCES = createSources(sourceEnv(settings));
 let PI = SOURCES.find((s) => s.id === "pi");
 const sourceById = (id) => SOURCES.find((s) => s.id === id) ?? PI;
+
+/** New settings (saved from the page, or hand-edited on disk): rebuild what depends on them. */
+function applySettings(next, rev) {
+  settings = next;
+  settingsRev = rev;
+  SOURCES = createSources(sourceEnv(settings));
+  PI = SOURCES.find((s) => s.id === "pi");
+  lastScanAt = 0;
+  broadcast({ type: "sources" });
+}
+
+/** Pick up hand edits: re-read settings.json when it changed on disk since the server read it. */
+async function refreshSettings() {
+  const rev = await settingsStamp(SETTINGS_FILE);
+  if (rev !== settingsRev) applySettings(await loadSettings(SETTINGS_FILE), rev);
+}
 // With no running/idle signal from a CLI, a transcript written this recently counts as running.
 const ACTIVE_FALLBACK_MS = 2 * 60_000;
 const PUBLIC_DIR = fileURLToPath(new URL("../public/", import.meta.url));
@@ -1298,27 +1316,34 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/settings") {
-      // GET: your settings and what they can be set to. POST (page header): save them.
+      // GET: your settings and what they can be set to, re-read if the file was hand-edited.
+      // POST (page header): save them — but never over a hand edit the page hasn't seen: the page
+      // sends back the stamp (rev) it loaded, and a save with an old stamp gets a 409 instead.
       if (req.method === "POST") {
         if (req.headers["x-pi-companion-page"] !== "1") {
           res.writeHead(403).end();
           return;
         }
         try {
-          const next = validateSettings(JSON.parse(await readBody(req)));
+          const body = JSON.parse(await readBody(req));
+          const next = validateSettings(body);
+          await refreshSettings();
+          if (body.rev !== settingsRev) {
+            sendJson(res, 409, { error: "Settings were changed on disk after this page read them. Reload the page to see the current settings, then make your changes again." });
+            return;
+          }
           await saveSettings(SETTINGS_FILE, next);
-          settings = next;
-          SOURCES = createSources(sourceEnv(settings));
-          PI = SOURCES.find((s) => s.id === "pi");
-          lastScanAt = 0;
-          broadcast({ type: "sources" });
+          applySettings(next, await settingsStamp(SETTINGS_FILE));
         } catch (error) {
           sendJson(res, error instanceof SettingsError || error instanceof SyntaxError ? 400 : 500, { error: error.message });
           return;
         }
+      } else {
+        await refreshSettings();
       }
       sendJson(res, 200, {
         settings,
+        rev: settingsRev,
         file: SETTINGS_FILE,
         port: PORT,
         portFromEnv: process.env.CLI_COMPANION_PORT_SET

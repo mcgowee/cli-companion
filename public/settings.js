@@ -331,6 +331,8 @@
       sources[card.dataset.source] = { ...(enabled ? {} : { enabled: false }), ...(folder ? { folder } : {}), ...(sendEnter ? { sendEnter } : {}) };
     }
     const body = {
+      // The file stamp this page loaded; the server refuses the save (409) if the file changed since.
+      rev: data.rev,
       sources,
       terminal: form.querySelector('[name="terminal"]').value,
       port: form.querySelector('[name="port"]').value.trim(),

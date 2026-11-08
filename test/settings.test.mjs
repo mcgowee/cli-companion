@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { loadSettings, saveSettings, SettingsError, sourceEnv, validateSettings } from "../server/settings.mjs";
+import { defaultSettings, loadSettings, saveSettings, SettingsError, settingsStamp, sourceEnv, validateSettings } from "../server/settings.mjs";
 import { createSources } from "../server/sources/index.mjs";
 
 const abs = process.platform === "win32" ? "D:\\claude" : "/data/claude";
@@ -63,6 +63,43 @@ test("validateSettings: a CLI's composer button can also press Enter (true only)
   assert.deepEqual(validateSettings({ sources: { pi: { sendEnter: true } } }).sources, { pi: { sendEnter: true } });
   assert.deepEqual(validateSettings({ sources: { pi: { sendEnter: "yes" } } }).sources, {});
   assert.deepEqual(validateSettings({ sources: { pi: { sendEnter: false } } }).sources, {});
+});
+
+test("settingsStamp: empty while the file is missing, stable while untouched, moves on a write", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "companion-settings-"));
+  const file = join(dir, "settings.json");
+  assert.equal(await settingsStamp(file), "");
+  await saveSettings(file, defaultSettings());
+  const stamp = await settingsStamp(file);
+  assert.notEqual(stamp, "");
+  assert.equal(await settingsStamp(file), stamp);
+  writeFileSync(file, JSON.stringify({ port: 30144 }));
+  assert.notEqual(await settingsStamp(file), stamp);
+});
+
+test("a hand edit on disk survives a save: the server re-reads it, and a stale page is refused", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "companion-settings-"));
+  const file = join(dir, "settings.json");
+  // The server starts and a page loads the settings (what GET /api/settings hands out).
+  await saveSettings(file, validateSettings({ port: 30144 }));
+  let serverRev = await settingsStamp(file);
+  const pageRev = serverRev;
+  // A hand edit while the page is open.
+  writeFileSync(file, JSON.stringify({ port: 30144, appearance: { clock: "24" } }));
+  // The save path: refresh from disk first; the page's stamp no longer matches → 409, nothing written.
+  const diskRev = await settingsStamp(file);
+  assert.notEqual(diskRev, serverRev, "the hand edit is noticed");
+  serverRev = diskRev;
+  assert.notEqual(pageRev, serverRev, "the stale page's save is refused");
+  assert.equal(JSON.parse(readFileSync(file, "utf8")).appearance.clock, "24", "the hand edit is still in the file");
+  // The page reloads (GET re-reads the file and hands out the new stamp); its save now goes through.
+  const reloaded = await loadSettings(file);
+  assert.equal(reloaded.appearance.clock, "24");
+  assert.equal(reloaded.port, 30144);
+  await saveSettings(file, { ...reloaded, terminal: "auto" });
+  const after = JSON.parse(readFileSync(file, "utf8"));
+  assert.equal(after.port, 30144, "the hand-edited port survives the save");
+  assert.equal(after.appearance.clock, "24");
 });
 
 test("validateSettings: port is optional, 1024–65535", () => {

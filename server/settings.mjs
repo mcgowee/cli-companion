@@ -1,4 +1,6 @@
-// Your settings, in ~/.cli-companion/settings.json (written only from the Settings page):
+// Your settings, in ~/.cli-companion/settings.json (written from the Settings page; hand edits
+// to the file are picked up — the server re-reads it when its stamp changes — and a save from a
+// page that loaded the file before a hand edit is refused rather than overwriting it):
 //
 //   { "sources": { "<id>": { "enabled": false, "folder": "D:\\claude" } }, "terminal": "auto" }
 //
@@ -13,7 +15,7 @@
 // Settings become environment overrides for createSources(), so environment variables and
 // settings work the same way. CLI_COMPANION_<ID>=0 in the real environment always wins.
 
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute } from "node:path";
 import { terminalsFor } from "./launch.mjs";
 import { isCloudModel } from "./suggest.mjs";
@@ -29,6 +31,20 @@ export function defaultSettings() {
 
 const THEMES = ["system", "light", "dark"];
 const CLOCKS = ["auto", "12", "24"];
+
+/**
+ * A stamp of the settings file as it is on disk ("" while it doesn't exist); it changes when the
+ * file does. The server re-reads the file when the stamp moved, and the page sends the stamp it
+ * loaded back with a save, so a save never overwrites a hand edit the page hasn't seen.
+ */
+export async function settingsStamp(file) {
+  try {
+    const s = await stat(file);
+    return `${s.mtimeMs}:${s.size}`;
+  } catch {
+    return "";
+  }
+}
 
 export async function loadSettings(file) {
   try {
