@@ -40,7 +40,9 @@ after(async () => {
 
 test("resolveInside refuses paths that leave the workspace", async () => {
   await assert.rejects(resolveInside(root, "../" + outside.split(/[\\/]/).pop() + "/secret.txt"), { status: 403 });
-  await assert.rejects(resolveInside(root, join(outside, "secret.txt")), { status: 400 });
+  // A drive path is refused on Windows; elsewhere "/tmp/x" loses its leading "/" and is looked up
+  // inside the workspace instead (still contained), so it isn't found.
+  await assert.rejects(resolveInside(root, join(outside, "secret.txt")), { status: process.platform === "win32" ? 400 : 404 });
   assert.ok((await resolveInside(root, "src/a.ts")).endsWith("a.ts"));
 });
 
