@@ -130,7 +130,7 @@
 
       <h2>Privacy</h2>
       <p>Everything stays on this computer: the server listens on 127.0.0.1 only and reads your session
-      files read-only. The only files it writes are its own, in <code>~/.cli-companion</code>: your settings, favorites,
+      files read-only. The only files it writes are its own, in <code>~/.cli-companion</code>: your settings, favorites, saved prompts,
       token counts per session file (numbers only, no text) and your list of custom dashboards (<code>${esc(info.dashboardsFile || "~/.cli-companion/dashboards.json")}</code>), and,
       only when you click <b>Continue in …</b> under <b>Hand off</b>, a brief of that session in <code>~/.cli-companion/handoffs</code>
       (the newest 20 are kept). Outside that folder it writes only the <b>CLI Companion</b> shortcut, when you click

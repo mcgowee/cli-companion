@@ -27,6 +27,7 @@ import { createSearchIndex } from "./search.mjs";
 import { copyLine, LaunchError, openPlan, quotePath, resumeCommand, terminalsFor, workspaceActions } from "./launch.mjs";
 import { handoffBrief, handoffFileName, saveHandoff, sessionMarkdown } from "./handoff.mjs";
 import { PLACES, setShortcut, shortcutStatus } from "./shortcut.mjs";
+import { frequentPrompts, loadPrompts, PromptError, savePrompts, validatePrompts } from "./prompts.mjs";
 import { classifyRequest, loadRemote, remoteAllowed, saveRemote, serveOff, serveOn, serving, tailscaleSelf } from "./remote.mjs";
 import { loadSettings, saveSettings, SettingsError, sourceEnv, validateSettings } from "./settings.mjs";
 import { execFileSync, spawn } from "node:child_process";
@@ -57,6 +58,7 @@ const SERVER_STARTED_AT = Date.now();
 migrateStateFile("dashboards.json");
 const DASHBOARDS_FILE = join(stateDir(), "dashboards.json");
 const FAVORITES_FILE = join(stateDir(), "favorites.json");
+const PROMPTS_FILE = join(stateDir(), "prompts.json");
 // Token use per session, read from the CLIs' session files (cached in token-usage.json).
 const tokenUsage = createTokenTracker({ cacheFile: join(stateDir(), "token-usage.json") });
 // Search across sessions: message text in memory only (never written to disk).
@@ -784,7 +786,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (req.method !== "GET" && !["/api/dashboards", "/api/favorites", "/api/folder", "/api/handoff", "/api/launch", "/api/remote", "/api/settings", "/api/shortcut"].includes(url.pathname)) {
+    if (req.method !== "GET" && !["/api/dashboards", "/api/favorites", "/api/folder", "/api/handoff", "/api/launch", "/api/prompts", "/api/remote", "/api/settings", "/api/shortcut"].includes(url.pathname)) {
       res.writeHead(405).end();
       return;
     }
@@ -896,6 +898,40 @@ const server = createServer(async (req, res) => {
       } catch (error) {
         if (error instanceof WorkbenchError) sendJson(res, error.status, { error: error.message });
         else sendJson(res, error instanceof SyntaxError ? 400 : 500, { error: error.message });
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/prompts") {
+      // GET: your saved prompts. GET ?suggest=1: messages you typed more than once (from the search
+      // index, in memory), not yet saved. POST { prompts } (page header): replace the saved list.
+      const clis = new Set(SOURCES.map((source) => source.id));
+      try {
+        if (req.method === "POST") {
+          if (req.headers["x-pi-companion-page"] !== "1") {
+            res.writeHead(403).end();
+            return;
+          }
+          const prompts = validatePrompts(JSON.parse(await readBody(req))?.prompts, clis);
+          await savePrompts(PROMPTS_FILE, prompts);
+          sendJson(res, 200, { prompts });
+          return;
+        }
+        const prompts = await loadPrompts(PROMPTS_FILE, clis);
+        if (url.searchParams.get("suggest") !== "1") {
+          sendJson(res, 200, { prompts });
+          return;
+        }
+        await refreshSaved();
+        const enabled = new Set(SOURCES.filter((source) => source.enabled).map((source) => source.id));
+        const metas = [...savedById.values()].filter((meta) => enabled.has(meta.source ?? "pi"));
+        const build = searchIndex.updateAll(metas);
+        await Promise.race([build, new Promise((done) => setTimeout(done, 1200))]);
+        const progress = searchIndex.progress();
+        const suggestions = frequentPrompts(searchIndex.userMessages(metas), { saved: prompts.map((p) => p.text) });
+        sendJson(res, 200, { prompts, suggestions, indexing: progress.running ? { done: progress.done, total: progress.total } : undefined });
+      } catch (error) {
+        sendJson(res, error instanceof PromptError || error instanceof SyntaxError ? 400 : 500, { error: error.message });
       }
       return;
     }

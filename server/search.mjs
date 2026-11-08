@@ -165,5 +165,14 @@ export function createSearchIndex() {
     return { terms, results: results.slice(0, limit), total: results.length };
   }
 
-  return { update, updateAll, search, progress: () => ({ ...progress }), size: () => files.size };
+  /** Your own messages in these sessions, as { source, t, at } (for prompt suggestions). */
+  function* userMessages(metas) {
+    for (const meta of metas) {
+      const entry = files.get(meta.file);
+      if (!entry) continue;
+      for (const m of entry.msgs) if (m.r === "u") yield { source: meta.source ?? "pi", t: m.t, at: m.at };
+    }
+  }
+
+  return { update, updateAll, search, userMessages, progress: () => ({ ...progress }), size: () => files.size };
 }

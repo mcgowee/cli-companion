@@ -127,7 +127,13 @@ next to it:
 - **Command palette** (Ctrl+K, or **⌘ Commands** in the composer): a box over the app to find
   things by typing. The selected session's CLI commands (`/compact`, `/model`, …): Enter puts
   the command in Pi's input, Ctrl+Enter also runs it; for Claude Code and Codex it is copied to
-  paste. Also every session (running ones first) and the companion's pages and panels.
+  paste. Also your saved prompts, every session (running ones first) and the companion's pages
+  and panels.
+- **Prompts** (composer): prompts you send often. Click one to put it in the composer, where you
+  can edit it before sending. A prompt is for every CLI or just one. **Manage** adds, edits,
+  reorders and removes them, **Save composer text** keeps what you've typed, and **From your
+  history** lists messages you typed more than once (from the search index, in memory) to save
+  with one click. Kept in `~/.cli-companion/prompts.json`; read-only on the phone.
 - **Hand off** (session header, or "Hand off this session" in the palette): move the work to
   another CLI, or take it out. **Copy handoff brief** puts a Markdown brief on the clipboard: where
   the session started, the last compaction summary, the recent messages, the latest exchange in

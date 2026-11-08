@@ -72,6 +72,9 @@
         src: s.src,
       });
     }
+    for (const p of window.companionPrompts?.forPalette() ?? []) {
+      items.push({ group: "Prompts", kind: "action", label: p.label, hint: p.hint, run: () => window.companionPrompts.insert(p.text) });
+    }
     for (const a of ACTIONS) items.push({ group: "Companion", kind: "action", ...a });
     state.items = items;
   }
