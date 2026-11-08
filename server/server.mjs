@@ -33,7 +33,7 @@ import { loadSettings, readSettingsStrict, saveSettings, SettingsError, settings
 import { execFileSync, spawn } from "node:child_process";
 import { isProcessAlive } from "./fsutil.mjs";
 import { createSources, describeSources, nativeId, sourceForId } from "./sources/index.mjs";
-import { APP_ID, accessKey, companionPort, ensureServer, isPortUp, migrateStateFile, stateDir } from "./start.mjs";
+import { APP_ID, accessKey, companionPort, ensureServer, isPortUp, migrateStateFile, removeRuntimeFile, stateDir, writeRuntimeFile } from "./start.mjs";
 import { hasKey, keyCookie, lockedPage, needsKey, sameKey } from "./access.mjs";
 import { MAX_UPLOAD, saveUpload } from "./uploads.mjs";
 import { createRunner, encodedCommand, looksInteractive, MAX_COMMAND } from "./runner.mjs";
@@ -1660,6 +1660,8 @@ function shutDown(restart) {
       const result = await ensureServer({ port: PORT, env: process.env });
       if (result.error) console.error(`[companion] restart failed: ${result.error}`);
     }
+    // Only if it's still ours: on a restart the fresh server has already written its own.
+    removeRuntimeFile();
     process.exit(0);
   }, 100);
 }
@@ -1673,5 +1675,7 @@ server.on("error", (error) => {
 });
 
 server.listen(PORT, HOST, () => {
+  // Say where this server is (server.json), for Pis and CLIs started without its environment.
+  writeRuntimeFile(PORT);
   console.log(`[companion] listening on http://${HOST}:${PORT} (reading: ${SOURCES.filter((source) => source.enabled).map((source) => source.label).join(", ")})`);
 });

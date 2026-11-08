@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { hasKey, keyCookie, needsKey, sameKey } from "../server/access.mjs";
-import { accessKey, companionOpenUrl, companionPort, companionUrl, migrateStateFile, rotateLog, stateDir } from "../server/start.mjs";
+import { accessKey, companionOpenUrl, companionPort, companionUrl, migrateStateFile, removeRuntimeFile, rotateLog, runtimeFile, runtimePort, stateDir, writeRuntimeFile } from "../server/start.mjs";
 
 const tempHome = () => ({ CLI_COMPANION_HOME: mkdtempSync(join(tmpdir(), "companion-home-")) });
 
@@ -39,6 +40,40 @@ test("companionPort: the port saved in Settings, unless the environment sets one
   assert.equal(companionPort({ ...home, CLI_COMPANION_PORT: "5000" }), 5000);
   writeFileSync(join(home.CLI_COMPANION_HOME, "settings.json"), JSON.stringify({ port: 99999 }));
   assert.equal(companionPort(home), 30143);
+});
+
+test("companionPort: the running server's port (server.json) beats Settings; env beats both; stale files are ignored", () => {
+  const home = tempHome();
+  // A process that has already exited: its pid is a dead one.
+  const deadPid = spawnSync(process.execPath, ["-e", ""]).pid;
+  writeFileSync(join(home.CLI_COMPANION_HOME, "settings.json"), JSON.stringify({ port: 31000 }));
+  // No runtime file: Settings as before.
+  assert.equal(companionPort(home), 31000);
+  // A live server wrote it: its port wins over Settings, but never over the environment.
+  writeRuntimeFile(30144, { env: home }); // pid defaults to this test's own (alive)
+  assert.deepEqual(JSON.parse(readFileSync(runtimeFile(home), "utf8")).port, 30144);
+  assert.equal(runtimePort(home), 30144);
+  assert.equal(companionPort(home), 30144);
+  assert.equal(companionPort({ ...home, CLI_COMPANION_PORT: "5000" }), 5000);
+  // The server died without cleaning up: the stale file is ignored.
+  writeRuntimeFile(30144, { pid: deadPid, env: home });
+  assert.equal(runtimePort(home), undefined);
+  assert.equal(companionPort(home), 31000);
+  // A damaged file is ignored too.
+  writeFileSync(runtimeFile(home), "{ not json");
+  assert.equal(companionPort(home), 31000);
+  writeFileSync(runtimeFile(home), JSON.stringify({ port: 30144, pid: "x" }));
+  assert.equal(companionPort(home), 31000);
+});
+
+test("removeRuntimeFile: a server only removes its own file", () => {
+  const home = tempHome();
+  writeRuntimeFile(30144, { pid: 1234, env: home });
+  removeRuntimeFile({ pid: 5678, env: home }); // another server's: left alone
+  assert.equal(existsSync(runtimeFile(home)), true);
+  removeRuntimeFile({ pid: 1234, env: home }); // its own: removed
+  assert.equal(existsSync(runtimeFile(home)), false);
+  removeRuntimeFile({ pid: 1234, env: home }); // already gone: no error
 });
 
 test("accessKey: made once, then the same key; the open address carries it", () => {

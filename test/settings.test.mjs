@@ -137,6 +137,10 @@ test("validateSettings: sshHost is a plain host or user@host, nothing a shell co
   assert.equal(validateSettings({ sshHost: "me@host.tail1.ts.net" }).sshHost, "me@host.tail1.ts.net");
   assert.throws(() => validateSettings({ sshHost: "host; rm -rf /" }), SettingsError);
   assert.throws(() => validateSettings({ sshHost: "host name" }), SettingsError);
+  // A leading "-" would be read as an ssh option, not a host, when the line is pasted.
+  assert.throws(() => validateSettings({ sshHost: "-oProxyCommand=calc" }), SettingsError);
+  assert.equal(validateSettings({ sshHost: "-x" }, { lenient: true }).sshHost, undefined);
+  assert.equal(validateSettings({ sshHost: "a-b" }).sshHost, "a-b");
   assert.throws(() => validateSettings({ sshHost: "a".repeat(101) }), SettingsError);
   assert.equal(validateSettings({ sshHost: "bad host" }, { lenient: true }).sshHost, undefined);
 });

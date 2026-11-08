@@ -120,11 +120,12 @@ export function validateSettings(input, { platform = process.platform, lenient =
     if (CLOCKS.includes(look.clock)) out.appearance.clock = look.clock;
     else if (look.clock !== undefined) fail("Unknown clock format.");
   }
-  // SSH name for this computer: a plain host or user@host, nothing a shell could misread.
+  // SSH name for this computer: a plain host or user@host, nothing a shell could misread, and
+  // no leading "-" (pasted after `ssh`, that would be read as an ssh option).
   if (typeof input?.sshHost === "string" && input.sshHost.trim()) {
     const host = input.sshHost.trim();
-    if (/^[\w.@:-]{1,100}$/.test(host)) out.sshHost = host;
-    else fail("The SSH name can only use letters, digits and . - _ @ : (up to 100 characters).");
+    if (/^[\w.@:][\w.@:-]{0,99}$/.test(host)) out.sshHost = host;
+    else fail("The SSH name can only use letters, digits and . - _ @ : (up to 100 characters), and can't start with -.");
   }
   // Terminal tab: may the companion run commands you send from it? Off unless you turn it on.
   if (input?.runCommands === true) out.runCommands = true;

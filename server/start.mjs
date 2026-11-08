@@ -10,7 +10,8 @@
 
 import { execFileSync, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { isProcessAlive } from "./fsutil.mjs";
 import { createConnection } from "node:net";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -23,13 +24,17 @@ export const SERVER_SCRIPT = fileURLToPath(new URL("./server.mjs", import.meta.u
 const validPort = (value) => Number.isInteger(value) && value > 0 && value < 65536;
 
 /**
- * The port: CLI_COMPANION_PORT (or the older PI_COMPANION_PORT), else the port in Settings
+ * The port: CLI_COMPANION_PORT (or the older PI_COMPANION_PORT), else the port of the server
+ * that is running right now (server.json, below), else the port in Settings
  * (~/.cli-companion/settings.json), else 30143. The command and the Pi extension both read it,
- * so they agree.
+ * so they find a server however it was started — a Pi launched without the server's environment
+ * still reports to the right port.
  */
 export function companionPort(env = process.env) {
   const fromEnv = Number.parseInt(env.CLI_COMPANION_PORT ?? env.PI_COMPANION_PORT ?? "", 10);
   if (validPort(fromEnv)) return fromEnv;
+  const running = runtimePort(env);
+  if (running) return running;
   try {
     const saved = JSON.parse(readFileSync(join(stateDir(env), "settings.json"), "utf8"))?.port;
     if (validPort(saved)) return saved;
@@ -37,6 +42,50 @@ export function companionPort(env = process.env) {
     // no settings yet
   }
   return DEFAULT_PORT;
+}
+
+/** The running server's runtime file: { port, pid, startedAt }, written once it listens. */
+export function runtimeFile(env = process.env) {
+  return join(stateDir(env), "server.json");
+}
+
+/**
+ * The server writes this atomically once it is listening. Two servers on different ports: the
+ * last one to start wins — the file simply names the most recent, and anything starting later
+ * follows it. A write that fails is quietly dropped (the lookup falls back to Settings).
+ */
+export function writeRuntimeFile(port, { pid = process.pid, env = process.env } = {}) {
+  const file = runtimeFile(env);
+  const tmp = `${file}.${pid}.tmp`;
+  try {
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(tmp, `${JSON.stringify({ port, pid, startedAt: new Date().toISOString() }, null, 2)}\n`);
+    renameSync(tmp, file);
+  } catch {
+    // read-only state dir: companionPort still works from Settings
+  }
+}
+
+/** Remove the runtime file on a clean exit — only while it is still this server's own. */
+export function removeRuntimeFile({ pid = process.pid, env = process.env } = {}) {
+  const file = runtimeFile(env);
+  try {
+    if (JSON.parse(readFileSync(file, "utf8"))?.pid === pid) unlinkSync(file);
+  } catch {
+    // already gone, or another server's
+  }
+}
+
+/** The port in server.json, if the server that wrote it is still alive; else undefined. */
+export function runtimePort(env = process.env) {
+  try {
+    const raw = JSON.parse(readFileSync(runtimeFile(env), "utf8"));
+    // A stale file (the server died without cleaning up, or the file is damaged) is ignored.
+    if (validPort(raw?.port) && Number.isInteger(raw?.pid) && raw.pid > 0 && isProcessAlive(raw.pid)) return raw.port;
+  } catch {
+    // no runtime file
+  }
+  return undefined;
 }
 
 export { ACCESS_HEADER } from "./access.mjs";

@@ -319,6 +319,7 @@ What the companion writes (all in `~/.cli-companion`, or `CLI_COMPANION_HOME`, u
 | `token-usage.json` | Token counts per session file (a cache; safe to delete) |
 | `handoffs/` | Handoff briefs you made (newest 20 kept) |
 | `remote.json` | Phone access on/off and your Tailscale name |
+| `server.json` | The running server's port and pid, written when it starts and removed when it stops cleanly (so Pis and CLIs started later find the right port) |
 | `server.log` (and `server.log.1`) | The background server's output, capped at 2 MB |
 | `browser-profile/` | The app window's own Chrome/Edge profile |
 | Start menu / desktop | The **CLI Companion** shortcut, only if you add one |
@@ -336,7 +337,7 @@ variables (a `CLI_COMPANION_<CLI>=0` variable always hides that CLI, whatever th
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `CLI_COMPANION_PORT` | `30143` | Port for the server and the extension (`PI_COMPANION_PORT` also works); wins over the port in Settings |
+| `CLI_COMPANION_PORT` | `30143` | Port for the server and the extension (`PI_COMPANION_PORT` also works); wins over the running server's port (`server.json`) and the port in Settings |
 | `PI_CODING_AGENT_DIR` | `~/.pi/agent` | Pi's folder (sessions are read from `sessions/`) |
 | `CLAUDE_CONFIG_DIR` | `~/.claude` | Claude Code's folder (transcripts are read from `projects/`) |
 | `CLI_COMPANION_CLAUDE` | on | Set to `0` to hide Claude Code sessions (`PI_COMPANION_CLAUDE` also works) |
