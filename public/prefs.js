@@ -1,7 +1,8 @@
 // Appearance settings (Settings page → ~/.cli-companion/settings.json): theme, whether cost
 // estimates and git info show, and 12- or 24-hour times (window.fmtTime). Loaded first; the theme is also remembered in this browser so the
 // page doesn't flash the wrong colours before the server answers. Others read
-// window.companionPrefs and listen for "prefs-changed".
+// window.companionPrefs (and the whole settings in window.companionSettings) and listen for
+// "prefs-changed".
 (function () {
   const DEFAULTS = { theme: "system", showCost: true, showGit: true, clock: "auto" };
   const KEY = "pi-companion.theme";
@@ -44,6 +45,10 @@
 
   fetch("/api/settings", { cache: "no-store" })
     .then((res) => (res.ok ? res.json() : null))
-    .then((data) => data && window.applyPrefs(data.settings?.appearance))
+    .then((data) => {
+      if (!data) return;
+      window.companionSettings = data.settings;
+      window.applyPrefs(data.settings?.appearance);
+    })
     .catch(() => {});
 })();

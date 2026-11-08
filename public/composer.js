@@ -117,6 +117,11 @@
 
   const sendLabelEl = sendEl.firstChild; // the text node before <kbd>
 
+  /** Settings → the CLI's "Composer button": also press Enter after putting the text in. */
+  function autoEnter() {
+    return window.companionSettings?.sources?.[src().id]?.sendEnter === true;
+  }
+
   function renderControls() {
     const s = state.session;
     const name = s ? (s.name && !["New thread", "New session"].includes(s.name) ? s.name : (s.cwd ?? "").split(/[\\/]/).pop()) : "";
@@ -124,12 +129,14 @@
     $("composer-title").textContent = !state.selectedId ? "Composer" : `To ${src().label}`;
     targetEl.textContent = why || copyOnly() ? "" : `→ ${name || "Pi"}`;
     sendEl.disabled = Boolean(why) || !textEl.value.trim() || busy();
-    sendLabelEl.textContent = copyOnly() ? `Copy for ${src().assistant} ` : "Put in Pi's input ";
+    sendLabelEl.textContent = copyOnly() ? `Copy for ${src().assistant} ` : autoEnter() ? "Send to Pi " : "Put in Pi's input ";
     sendEl.title =
       why ??
       (copyOnly()
         ? `Copy this text, then paste it into ${src().label} with Ctrl+V or right-click (Ctrl+Enter)`
-        : "Put this text in Pi's input box (Ctrl+Enter). Ctrl+Shift+Enter also presses Enter for you.");
+        : autoEnter()
+          ? "Put this text in Pi's input and press Enter (Ctrl+Enter). Ctrl+Shift+Enter only puts it in. Change in Settings."
+          : "Put this text in Pi's input box (Ctrl+Enter). Ctrl+Shift+Enter also presses Enter for you. Change in Settings.");
     if (why && !busy() && !statusEl.dataset.sticky) setStatus(why, "muted");
     else if (!why && statusEl.dataset.kind === "muted") setStatus("");
   }
@@ -328,7 +335,8 @@
     pickCommand(Number(item.dataset.i));
   });
 
-  sendEl.addEventListener("click", () => put(false));
+  sendEl.addEventListener("click", () => put(autoEnter()));
+  window.addEventListener("prefs-changed", () => renderControls());
   textEl.addEventListener("keydown", (event) => {
     if (!menuEl.hidden && slash.items.length && !event.ctrlKey && !event.metaKey) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -351,7 +359,7 @@
     }
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
-      put(event.shiftKey);
+      put(event.shiftKey ? !autoEnter() : autoEnter());
     }
   });
   $("composer-clear").addEventListener("click", () => {

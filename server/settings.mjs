@@ -53,6 +53,8 @@ export function validateSettings(input, { platform = process.platform, lenient =
     if (!FOLDER_ENV[id] || !value || typeof value !== "object") continue;
     const entry = {};
     if (typeof value.enabled === "boolean") entry.enabled = value.enabled;
+    // Composer: also press Enter after putting text in the CLI's input (only CLIs the page can type into).
+    if (value.sendEnter === true) entry.sendEnter = true;
     if (typeof value.folder === "string" && value.folder.trim()) {
       const folder = value.folder.trim();
       if (!isAbsolute(folder) || folder.length > 500) fail(`The folder for ${id} must be a full path.`);

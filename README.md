@@ -164,7 +164,9 @@ next to it:
     file path; nothing is moved or deleted.
   - **Settings**: show or hide each CLI (Pi, Claude Code, Codex), change where its folder is,
     pick the terminal **Open** uses, and switch on suggested replies with a local Ollama model.
-    Saved in `~/.cli-companion/settings.json`; changes apply at once.
+    For Pi, **Composer button** chooses whether the composer only puts text in Pi's input (you
+    press Enter, the default) or also presses Enter; Ctrl+Shift+Enter does the other one. Claude
+    Code and Codex stay copy-and-paste. Saved in `~/.cli-companion/settings.json`; changes apply at once.
     **Appearance**: theme (match this computer, light or dark), 12- or 24-hour times (or this
     computer's choice), and switches for cost estimates and
     for git branch and changes. For text size, use the browser zoom.

@@ -215,6 +215,16 @@
       <label class="set-field">${esc(source.label)} folder
         <input name="folder" value="${esc(entry.folder ?? "")}" placeholder="${esc(source.home?.usual ?? "")} (usual place)" spellcheck="false" autocomplete="off">
       </label>
+      ${
+        source.canType
+          ? `<label class="set-field narrow">Composer button
+        <select name="send-enter">
+          <option value="" ${entry.sendEnter ? "" : "selected"}>Put the text in ${esc(source.label)}'s input (you press Enter)</option>
+          <option value="1" ${entry.sendEnter ? "selected" : ""}>Put it in and press Enter (sends it)</option>
+        </select></label>
+      <p class="set-hint">Ctrl+Shift+Enter in the composer always does the other one.</p>`
+          : `<p class="set-hint">The composer copies text for ${esc(source.label)}; paste it into its terminal yourself.</p>`
+      }
     </fieldset>`;
   }
 
@@ -300,7 +310,8 @@
     for (const card of form.querySelectorAll(".set-card[data-source]")) {
       const enabled = card.querySelector('[name="enabled"]').checked;
       const folder = card.querySelector('[name="folder"]').value.trim();
-      sources[card.dataset.source] = { ...(enabled ? {} : { enabled: false }), ...(folder ? { folder } : {}) };
+      const sendEnter = card.querySelector('[name="send-enter"]')?.value === "1";
+      sources[card.dataset.source] = { ...(enabled ? {} : { enabled: false }), ...(folder ? { folder } : {}), ...(sendEnter ? { sendEnter } : {}) };
     }
     const body = {
       sources,
@@ -327,6 +338,7 @@
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || `HTTP ${res.status}`);
       data = out;
+      window.companionSettings = out.settings;
       window.applyPrefs?.(out.settings?.appearance);
       status = { text: "Saved ✓", kind: "ok" };
     } catch (error) {

@@ -58,3 +58,9 @@ test("validateSettings: appearance (theme, cost, git)", () => {
   assert.throws(() => validateSettings({ appearance: { theme: "neon" } }), SettingsError);
   assert.equal(validateSettings({ appearance: { theme: "neon" } }, { lenient: true }).appearance.theme, "system");
 });
+
+test("validateSettings: a CLI's composer button can also press Enter (true only)", () => {
+  assert.deepEqual(validateSettings({ sources: { pi: { sendEnter: true } } }).sources, { pi: { sendEnter: true } });
+  assert.deepEqual(validateSettings({ sources: { pi: { sendEnter: "yes" } } }).sources, {});
+  assert.deepEqual(validateSettings({ sources: { pi: { sendEnter: false } } }).sources, {});
+});
