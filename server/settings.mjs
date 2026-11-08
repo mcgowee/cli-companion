@@ -11,6 +11,9 @@
 // - suggest: { enabled, model } suggested replies in the composer from a LOCAL Ollama model
 //   (off by default; cloud models are refused).
 // - appearance: { theme: "system" | "light" | "dark", showCost, showGit, clock: "auto" | "12" | "24" } how the page looks.
+// - sshHost: what other machines type after `ssh` to reach this computer ("aegis",
+//   "me@100.64.1.2"); used by the terminal menu's lines on a headless server. Not set =
+//   user@hostname.
 //
 // Settings become environment overrides for createSources(), so environment variables and
 // settings work the same way. CLI_COMPANION_<ID>=0 in the real environment always wins.
@@ -116,6 +119,12 @@ export function validateSettings(input, { platform = process.platform, lenient =
     if (typeof look.showGit === "boolean") out.appearance.showGit = look.showGit;
     if (CLOCKS.includes(look.clock)) out.appearance.clock = look.clock;
     else if (look.clock !== undefined) fail("Unknown clock format.");
+  }
+  // SSH name for this computer: a plain host or user@host, nothing a shell could misread.
+  if (typeof input?.sshHost === "string" && input.sshHost.trim()) {
+    const host = input.sshHost.trim();
+    if (/^[\w.@:-]{1,100}$/.test(host)) out.sshHost = host;
+    else fail("The SSH name can only use letters, digits and . - _ @ : (up to 100 characters).");
   }
   // Terminal tab: may the companion run commands you send from it? Off unless you turn it on.
   if (input?.runCommands === true) out.runCommands = true;

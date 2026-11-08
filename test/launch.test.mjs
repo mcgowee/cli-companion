@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkSessionId, copyLine, headlessNote, isHeadless, LaunchError, openPlan, pidAncestry, quotePath, resumeCommand, sshAttachOption, tmuxSessionFromPanes, workspaceActions } from "../server/launch.mjs";
+import { checkSessionId, copyLine, defaultSshHost, headlessNote, isHeadless, LaunchError, openPlan, pidAncestry, quotePath, resumeCommand, sshAttachOption, tmuxSessionFromPanes, workspaceActions } from "../server/launch.mjs";
 import { createSources } from "../server/sources/index.mjs";
 
 test("commands come from the sources' fixed lists; session ids are checked", () => {
@@ -98,6 +98,19 @@ test("the headless menu: an ssh attach line for tmux, and a note naming the host
   assert.equal(option.command, "", "nothing for Open to run — it's a line to paste elsewhere");
   assert.match(headlessNote("aegis"), /no graphical terminal/i);
   assert.match(headlessNote("aegis"), /aegis/);
+});
+
+test("the SSH name: user@hostname unless Settings says otherwise, and only the default hints at Settings", () => {
+  // Not set in Settings: user@hostname, so at least the user is right.
+  const def = defaultSshHost();
+  assert.match(def, /^.+@.+$/);
+  assert.equal(sshAttachOption("charloop").copy, `ssh -t ${def} tmux attach -t 'charloop'`);
+  assert.equal(sshAttachOption("charloop", "aegis").copy, "ssh -t aegis tmux attach -t 'charloop'");
+  // The note points at Settings only while the name is the guessed default.
+  assert.match(headlessNote(), /SSH name for this computer/);
+  assert.match(headlessNote(def, { custom: false }), /Settings/);
+  assert.doesNotMatch(headlessNote("aegis", { custom: true }), /Settings/);
+  assert.match(headlessNote("aegis", { custom: true }), /aegis/);
 });
 
 test("openPlan: Linux terminals run a login shell that stays open", () => {

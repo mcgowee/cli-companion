@@ -260,6 +260,11 @@
             .join("")}</select>
         </label>
         <p class="set-hint">For the terminal icon beside a workspace or session. Copy always works.</p>
+        <label class="set-field narrow">SSH name for this computer
+          <input name="ssh-host" value="${esc(data.settings.sshHost ?? "")}" placeholder="${esc(data.sshDefault ?? "")} (usual)" spellcheck="false" autocomplete="off">
+        </label>
+        <p class="set-hint">What your other computers type after <code>ssh</code> to reach this one, such as <code>aegis</code> or
+          <code>me@100.64.1.2</code>. Used in the lines the terminal menu shows when this computer has no graphical terminal.</p>
 
         <h2>Terminal tab</h2>
         <label class="switch set-check"><input type="checkbox" name="run-commands" ${data.settings.runCommands ? "checked" : ""}>
@@ -336,6 +341,7 @@
       rev: data.rev,
       sources,
       terminal: form.querySelector('[name="terminal"]').value,
+      sshHost: form.querySelector('[name="ssh-host"]').value.trim(),
       port: form.querySelector('[name="port"]').value.trim(),
       runCommands: form.querySelector('[name="run-commands"]').checked,
       appearance: {

@@ -24,7 +24,7 @@ import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDash
 import { usageSummary } from "./usage.mjs";
 import { createTokenTracker } from "./token-usage.mjs";
 import { createSearchIndex } from "./search.mjs";
-import { copyLine, headlessNote, isHeadless, LaunchError, openPlan, pidAncestry, quotePath, resumeCommand, sshAttachOption, terminalsFor, tmuxSessionFromPanes, workspaceActions } from "./launch.mjs";
+import { copyLine, defaultSshHost, headlessNote, isHeadless, LaunchError, openPlan, pidAncestry, quotePath, resumeCommand, sshAttachOption, terminalsFor, tmuxSessionFromPanes, workspaceActions } from "./launch.mjs";
 import { handoffBrief, handoffFileName, saveHandoff, sessionMarkdown } from "./handoff.mjs";
 import { PLACES, setShortcut, shortcutStatus } from "./shortcut.mjs";
 import { frequentPrompts, loadPrompts, PromptError, savePrompts, validatePrompts } from "./prompts.mjs";
@@ -1388,6 +1388,7 @@ const server = createServer(async (req, res) => {
           : Boolean(process.env.CLI_COMPANION_PORT || process.env.PI_COMPANION_PORT),
         platform: process.platform,
         terminals: terminalsFor(),
+        sshDefault: defaultSshHost(),
         sources: describeSources(SOURCES),
       });
       return;
@@ -1419,14 +1420,21 @@ const server = createServer(async (req, res) => {
           // with the line that reaches a running tmux session from another computer.
           const headless = isHeadless();
           const options = launchOptions(target);
+          const sshHost = settings.sshHost || defaultSshHost();
           if (headless && target.running) {
             const tmux = tmuxSessionOf(target.pid);
-            if (tmux) options.unshift(sshAttachOption(tmux));
+            if (tmux) options.unshift(sshAttachOption(tmux, sshHost));
           }
-          sendJson(res, 200, { cwd: target.cwd, canOpen: !headless, platform: process.platform, ...(headless ? { note: headlessNote() } : {}), options });
+          sendJson(res, 200, {
+            cwd: target.cwd,
+            canOpen: !headless,
+            platform: process.platform,
+            ...(headless ? { note: headlessNote(sshHost, { custom: Boolean(settings.sshHost) }) } : {}),
+            options,
+          });
           return;
         }
-        if (isHeadless()) throw new LaunchError(headlessNote());
+        if (isHeadless()) throw new LaunchError(headlessNote(settings.sshHost || defaultSshHost(), { custom: Boolean(settings.sshHost) }));
         const option = launchOptions(target).find((o) => o.action === params.action);
         if (!option) throw new LaunchError("That isn't available here.");
         if (option.disabled) throw new LaunchError(option.disabled);

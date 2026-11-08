@@ -129,6 +129,18 @@ test("a hand edit that doesn't parse never becomes the live settings: the refres
   assert.equal((await readSettingsStrict(file)).port, 30145);
 });
 
+test("validateSettings: sshHost is a plain host or user@host, nothing a shell could misread", () => {
+  assert.equal(validateSettings({}).sshHost, undefined);
+  assert.equal(validateSettings({ sshHost: "" }).sshHost, undefined);
+  assert.equal(validateSettings({ sshHost: " aegis " }).sshHost, "aegis");
+  assert.equal(validateSettings({ sshHost: "mcgowee@100.72.12.1" }).sshHost, "mcgowee@100.72.12.1");
+  assert.equal(validateSettings({ sshHost: "me@host.tail1.ts.net" }).sshHost, "me@host.tail1.ts.net");
+  assert.throws(() => validateSettings({ sshHost: "host; rm -rf /" }), SettingsError);
+  assert.throws(() => validateSettings({ sshHost: "host name" }), SettingsError);
+  assert.throws(() => validateSettings({ sshHost: "a".repeat(101) }), SettingsError);
+  assert.equal(validateSettings({ sshHost: "bad host" }, { lenient: true }).sshHost, undefined);
+});
+
 test("validateSettings: port is optional, 1024–65535", () => {
   assert.equal(validateSettings({}).port, undefined);
   assert.equal(validateSettings({ port: "" }).port, undefined);

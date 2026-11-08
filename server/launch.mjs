@@ -13,7 +13,7 @@
 // offers only the lines to paste over SSH — for a Pi running inside tmux, an attach line.
 
 import { readFileSync } from "node:fs";
-import { hostname } from "node:os";
+import { hostname, userInfo } from "node:os";
 
 const SESSION_ID = /^[0-9a-f][0-9a-f-]{7,63}$/i;
 
@@ -146,9 +146,22 @@ export function isHeadless({ platform = process.platform, env = process.env } = 
   return platform !== "win32" && platform !== "darwin" && !env.DISPLAY && !env.WAYLAND_DISPLAY;
 }
 
-/** What the menu says instead of Open buttons on a headless computer. */
-export function headlessNote(host = hostname()) {
-  return `This computer has no graphical terminal, so Open can't work here. Copy a line and paste it into a terminal logged in to ${host} (for example over SSH).`;
+/**
+ * What other machines type after `ssh` to reach this one, when Settings (sshHost) doesn't say:
+ * user@hostname, so at least the user is right even if the name needs ~/.ssh/config on the
+ * other side.
+ */
+export function defaultSshHost() {
+  try {
+    return `${userInfo().username}@${hostname()}`;
+  } catch {
+    return hostname();
+  }
+}
+
+/** What the menu says instead of Open buttons on a headless computer. `custom` = sshHost is set. */
+export function headlessNote(host = defaultSshHost(), { custom = false } = {}) {
+  return `This computer has no graphical terminal, so Open can't work here. Copy a line and paste it into a terminal logged in to ${host} (for example over SSH).${custom ? "" : " If that name isn't how your other computers reach this one, set “SSH name for this computer” in Settings."}`;
 }
 
 /**
@@ -190,7 +203,7 @@ export function tmuxSessionFromPanes(panes, ancestry) {
 }
 
 /** The menu entry that reaches a running tmux session from another computer. */
-export function sshAttachOption(tmuxSession, host = hostname()) {
+export function sshAttachOption(tmuxSession, host = defaultSshHost()) {
   return {
     action: "ssh-attach",
     label: `Attach over SSH (tmux: ${tmuxSession})`,
