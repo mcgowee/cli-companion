@@ -36,6 +36,7 @@ import { createSources, describeSources, nativeId, sourceForId } from "./sources
 import { APP_ID, accessKey, companionPort, ensureServer, isPortUp, migrateStateFile, stateDir } from "./start.mjs";
 import { hasKey, keyCookie, lockedPage, needsKey, sameKey } from "./access.mjs";
 import { MAX_UPLOAD, saveUpload } from "./uploads.mjs";
+import { createRunner, encodedCommand, looksInteractive, MAX_COMMAND } from "./runner.mjs";
 import { gitSummary, listDir, makeFolder, readFileForView, resolveInside, reviewDiff, reviewStatus, WorkbenchError } from "./workbench.mjs";
 
 const HOST = "127.0.0.1";
@@ -362,6 +363,10 @@ function readRaw(req, limit) {
   });
 }
 
+/* ── Terminal tab (server/runner.mjs) ──────────────────── */
+
+const runner = createRunner();
+
 /* ── saved sessions (from disk) ───────────────────────── */
 
 /** id -> metadata of the latest scan */
@@ -553,8 +558,10 @@ function runOsascript(args) {
   });
 }
 
-async function openTerminal(cwd, command) {
+async function openTerminal(cwd, command, { typed = false } = {}) {
   const plans = openPlan(cwd, command, {
+    // A command you typed goes to PowerShell encoded, so nothing in it is misread on the way.
+    encoded: typed && process.platform === "win32" ? encodedCommand(command) : undefined,
     shell: process.platform === "win32" ? preferredShell() : undefined,
     terminal: settings.terminal,
     userShell: process.env.SHELL,
@@ -859,7 +866,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (req.method !== "GET" && !["/api/dashboards", "/api/favorites", "/api/folder", "/api/handoff", "/api/launch", "/api/prompts", "/api/remote", "/api/settings", "/api/shortcut", "/api/upload"].includes(url.pathname)) {
+    if (req.method !== "GET" && !["/api/dashboards", "/api/favorites", "/api/folder", "/api/handoff", "/api/launch", "/api/prompts", "/api/remote", "/api/settings", "/api/shortcut", "/api/upload", "/api/run", "/api/run/stop", "/api/run/open"].includes(url.pathname)) {
       res.writeHead(405).end();
       return;
     }
@@ -950,6 +957,64 @@ const server = createServer(async (req, res) => {
       }
       res.writeHead(200, { "content-type": image.mimeType, "cache-control": "private, max-age=3600" });
       res.end(image.data);
+      return;
+    }
+
+    if (url.pathname === "/api/run" || url.pathname.startsWith("/api/run/") || url.pathname === "/api/runs") {
+      // The Terminal tab. Every request needs the page header (reading output too), and only
+      // works with Settings → Terminal → "Let the companion run commands" on.
+      if (req.headers["x-pi-companion-page"] !== "1") {
+        res.writeHead(403).end();
+        return;
+      }
+      try {
+        if (url.pathname === "/api/runs") {
+          const id = url.searchParams.get("id") ?? "";
+          const cwd = id ? await workspaceRootFor(id).catch(() => "") : "";
+          sendJson(res, 200, { enabled: settings.runCommands === true, cwd, platform: process.platform, runs: cwd ? runner.list(cwd) : [] });
+          return;
+        }
+        if (url.pathname === "/api/run" && req.method === "GET") {
+          const run = runner.read(url.searchParams.get("run") ?? "", url.searchParams.get("from"));
+          if (!run) throw new WorkbenchError(404, "That run is gone (the companion restarted, or it was one of the oldest).");
+          sendJson(res, 200, run);
+          return;
+        }
+        if (url.pathname === "/api/run/stop") {
+          const body = JSON.parse((await readBody(req)) || "{}");
+          const run = runner.stop(String(body.run ?? ""));
+          if (!run) throw new WorkbenchError(404, "That run is gone.");
+          sendJson(res, 200, run);
+          return;
+        }
+        if (settings.runCommands !== true) {
+          throw new WorkbenchError(403, "Running commands is off. Turn it on in Settings → Terminal.");
+        }
+        const body = JSON.parse((await readBody(req)) || "{}");
+        const command = String(body.command ?? "").trim();
+        if (!command) throw new WorkbenchError(400, "Type a command first.");
+        if (command.length > MAX_COMMAND) throw new WorkbenchError(400, "That command is too long.");
+        const cwd = await workspaceRootFor(String(body.id ?? ""));
+        const info = await stat(cwd).catch(() => null);
+        if (!info?.isDirectory()) throw new WorkbenchError(404, "This session's folder doesn't exist any more.");
+        if (url.pathname === "/api/run/open") {
+          await openTerminal(cwd, command, { typed: true });
+          sendJson(res, 200, { ok: true });
+          return;
+        }
+        if (url.pathname !== "/api/run") throw new WorkbenchError(404, "not found");
+        const run = runner.start({
+          command,
+          cwd,
+          sessionId: String(body.id ?? ""),
+          shell: process.platform === "win32" ? preferredShell() : undefined,
+          userShell: process.env.SHELL,
+        });
+        sendJson(res, 200, { ...run, interactive: looksInteractive(command) });
+      } catch (error) {
+        const status = error instanceof WorkbenchError ? error.status : error instanceof LaunchError ? 400 : 400;
+        sendJson(res, status, { error: error.message });
+      }
       return;
     }
 
@@ -1505,6 +1570,7 @@ let shuttingDown = false;
 function shutDown(restart) {
   if (shuttingDown) return;
   shuttingDown = true;
+  runner.stopAll(); // Terminal tab commands end with the server (their output lives in it)
   console.log(`[companion] ${restart ? "restarting" : "stopping"} on request`);
   setTimeout(async () => {
     for (const client of clients) client.end();

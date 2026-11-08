@@ -120,7 +120,11 @@
   /** A code block with Copy / Add-to-composer buttons (handled by composer.js). */
   function codeBlock(code, lang = "") {
     const langTag = lang ? `<span class="lang">${escapeHtml(lang)}</span>` : "";
-    return `<div class="code-wrap" data-lang="${escapeHtml(lang)}"><div class="code-tools">${langTag}<button type="button" class="mini" data-copy>Copy</button><button type="button" class="mini" data-add title="Add to the composer">Add</button></div><pre><code>${escapeHtml(code)}</code></pre></div>`;
+    // Shell code gets a Terminal button (shown only when Settings → Terminal is on): it puts the
+    // command in the right panel's Terminal tab; you still press Run.
+    const shell = /^(powershell|ps|ps1|pwsh|shell|sh|bash|zsh|console|cmd|bat|batch|terminal|shell-session)$/i.test(lang);
+    const termBtn = shell ? `<button type="button" class="mini term-btn" data-term title="Put this in the Terminal tab (you press Run)">▶ Terminal</button>` : "";
+    return `<div class="code-wrap" data-lang="${escapeHtml(lang)}"><div class="code-tools">${langTag}${termBtn}<button type="button" class="mini" data-copy>Copy</button><button type="button" class="mini" data-add title="Add to the composer">Add</button></div><pre><code>${escapeHtml(code)}</code></pre></div>`;
   }
 
   window.renderMarkdown = render;

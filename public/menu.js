@@ -147,7 +147,9 @@
       <code>~/.cli-companion/remote.json</code>. It starts a program only when
       you click <b>Open</b> in a terminal menu or <b>Continue in …</b>, and only one of a fixed set of commands
       (a shell, <code>pi</code>, <code>pi -c</code>, <code>claude</code>, <code>codex</code>, resuming a listed
-      session, or one of those CLIs told to read a handoff brief), or a fresh copy of itself when you click <b>Restart server</b>.</p>
+      session, or one of those CLIs told to read a handoff brief), or a fresh copy of itself when you click <b>Restart server</b>.
+      The one exception is the <b>Terminal</b> tab, off unless you turn it on in Settings: it runs the command you
+      typed or put there, in the session's folder, only when you press <b>Run</b> (or <b>Open in terminal</b>); never from the phone.</p>
 
       <h2>Project</h2>
       <p><a href="https://github.com/mcgowee/cli-companion" target="_blank" rel="noopener">github.com/mcgowee/cli-companion</a>

@@ -260,6 +260,14 @@
         </label>
         <p class="set-hint">For the terminal icon beside a workspace or session. Copy always works.</p>
 
+        <h2>Terminal tab</h2>
+        <label class="switch set-check"><input type="checkbox" name="run-commands" ${data.settings.runCommands ? "checked" : ""}>
+          <span>Let the companion run commands</span></label>
+        <p class="set-hint">The right panel's <b>Terminal</b> tab runs a command in the session's folder
+          (${data.platform === "win32" ? "PowerShell" : "your shell"}) and shows its output, and code blocks in replies get a
+          <b>Terminal</b> button that puts the command there. Nothing runs until you press <b>Run</b>. Commands run as you,
+          with your permissions, so read them first. Not available from the phone.</p>
+
         <h2>Composer</h2>
         <div class="set-cards">${suggestCard()}</div>
 
@@ -326,6 +334,7 @@
       sources,
       terminal: form.querySelector('[name="terminal"]').value,
       port: form.querySelector('[name="port"]').value.trim(),
+      runCommands: form.querySelector('[name="run-commands"]').checked,
       appearance: {
         theme: form.querySelector('[name="theme"]').value,
         showCost: form.querySelector('[name="show-cost"]').checked,

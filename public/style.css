@@ -855,3 +855,26 @@ a.file-link.missing { text-decoration: line-through; opacity: 0.7; cursor: help;
   background: color-mix(in srgb, var(--bg) 85%, transparent); color: var(--text); }
 .composer.drop-here .composer-body { outline: 2px dashed var(--accent); outline-offset: 4px; border-radius: 10px; }
 .remote-view #composer-image { display: none; }
+
+/* Terminal tab (public/terminal.js) and the code-block button. */
+.term-btn { display: none; }
+.can-run .term-btn { display: inline-flex; }
+.remote-view .term-btn { display: none; }
+.term { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; }
+.term-off { padding: 14px; color: var(--muted); line-height: 1.5; }
+.term-cmd { width: 100%; box-sizing: border-box; font: 12.5px/1.45 var(--mono); padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--code); color: var(--text); resize: vertical; min-height: 54px; }
+.term-cmd:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); }
+.term-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.term-hint { margin: 0; font-size: 12px; color: var(--warn); }
+.term-run { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.term-head { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; padding: 6px 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.term-cmdline { font: 12px var(--mono); white-space: pre-wrap; word-break: break-all; }
+.term-st { font-size: 12px; white-space: nowrap; color: var(--muted); }
+.term-st.ok { color: var(--ok); } .term-st.failed { color: var(--bad); } .term-st.running { color: var(--accent); }
+.term-out { margin: 0; padding: 8px 10px; max-height: 50vh; overflow: auto; font: 12px/1.45 var(--mono); white-space: pre-wrap; word-break: break-word; background: var(--code); }
+.term-history { display: flex; flex-direction: column; gap: 2px; }
+.term-past { display: flex; gap: 8px; align-items: center; text-align: left; border: 0; background: none; padding: 4px 6px; border-radius: 6px; cursor: pointer; color: var(--text); }
+.term-past:hover { background: var(--accent-soft); }
+.term-past code { font: 12px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.term-past-st.done { color: var(--ok); } .term-past-st.failed { color: var(--bad); } .term-past-st.stopped { color: var(--muted); }

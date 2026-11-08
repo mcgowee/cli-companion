@@ -77,9 +77,10 @@ function appleString(text) {
 }
 
 /** One way to open a terminal, or undefined if this terminal id doesn't apply. */
-function plan(id, cwd, command, { platform, shell, userShell }) {
+function plan(id, cwd, command, { platform, shell, userShell, encoded }) {
   if (platform === "win32") {
-    const shellArgs = command ? ["-NoExit", "-Command", command] : ["-NoLogo"];
+    // encoded: a command you typed, as PowerShell -EncodedCommand (no quoting or ";" trouble).
+    const shellArgs = encoded ? ["-NoExit", "-EncodedCommand", encoded] : command ? ["-NoExit", "-Command", command] : ["-NoLogo"];
     if (id === "wt") {
       // Windows Terminal treats ";" in its arguments as a separator between its own commands.
       if (String(cwd).includes(";")) return undefined;
@@ -136,9 +137,9 @@ function plan(id, cwd, command, { platform, shell, userShell }) {
  * order, each { file, args, cwd? } for spawn() (no shell). `terminal` is a TERMINALS id, or
  * "auto" to try them all. With a command the window stays open after it ends.
  */
-export function openPlan(cwd, command, { platform = process.platform, shell = "pwsh", terminal = "auto", userShell } = {}) {
+export function openPlan(cwd, command, { platform = process.platform, shell = "pwsh", terminal = "auto", userShell, encoded } = {}) {
   const ids = terminal === "auto" ? terminalsFor(platform).map((t) => t.id) : [terminal];
-  const plans = ids.map((id) => plan(id, cwd, command, { platform, shell, userShell })).filter(Boolean);
+  const plans = ids.map((id) => plan(id, cwd, command, { platform, shell, userShell, encoded })).filter(Boolean);
   if (!plans.length) {
     if (platform === "win32" && String(cwd).includes(";")) {
       throw new LaunchError("That folder name contains ';', which Windows Terminal can't open. Use Copy.");

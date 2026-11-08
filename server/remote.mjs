@@ -43,6 +43,8 @@ export function classifyRequest({ host, headers }, { port, remote = REMOTE_DEFAU
 /** May a phone (remote request) do this? */
 export function remoteAllowed(method, pathname, remote = REMOTE_DEFAULTS) {
   if (pathname.startsWith("/bridge/") || pathname === "/ingest") return false;
+  // The Terminal tab (running commands, reading their output) is for the computer only.
+  if (pathname === "/api/run" || pathname.startsWith("/api/run/") || pathname === "/api/runs") return false;
   if (method === "GET" || method === "HEAD") return true;
   const needs = REMOTE_WRITES[pathname];
   return Boolean(needs && remote[needs]);

@@ -131,6 +131,7 @@
     $("wb-files").hidden = wb.tool !== "files";
     $("wb-review").hidden = wb.tool !== "review";
     $("wb-apps").hidden = wb.tool !== "apps";
+    $("wb-terminal").hidden = wb.tool !== "terminal";
     renderAppsDot();
   }
 
@@ -144,6 +145,8 @@
       void loadPinned();
       renderApps();
       renderAppsDot();
+    } else if (wb.tool === "terminal") {
+      void window.terminalTab?.refresh(wb.sessionId);
     } else {
       loadReview();
     }
@@ -741,6 +744,14 @@
   /* ── hooks from app.js ───────────────────────────────── */
 
   window.workbench = {
+    /** Show a tab ("files", "review", "apps", "terminal"), opening the panel if needed. */
+    openTool(tool) {
+      wb.tool = tool;
+      savePref("pi-companion.wbTool", wb.tool);
+      renderTabs();
+      if (!wb.open) setOpen(true);
+      else refreshTool();
+    },
     /** The selected session changed (or its history reloaded). */
     update({ sessionId, cwd, history, historyChanged, working = false }) {
       const workspaceChanged = (cwd ?? "").toLowerCase() !== (wb.cwd ?? "").toLowerCase();

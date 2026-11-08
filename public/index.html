@@ -150,6 +150,10 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M3.5 9h17M7 6.8h.01M9.5 6.8h.01"/></svg>
           Apps<span class="wb-dot" id="apps-dot" hidden></span>
         </button>
+        <button class="wb-tab" type="button" role="tab" data-tool="terminal">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M7.5 9.5l3 2.5-3 2.5M12.5 15h4"/></svg>
+          Terminal
+        </button>
         <span class="wb-spacer"></span>
         <button class="icon-btn" id="wb-close" type="button" aria-label="Close panel" title="Close (Ctrl+Alt+B)">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
@@ -158,6 +162,7 @@
       <div class="wb-body" id="wb-files" role="tabpanel"></div>
       <div class="wb-body" id="wb-review" role="tabpanel" hidden></div>
       <div class="wb-body" id="wb-apps" role="tabpanel" hidden></div>
+      <div class="wb-body" id="wb-terminal" role="tabpanel" hidden></div>
     </aside>
   </div>
   <script src="prefs.js"></script>
@@ -170,6 +175,7 @@
   <script src="suggest.js"></script>
   <script src="app.js"></script>
   <script src="workbench.js"></script>
+  <script src="terminal.js"></script>
   <script src="launch.js"></script>
   <script src="dashboards.js"></script>
   <script src="settings.js"></script>

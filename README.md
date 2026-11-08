@@ -109,7 +109,7 @@ next to it:
 - **Resizable panels**: drag the inner edge of the left or right panel (or focus it and use
   ←/→; Shift for bigger steps). Double-click an edge to reset its width. Widths are
   remembered, and the transcript always keeps at least 360 px.
-- **Right panel (Files, Review and Apps)** for the selected session's
+- **Right panel (Files, Review, Apps and Terminal)** for the selected session's
   folder. Toggle it with the button at the top right or **Ctrl+Alt+B**.
   - **Files**: browse the folder tree and read files with line numbers. Markdown is
     rendered (with a Source toggle) and images are shown. **New folder**: the folder-plus button
@@ -119,6 +119,13 @@ next to it:
     **Branch** (everything since the branch split from main/master), with +/− counts and
     a coloured diff per file. **Changed in this session** lists the files Pi edited or
     wrote in the open session.
+  - **Terminal** (off until you turn it on in Settings → **Terminal tab**): run a command in the
+    session's folder (PowerShell on Windows, your login shell elsewhere) and watch its output, with
+    **Stop** and the last few commands to look at again. Code blocks in replies (PowerShell, shell,
+    cmd…) get a **▶ Terminal** button that puts the command in the box; **nothing runs until you
+    press Run**. Commands get no input, so programs you type into (codex, pi, ssh, a REPL) go to
+    **Open in terminal**, which opens a real terminal window in that folder with the command. Output
+    is kept in memory only. Not available from the phone.
   - **Apps**: when the **last exchange** (your last message and the reply to it) names an app, the app
     is listed here (only that exchange is read, to keep noise down): local web addresses such as
     `http://localhost:5173` (marked Running or Not running), and files inside the session's

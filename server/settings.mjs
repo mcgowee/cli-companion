@@ -85,6 +85,8 @@ export function validateSettings(input, { platform = process.platform, lenient =
     if (CLOCKS.includes(look.clock)) out.appearance.clock = look.clock;
     else if (look.clock !== undefined) fail("Unknown clock format.");
   }
+  // Terminal tab: may the companion run commands you send from it? Off unless you turn it on.
+  if (input?.runCommands === true) out.runCommands = true;
   // The port the companion uses next time it starts (CLI_COMPANION_PORT still wins). Not set = 30143.
   if (input?.port !== undefined && input.port !== null && input.port !== "") {
     const port = Number(input.port);
