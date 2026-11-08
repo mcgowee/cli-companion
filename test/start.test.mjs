@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { hasKey, keyCookie, needsKey, sameKey } from "../server/access.mjs";
-import { accessKey, companionOpenUrl, companionPort, companionUrl, migrateStateFile, removeRuntimeFile, rotateLog, runtimeFile, runtimePort, stateDir, writeRuntimeFile } from "../server/start.mjs";
+import { accessKey, companionOpenUrl, companionPort, companionUrl, migrateStateFile, removeRuntimeFile, rotateLog, runtimeFile, runtimePort, shutdownPlan, stateDir, writeRuntimeFile } from "../server/start.mjs";
 
 const tempHome = () => ({ CLI_COMPANION_HOME: mkdtempSync(join(tmpdir(), "companion-home-")) });
 
@@ -74,6 +74,16 @@ test("removeRuntimeFile: a server only removes its own file", () => {
   removeRuntimeFile({ pid: 1234, env: home }); // its own: removed
   assert.equal(existsSync(runtimeFile(home)), false);
   removeRuntimeFile({ pid: 1234, env: home }); // already gone: no error
+});
+
+test("shutdownPlan: under systemd a restart exits non-zero for the manager; elsewhere we spawn our own", () => {
+  // Plain start (Windows, macOS, Linux without systemd): restart spawns the replacement, exit 0.
+  assert.deepEqual(shutdownPlan(true, {}), { spawnReplacement: true, exitCode: 0 });
+  assert.deepEqual(shutdownPlan(false, {}), { spawnReplacement: false, exitCode: 0 });
+  // Started by systemd (INVOCATION_ID set): restart = exit 1 and let Restart=on-failure act;
+  // stop = exit 0 so the unit stays stopped.
+  assert.deepEqual(shutdownPlan(true, { INVOCATION_ID: "4ad1f4215f1340d1a2cbd0314c0b8d44" }), { spawnReplacement: false, exitCode: 1 });
+  assert.deepEqual(shutdownPlan(false, { INVOCATION_ID: "4ad1f4215f1340d1a2cbd0314c0b8d44" }), { spawnReplacement: false, exitCode: 0 });
 });
 
 test("accessKey: made once, then the same key; the open address carries it", () => {

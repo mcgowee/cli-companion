@@ -33,7 +33,7 @@ import { loadSettings, readSettingsStrict, saveSettings, SettingsError, settings
 import { execFileSync, spawn } from "node:child_process";
 import { isProcessAlive } from "./fsutil.mjs";
 import { createSources, describeSources, nativeId, sourceForId } from "./sources/index.mjs";
-import { APP_ID, accessKey, companionPort, ensureServer, isPortUp, migrateStateFile, removeRuntimeFile, stateDir, writeRuntimeFile } from "./start.mjs";
+import { APP_ID, accessKey, companionPort, ensureServer, isPortUp, migrateStateFile, removeRuntimeFile, shutdownPlan, stateDir, writeRuntimeFile } from "./start.mjs";
 import { hasKey, keyCookie, lockedPage, needsKey, sameKey } from "./access.mjs";
 import { MAX_UPLOAD, saveUpload } from "./uploads.mjs";
 import { createRunner, encodedCommand, looksInteractive, MAX_COMMAND } from "./runner.mjs";
@@ -1650,19 +1650,20 @@ function shutDown(restart) {
   if (shuttingDown) return;
   shuttingDown = true;
   runner.stopAll(); // Terminal tab commands end with the server (their output lives in it)
-  console.log(`[companion] ${restart ? "restarting" : "stopping"} on request`);
+  const plan = shutdownPlan(restart);
+  console.log(`[companion] ${restart ? "restarting" : "stopping"} on request${restart && !plan.spawnReplacement ? " (exiting for systemd to start the new code)" : ""}`);
   setTimeout(async () => {
     for (const client of clients) client.end();
     server.close();
     server.closeAllConnections();
-    if (restart) {
+    if (plan.spawnReplacement) {
       for (let i = 0; i < 20 && (await isPortUp(PORT)); i++) await new Promise((r) => setTimeout(r, 100));
       const result = await ensureServer({ port: PORT, env: process.env });
       if (result.error) console.error(`[companion] restart failed: ${result.error}`);
     }
     // Only if it's still ours: on a restart the fresh server has already written its own.
     removeRuntimeFile();
-    process.exit(0);
+    process.exit(plan.exitCode);
   }, 100);
 }
 

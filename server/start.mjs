@@ -197,6 +197,18 @@ export async function stopServer(port = companionPort()) {
   return { stopped: false, error: `The server on ${companionUrl(port)} didn't stop.` };
 }
 
+/**
+ * How the server should go down. Under systemd (INVOCATION_ID is set by the manager for the
+ * processes it starts), a restart means "exit non-zero and let Restart=on-failure bring the new
+ * code up" — spawning our own replacement would race the manager's. Anywhere else (Windows,
+ * macOS, a plain Linux start) a restart spawns the replacement itself and exits 0, as before.
+ * A stop always exits 0, so an on-failure unit stays stopped.
+ */
+export function shutdownPlan(restart, env = process.env) {
+  const systemd = Boolean(env.INVOCATION_ID);
+  return { spawnReplacement: Boolean(restart) && !systemd, exitCode: restart && systemd ? 1 : 0 };
+}
+
 /** The running Node if it is plain `node`, else `node` on PATH (Pi may be a standalone binary). */
 export function nodeBinary() {
   return /^node(\.exe)?$/i.test(basename(process.execPath)) ? process.execPath : "node";
