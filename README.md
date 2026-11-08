@@ -3,7 +3,8 @@
 A live side window for coding-agent CLIs: [Pi](https://pi.dev), Claude Code and Codex. Keep
 working in the terminal; the companion shows the same session with formatted markdown,
 tool calls and their output, images, thinking, context usage, and **compaction as it
-happens**. You don't need Pi to use it.
+happens**. You don't need Pi to use it. Made and tested on Windows; macOS and Linux are
+experimental (see [Limits](#limits)).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
@@ -56,7 +57,7 @@ next to it:
   `claude --resume <id>`, `codex resume <id>`). For a running session the menu offers
   **Terminal here** and says where the session is open (a terminal, or the Claude desktop app)
   instead of resuming it twice. Each option has **Copy** (the line to paste yourself, such as
-  `cd 'C:\AI\pi'; pi -c` in PowerShell) and **Open**, which starts a new terminal window in
+  `cd 'C:\code\my-app'; pi -c` in PowerShell on Windows) and **Open**, which starts a new terminal window in
   that folder running the command: Windows Terminal or a PowerShell window on Windows,
   Terminal or iTerm2 on macOS, and the first terminal found on Linux (x-terminal-emulator,
   GNOME Terminal, Konsole, Xfce Terminal, kitty, Alacritty, WezTerm, xterm). Which one is set
@@ -102,7 +103,7 @@ next to it:
 - **Resizable panels**: drag the inner edge of the left or right panel (or focus it and use
   ←/→; Shift for bigger steps). Double-click an edge to reset its width. Widths are
   remembered, and the transcript always keeps at least 360 px.
-- **Right panel (Files, Review and Apps)**, like pi-gui's workbench, for the selected session's
+- **Right panel (Files, Review and Apps)** for the selected session's
   folder. Toggle it with the button at the top right or **Ctrl+Alt+B**.
   - **Files**: browse the folder tree and read files with line numbers. Markdown is
     rendered (with a Source toggle) and images are shown. **New folder**: the folder-plus button
@@ -190,7 +191,8 @@ next to it:
 
 ## Install
 
-Needs [Node.js](https://nodejs.org) 20 or newer.
+Needs [Node.js](https://nodejs.org) 20 or newer, and [Git](https://git-scm.com) (npm uses it to
+fetch the package from GitHub; the Review panel uses it too).
 
 **Without Pi** (Claude Code, or just to look around):
 
@@ -203,9 +205,9 @@ app window if Chrome, Chromium or Edge is installed, otherwise in your default b
 have the `cli-companion` command on your PATH, install it once:
 
 ```bash
-npm install -g github:mcgowee/cli-companion
+npm install -g git+https://github.com/mcgowee/cli-companion.git
 cli-companion              # start (if needed) and open the window
-cli-companion --no-open    # start the server only
+cli-companion --no-open    # start the server only; prints the address to open
 cli-companion --foreground # run the server in this terminal; Ctrl+C stops it
 cli-companion --restart    # stop the running server, start a fresh one, open the window
 cli-companion --stop       # stop the running server
@@ -214,8 +216,9 @@ cli-companion --help
 ```
 
 The server keeps running in the background after the command exits (closing the window
-doesn't stop it; use `--stop`, or **Restart server** on the About page). You can also open
-<http://127.0.0.1:30143> yourself.
+doesn't stop it; use `--stop`, or **Restart server** on the About page). To open it in another
+browser, run `cli-companion --no-open` and open the address it prints: it carries your access
+key (see [Privacy](#privacy)); plain <http://127.0.0.1:30143> only shows how to get in.
 
 **A shortcut to click:** Settings → **Shortcut** → **Add** (or `cli-companion --shortcut`) puts
 a **CLI Companion** shortcut, with its own icon, in the Start menu, or on the desktop. It starts
@@ -223,7 +226,8 @@ the companion if it isn't running and opens the window, with no terminal; right-
 it to the taskbar or Start. With Chrome, the window groups under that pin, and pinning the open
 window pins the shortcut (not plain Chrome); with Edge, pin the shortcut itself. On Linux it is a `.desktop` file in `~/.local/share/applications`;
 macOS isn't supported yet. The shortcut runs the copy that made it, so remove it in Settings
-before you uninstall.
+before you uninstall. It can't be made from an `npx` run (npm clears that copy); install with
+`npm install -g` first.
 
 **With Pi**, install it as a Pi package. This adds the live view of Pi sessions (status,
 streaming text, tools, compaction) and **Put in Pi's input**:
@@ -262,20 +266,49 @@ Pi (interactive) ──events──► companion server ──SSE──► windo
 - The **server** (Node built-ins only, no dependencies) listens on `127.0.0.1` only. It
   builds the workspace list from Pi's sessions folder, reading only the start and end of
   each file (session files can be hundreds of MB with images), cached until a file
-  changes. It reads history only from inside that folder and keeps no session text on disk; the only
-  files it writes are its own (settings, favorites, custom dashboard list, and token counts per
-  session file), in `~/.cli-companion`.
+  changes. It reads history only from inside that folder and keeps no session text on disk
+  except handoff briefs you ask for. It never writes the CLIs' own files; what it does write
+  is listed under [Privacy](#privacy).
   The right panel only reads inside the folder of a session it knows (the page sends a
   session id, never a path), rejects `..` and symlinks that lead outside it, and runs
   only read-only `git` commands. Its one write, New folder, also stays inside that folder and
   needs the page's own request header. App files from that folder are sent with a sandbox policy. Requests whose `Host` is not `127.0.0.1`/`localhost`
-  are refused, which blocks DNS-rebinding attacks from web pages.
+  are refused, which blocks DNS-rebinding attacks from web pages, and every request for session
+  data must carry the access key (see [Privacy](#privacy)).
 - **Sending to Pi**: Pi never opens a port. The extension in each interactive Pi keeps one
   request open to the server (`/bridge/inbox`) and receives only commands for its own
   session; it pastes the text with Pi's `ctx.ui.pasteToEditor` and reports back. The page's
   send request needs a custom header (a cross-site page can't add one without a CORS
   preflight, which is never answered), and a command nobody picks up within 20 s is dropped.
 - The **window** is plain HTML and JavaScript: no build step and no CDN.
+
+## Privacy
+
+Everything stays on this computer. The server listens on `127.0.0.1` only, and every request
+for your sessions must carry this computer's **access key** (`~/.cli-companion/access-key`,
+readable only by you), so other accounts on a shared computer can't read your transcripts.
+The window gets the key once in its address and keeps it as a cookie; the Pi extension and
+the `cli-companion` command send it as a header. With phone access on, your phone is checked
+by your Tailscale account instead.
+
+What the companion writes (all in `~/.cli-companion`, or `CLI_COMPANION_HOME`, unless noted):
+
+| File | What |
+|---|---|
+| `settings.json` | The Settings page |
+| `access-key` | The access key (made on first start) |
+| `favorites.json`, `dashboards.json`, `prompts.json` | Starred items, custom dashboards, saved prompts |
+| `token-usage.json` | Token counts per session file (a cache; safe to delete) |
+| `handoffs/` | Handoff briefs you made (newest 20 kept) |
+| `remote.json` | Phone access on/off and your Tailscale name |
+| `server.log` (and `server.log.1`) | The background server's output, capped at 2 MB |
+| `browser-profile/` | The app window's own Chrome/Edge profile |
+| Start menu / desktop | The **CLI Companion** shortcut, only if you add one |
+| `tailscale serve` | One forwarding entry, only while phone access is on |
+| A session's folder | **New folder** in the Files panel, only when you make one |
+
+It never writes the CLIs' files (Pi's, Claude Code's or Codex's sessions and settings). Suggested
+replies use a local [Ollama](https://ollama.com) model only, and only if you turn them on.
 
 ## Settings
 
@@ -284,14 +317,15 @@ variables (a `CLI_COMPANION_<CLI>=0` variable always hides that CLI, whatever th
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `CLI_COMPANION_PORT` | `30143` | Port for the server and the extension (`PI_COMPANION_PORT` also works) |
+| `CLI_COMPANION_PORT` | `30143` | Port for the server and the extension (`PI_COMPANION_PORT` also works); wins over the port in Settings |
 | `PI_CODING_AGENT_DIR` | `~/.pi/agent` | Pi's folder (sessions are read from `sessions/`) |
 | `CLAUDE_CONFIG_DIR` | `~/.claude` | Claude Code's folder (transcripts are read from `projects/`) |
 | `CLI_COMPANION_CLAUDE` | on | Set to `0` to hide Claude Code sessions (`PI_COMPANION_CLAUDE` also works) |
 | `CODEX_HOME` | `~/.codex` | Codex's folder (sessions are read from `sessions/`) |
 | `CLI_COMPANION_CODEX` | on | Set to `0` to hide Codex sessions |
 | `CLI_COMPANION_PI` | on | Set to `0` to hide saved Pi sessions |
-| `CLI_COMPANION_HOME` | `~/.cli-companion` | The companion's own files: settings, custom dashboards, server log, app-window browser profile |
+| `CLI_COMPANION_HOME` | `~/.cli-companion` | The companion's own files (see [Privacy](#privacy)) |
+| `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama for suggested replies (only an address on this computer is used) |
 
 Older versions kept these files in `~/.pi/agent/companion/`; the dashboard list is copied
 over on first start.
@@ -300,9 +334,11 @@ over on first start.
 
 - Images from the composer, and pulling Pi's draft into the composer for editing, are planned.
 - Past sessions open read-only; resume one with the terminal icon beside it.
-- Tested on Windows 11 with Pi 1.4, Claude Code 2.1 and Codex CLI 0.166. macOS and Linux use
-  the same code paths but have not been tested yet; reports welcome. There, a running Codex is
-  recognised only by recent writes to its session file.
+- Tested on Windows 11 with Pi 1.4, Claude Code 2.1 and Codex CLI 0.166. **macOS and Linux are
+  experimental**: they use the same code but haven't been tested yet; reports welcome. There, a
+  running Codex is recognised only by recent writes to its session file, and on macOS **Open**
+  needs permission to control Terminal or iTerm2 (System Settings → Privacy & Security →
+  Automation).
 
 ## Develop
 

@@ -140,6 +140,10 @@ function git(root, args, { allowExit1 = false } = {}) {
       { timeout: 15_000, maxBuffer: 32 * 1024 * 1024, windowsHide: true },
       (error, stdout, stderr) => {
         if (error && !(allowExit1 && error.code === 1)) {
+          if (error.code === "ENOENT") {
+            reject(new WorkbenchError(501, "Git isn't installed (or isn't on your PATH), so changes can't be shown. Install it from git-scm.com."));
+            return;
+          }
           reject(new WorkbenchError(500, (stderr || error.message).trim().split("\n")[0]));
           return;
         }

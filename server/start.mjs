@@ -2,9 +2,15 @@
 // command (bin/cli-companion.mjs) and the Pi extension's /companion command.
 //
 // Node built-ins only. The server runs detached so it outlives whatever started it.
+//
+// Access key: a random key in ~/.cli-companion/access-key (readable only by you) that every
+// request from this computer must carry: the window gets it once in its address (?key=, turned
+// into a cookie), the Pi extension and this command send it as a header. It keeps other accounts
+// on a shared computer out of your transcripts.
 
 import { execFileSync, spawn } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, openSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { createConnection } from "node:net";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -14,10 +20,51 @@ export const APP_ID = "cli-companion";
 export const DEFAULT_PORT = 30143;
 export const SERVER_SCRIPT = fileURLToPath(new URL("./server.mjs", import.meta.url));
 
-/** The port: CLI_COMPANION_PORT, else the older PI_COMPANION_PORT, else 30143. */
+const validPort = (value) => Number.isInteger(value) && value > 0 && value < 65536;
+
+/**
+ * The port: CLI_COMPANION_PORT (or the older PI_COMPANION_PORT), else the port in Settings
+ * (~/.cli-companion/settings.json), else 30143. The command and the Pi extension both read it,
+ * so they agree.
+ */
 export function companionPort(env = process.env) {
-  const value = Number.parseInt(env.CLI_COMPANION_PORT ?? env.PI_COMPANION_PORT ?? "", 10);
-  return Number.isInteger(value) && value > 0 && value < 65536 ? value : DEFAULT_PORT;
+  const fromEnv = Number.parseInt(env.CLI_COMPANION_PORT ?? env.PI_COMPANION_PORT ?? "", 10);
+  if (validPort(fromEnv)) return fromEnv;
+  try {
+    const saved = JSON.parse(readFileSync(join(stateDir(env), "settings.json"), "utf8"))?.port;
+    if (validPort(saved)) return saved;
+  } catch {
+    // no settings yet
+  }
+  return DEFAULT_PORT;
+}
+
+export { ACCESS_HEADER } from "./access.mjs";
+import { ACCESS_HEADER } from "./access.mjs";
+
+/** This computer's access key (made on first use, readable only by you). */
+export function accessKey(env = process.env) {
+  const file = join(stateDir(env), "access-key");
+  try {
+    const key = readFileSync(file, "utf8").trim();
+    if (/^[a-f0-9]{32,}$/.test(key)) return key;
+  } catch {
+    // make one below
+  }
+  const key = randomBytes(24).toString("hex");
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, `${key}\n`, { mode: 0o600 });
+  try {
+    chmodSync(file, 0o600);
+  } catch {
+    // Windows: the file is in your own profile folder, which other accounts can't read.
+  }
+  return key;
+}
+
+/** The address to open in a browser: carries the key once; the server swaps it for a cookie. */
+export function companionOpenUrl(port = companionPort(), env = process.env) {
+  return `${companionUrl(port)}/?key=${accessKey(env)}`;
 }
 
 export function companionUrl(port = companionPort()) {
@@ -86,7 +133,7 @@ export async function stopServer(port = companionPort()) {
   try {
     const res = await fetch(`${companionUrl(port)}/api/server`, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-pi-companion-page": "1" },
+      headers: { "content-type": "application/json", "x-pi-companion-page": "1", [ACCESS_HEADER]: accessKey() },
       body: JSON.stringify({ action: "stop" }),
       signal: AbortSignal.timeout(3000),
     });
@@ -106,6 +153,38 @@ export function nodeBinary() {
   return /^node(\.exe)?$/i.test(basename(process.execPath)) ? process.execPath : "node";
 }
 
+const LOG_LIMIT = 2 * 1024 * 1024;
+
+/** Keep server.log from growing without end: past 2 MB it becomes server.log.1 (one old copy). */
+export function rotateLog(logPath, limit = LOG_LIMIT) {
+  try {
+    if (statSync(logPath).size > limit) renameSync(logPath, `${logPath}.1`);
+  } catch {
+    // no log yet, or it's in use
+  }
+}
+
+/**
+ * Spawn a detached helper without letting a missing program crash the caller (inside Pi, an
+ * unhandled 'error' event would take Pi down). Resolves with an error message, or "" once started.
+ */
+function spawnSafely(command, args, options) {
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = spawn(command, args, options);
+    } catch (error) {
+      resolve(error.message);
+      return;
+    }
+    child.once("error", (error) => resolve(error.code === "ENOENT" ? `${command} wasn't found` : error.message));
+    child.once("spawn", () => {
+      child.unref();
+      resolve("");
+    });
+  });
+}
+
 /**
  * Start the server detached if nothing is on the port yet.
  * Returns { started: boolean, error?: string, logPath }.
@@ -115,14 +194,17 @@ export async function ensureServer({ port = companionPort(), env = process.env }
   const logPath = join(dir, "server.log");
   if (await isPortUp(port)) return { started: false, logPath };
   mkdirSync(dir, { recursive: true });
+  rotateLog(logPath);
   const log = openSync(logPath, "a");
-  const child = spawn(nodeBinary(), [SERVER_SCRIPT], {
+  const failed = await spawnSafely(nodeBinary(), [SERVER_SCRIPT], {
     detached: true,
     stdio: ["ignore", log, log],
     windowsHide: true,
-    env: { ...env, CLI_COMPANION_PORT: String(port) },
+    // The server gets its port in CLI_COMPANION_PORT; CLI_COMPANION_PORT_SET says whether you set
+    // one yourself (so Settings can say the environment wins over its port).
+    env: { ...env, CLI_COMPANION_PORT: String(port), CLI_COMPANION_PORT_SET: env.CLI_COMPANION_PORT || env.PI_COMPANION_PORT ? "1" : "0" },
   });
-  child.unref();
+  if (failed) return { started: false, logPath, error: `Couldn't start the companion server: ${failed}. Is Node.js on your PATH?` };
   for (let i = 0; i < 40; i++) {
     await new Promise((r) => setTimeout(r, 250));
     if (await isPortUp(port)) return { started: true, logPath };
@@ -168,21 +250,22 @@ export function findAppBrowser() {
   return undefined;
 }
 
-/** Open the companion as an app window (its own browser profile), or in the default browser. */
-export function openWindow({ port = companionPort(), env = process.env } = {}) {
-  const url = companionUrl(port);
+/**
+ * Open the companion as an app window (its own browser profile), or in the default browser.
+ * Never throws for a missing program; resolves { url, error? } so the caller can print the
+ * address instead.
+ */
+export async function openWindow({ port = companionPort(), env = process.env } = {}) {
+  const url = companionOpenUrl(port, env);
   const browser = findAppBrowser();
   const detached = { detached: true, stdio: "ignore", windowsHide: true };
+  let failed;
   if (browser) {
-    spawn(
-      browser,
-      [`--app=${url}`, `--user-data-dir=${join(stateDir(env), "browser-profile")}`, "--window-size=1100,900"],
-      detached,
-    ).unref();
-  } else if (process.platform === "win32") {
-    spawn("explorer.exe", [url], detached).unref();
-  } else {
-    spawn(process.platform === "darwin" ? "open" : "xdg-open", [url], detached).unref();
+    failed = await spawnSafely(browser, [`--app=${url}`, `--user-data-dir=${join(stateDir(env), "browser-profile")}`, "--window-size=1100,900"], detached);
   }
-  return url;
+  if (!browser || failed) {
+    const opener = process.platform === "win32" ? "explorer.exe" : process.platform === "darwin" ? "open" : "xdg-open";
+    failed = await spawnSafely(opener, [url], detached);
+  }
+  return { url, error: failed || undefined };
 }

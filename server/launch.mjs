@@ -5,8 +5,9 @@
 // (server/sources/*.mjs: startActions and resumeCommand); the server starts them with spawn()
 // (an argument list, no shell).
 //
-// Opening is Windows-only for now (Windows Terminal, else a PowerShell window); elsewhere the
-// menu offers Copy only.
+// Open uses the terminal picked in Settings: on Windows, Windows Terminal (else a PowerShell
+// window); on macOS, Terminal or iTerm2 (through osascript); on Linux, the first terminal
+// program found. Copy always works. macOS and Linux are less tested than Windows.
 
 const SESSION_ID = /^[0-9a-f][0-9a-f-]{7,63}$/i;
 
@@ -22,7 +23,7 @@ export function checkSessionId(sessionId) {
 export function workspaceActions(sources) {
   return [
     { action: "terminal", label: "Terminal here", command: "" },
-    ...sources.filter((s) => s.enabled && (s.installed || s.live)).flatMap((s) => s.startActions),
+    ...sources.filter((s) => s.enabled && s.installed).flatMap((s) => s.startActions),
   ];
 }
 

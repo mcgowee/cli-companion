@@ -3,24 +3,31 @@
 // Works without Pi; the Pi extension's /companion command does the same thing from inside Pi.
 
 import { readFileSync } from "node:fs";
-import { companionPort, companionUrl, ensureServer, isCompanion, isPortUp, openWindow, stopServer } from "../server/start.mjs";
+import { companionOpenUrl, companionPort, companionUrl, ensureServer, isCompanion, isPortUp, openWindow, stopServer } from "../server/start.mjs";
 
 const HELP = `CLI Companion: a live side window for coding-agent CLIs (Pi, Claude Code, Codex).
 
 Usage: cli-companion [options]
 
   (no options)      Start the server if needed and open the window
-  --no-open         Start the server only; print its address
+  --no-open         Start the server only; print the address to open (it carries your access key)
   --restart         Stop the running server, start a fresh one, open the window
   --stop            Stop the running server
   --foreground      Run the server in this terminal (Ctrl+C stops it)
   --shortcut        Add a CLI Companion shortcut to the Start menu (apps menu on Linux)
   --shortcut=desktop  … on the desktop instead
-  --port <n>        Use another port (default 30143, or CLI_COMPANION_PORT)
+  --port <n>        Use another port (default 30143, or CLI_COMPANION_PORT, or the port in Settings)
   --version         Print the version
   --help            Show this help
 
-Everything stays on this computer: the server listens on 127.0.0.1 only.`;
+Everything stays on this computer: the server listens on 127.0.0.1 only, and only
+requests carrying your access key (~/.cli-companion/access-key) can read it.`;
+
+/** Open the window, or print the address to open by hand if no browser could be started. */
+async function open(port) {
+  const { url: openUrl, error } = await openWindow({ port });
+  if (error) console.log(`Couldn't open a browser (${error}). Open this address yourself:\n  ${openUrl}`);
+}
 
 function fail(message) {
   console.error(`cli-companion: ${message}`);
@@ -75,7 +82,7 @@ if (opts.stop || opts.restart) {
 
 if (opts.foreground) {
   if (await isPortUp(port)) fail(`something is already listening on ${url}.`);
-  if (opts.open) setTimeout(() => openWindow({ port }), 400);
+  if (opts.open) setTimeout(() => open(port), 400);
   await import("../server/server.mjs");
 } else {
   const result = await ensureServer({ port });
@@ -84,11 +91,6 @@ if (opts.foreground) {
     fail(`port ${port} is in use by something else. Try --port <n>.`);
   }
   console.log(`${result.started ? "Started" : "Already running:"} ${url}`);
-  if (opts.open) {
-    try {
-      openWindow({ port });
-    } catch (error) {
-      console.log(`Open ${url} in a browser (couldn't launch one: ${error.message}).`);
-    }
-  }
+  if (opts.open) await open(port);
+  else console.log(`Open: ${companionOpenUrl(port)}`);
 }

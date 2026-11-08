@@ -64,3 +64,12 @@ test("validateSettings: a CLI's composer button can also press Enter (true only)
   assert.deepEqual(validateSettings({ sources: { pi: { sendEnter: "yes" } } }).sources, {});
   assert.deepEqual(validateSettings({ sources: { pi: { sendEnter: false } } }).sources, {});
 });
+
+test("validateSettings: port is optional, 1024–65535", () => {
+  assert.equal(validateSettings({}).port, undefined);
+  assert.equal(validateSettings({ port: "" }).port, undefined);
+  assert.equal(validateSettings({ port: "31000" }).port, 31000);
+  assert.throws(() => validateSettings({ port: 80 }), /1024 to 65535/);
+  assert.throws(() => validateSettings({ port: "abc" }), /1024 to 65535/);
+  assert.equal(validateSettings({ port: "abc" }, { lenient: true }).port, undefined);
+});

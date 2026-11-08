@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { desktopEntry, setShortcut, shortcutPaths, shortcutStatus } from "../server/shortcut.mjs";
+import { desktopEntry, setShortcut, shortcutPaths, shortcutStatus, isTemporaryCopy, linuxDesktop } from "../server/shortcut.mjs";
 
 test("shortcutPaths: Start menu on Windows, applications folder on Linux, none on macOS", async () => {
   const win = await shortcutPaths({ platform: "win32", env: { APPDATA: "C:\\Users\\u\\AppData\\Roaming" } });
@@ -41,4 +42,18 @@ test("windowAppId: Chrome's id for the companion window; none for Edge or no bro
   assert.equal(windowAppId("C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"), "Chrome.127.0.0.1_/.browserprole.Default");
   assert.equal(windowAppId("C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"), "");
   assert.equal(windowAppId(null), "");
+});
+
+test("linuxDesktop: XDG_DESKTOP_DIR, then user-dirs.dirs, then ~/Desktop", () => {
+  const config = mkdtempSync(join(tmpdir(), "companion-xdg-"));
+  assert.equal(linuxDesktop({ XDG_CONFIG_HOME: config }, "/home/me"), join("/home/me", "Desktop"));
+  writeFileSync(join(config, "user-dirs.dirs"), '# comment\nXDG_DESKTOP_DIR="$HOME/Schreibtisch"\n');
+  assert.equal(linuxDesktop({ XDG_CONFIG_HOME: config }, "/home/me"), "/home/me/Schreibtisch");
+  assert.equal(linuxDesktop({ XDG_CONFIG_HOME: config, XDG_DESKTOP_DIR: "/data/desk" }, "/home/me"), "/data/desk");
+});
+
+test("isTemporaryCopy: an npx cache copy is refused for shortcuts", () => {
+  assert.equal(isTemporaryCopy("C:\\Users\\me\\AppData\\Local\\npm-cache\\_npx\\1a2b\\node_modules\\cli-companion"), true);
+  assert.equal(isTemporaryCopy("/home/me/.npm/_npx/1a2b/node_modules/cli-companion"), true);
+  assert.equal(isTemporaryCopy("C:\\Users\\me\\AppData\\Roaming\\npm\\node_modules\\cli-companion"), false);
 });

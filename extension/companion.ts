@@ -23,11 +23,18 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 // Starting the server and opening the window is shared with the standalone `cli-companion` command.
-import { companionPort, companionUrl, ensureServer, isPortUp, openWindow } from "../server/start.mjs";
+import { ACCESS_HEADER, accessKey, companionPort, companionUrl, ensureServer, isPortUp, openWindow } from "../server/start.mjs";
 
 const PORT = companionPort();
 const URL_BASE = companionUrl(PORT);
 const INGEST_URL = `${URL_BASE}/ingest`;
+
+/** Every request to the companion carries this computer's access key (read once, made if missing). */
+let keyHeaders: Record<string, string> | undefined;
+function companionHeaders(): Record<string, string> {
+  keyHeaders ??= { "x-pi-companion": "1", [ACCESS_HEADER]: accessKey() };
+  return keyHeaders;
+}
 const FLUSH_MS = 80;
 const HEARTBEAT_MS = 15_000;
 const BACKOFF_MS = 5_000;
@@ -180,7 +187,7 @@ export default function companionBridge(pi: ExtensionAPI): void {
   const ack = (cmdId: unknown, result: CommandResult) =>
     fetch(`${URL_BASE}/bridge/ack`, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-pi-companion": "1" },
+      headers: { "content-type": "application/json", ...companionHeaders() },
       body: JSON.stringify({ cmdId, ok: !result.error, ...result }),
       signal: AbortSignal.timeout(2000),
     }).catch(() => undefined);
@@ -198,7 +205,7 @@ export default function companionBridge(pi: ExtensionAPI): void {
         try {
           const res = await fetch(
             `${URL_BASE}/bridge/inbox?session=${encodeURIComponent(ctx.sessionManager.getSessionId())}`,
-            { headers: { "x-pi-companion": "1" }, signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]) },
+            { headers: companionHeaders(), signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]) },
           );
           if (res.status === 200) {
             const { commands } = (await res.json()) as { commands?: Array<{ cmdId: string; type?: string; text?: unknown }> };
@@ -245,7 +252,7 @@ export default function companionBridge(pi: ExtensionAPI): void {
     try {
       await fetch(INGEST_URL, {
         method: "POST",
-        headers: { "content-type": "application/json", "x-pi-companion": "1" },
+        headers: { "content-type": "application/json", ...companionHeaders() },
         body: JSON.stringify({ ...snapshot(ctx), ...(withCommands ? { commands: commandList() } : {}), events }),
         signal: AbortSignal.timeout(1500),
       });
@@ -381,10 +388,9 @@ export default function companionBridge(pi: ExtensionAPI): void {
         ctx.ui.notify(`[companion] Server ${wasUp ? "already running" : "started"} on ${URL_BASE}.`, "info");
         return;
       }
-      try {
-        openWindow({ port: PORT });
-      } catch (err) {
-        ctx.ui.notify(`[companion] Open ${URL_BASE} in a browser (could not launch one: ${String(err)}).`, "warning");
+      const opened = await openWindow({ port: PORT });
+      if (opened.error) {
+        ctx.ui.notify(`[companion] Couldn't open a browser (${opened.error}). Open ${opened.url} yourself.`, "warning");
         return;
       }
       ctx.ui.notify(`[companion] ${wasUp ? "Opened" : "Started the server and opened"} ${URL_BASE}.`, "info");

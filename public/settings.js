@@ -263,6 +263,15 @@
         <h2>Composer</h2>
         <div class="set-cards">${suggestCard()}</div>
 
+        <h2>Port</h2>
+        <label class="set-field narrow">The companion listens on
+          <input name="port" inputmode="numeric" value="${esc(data.settings.port ?? "")}" placeholder="30143 (usual)" spellcheck="false" autocomplete="off">
+        </label>
+        <p class="set-hint">Change it only if something else uses ${esc(String(data.port))}. It takes effect the next time
+          the companion starts (Restart the server, or open it again from the shortcut).${
+            data.portFromEnv ? " Right now CLI_COMPANION_PORT is set, and that wins over this setting." : ""
+          }</p>
+
         <div class="set-foot">
           <span class="set-status ${esc(status.kind)}" role="status">${esc(status.text)}</span>
           <button class="btn" type="button" id="settings-reset">Undo changes</button>
@@ -316,6 +325,7 @@
     const body = {
       sources,
       terminal: form.querySelector('[name="terminal"]').value,
+      port: form.querySelector('[name="port"]').value.trim(),
       appearance: {
         theme: form.querySelector('[name="theme"]').value,
         showCost: form.querySelector('[name="show-cost"]').checked,

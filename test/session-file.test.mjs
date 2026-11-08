@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { activeBranch, findImage, parseEntries, transcriptItems } from "../server/session-file.mjs";
 
 const lines = [
-  { type: "session", version: 3, id: "s1", cwd: "C:\\AI\\pi\\x" },
+  { type: "session", version: 3, id: "s1", cwd: "C:\\work\\pi\\x" },
   { type: "model_change", id: "a", parentId: null, provider: "p", modelId: "m" },
   { type: "session_info", id: "b", parentId: "a", name: "My thread" },
   {
@@ -66,7 +66,7 @@ test("transcriptItems builds user, assistant+tool and compaction items", () => {
   const result = transcriptItems(parseEntries(text), "g");
   assert.equal(result.name, "My thread");
   assert.equal(result.model, "p/m");
-  assert.equal(result.cwd, "C:\\AI\\pi\\x");
+  assert.equal(result.cwd, "C:\\work\\pi\\x");
   assert.deepEqual(
     result.items.map((item) => item.kind),
     ["event", "user", "assistant", "compaction"],

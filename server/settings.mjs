@@ -85,6 +85,12 @@ export function validateSettings(input, { platform = process.platform, lenient =
     if (CLOCKS.includes(look.clock)) out.appearance.clock = look.clock;
     else if (look.clock !== undefined) fail("Unknown clock format.");
   }
+  // The port the companion uses next time it starts (CLI_COMPANION_PORT still wins). Not set = 30143.
+  if (input?.port !== undefined && input.port !== null && input.port !== "") {
+    const port = Number(input.port);
+    if (Number.isInteger(port) && port >= 1024 && port < 65536) out.port = port;
+    else fail("The port must be a whole number from 1024 to 65535.");
+  }
   if (out.suggest.enabled && !out.suggest.model) {
     fail("Pick a model for suggested replies, or switch them off.");
     out.suggest.enabled = false;

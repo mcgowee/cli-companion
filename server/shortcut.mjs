@@ -10,6 +10,7 @@
 
 import { execFile } from "node:child_process";
 import { chmod, mkdir, rm, stat, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -77,6 +78,31 @@ async function windowsDesktop() {
   return desktopDir;
 }
 
+/**
+ * Linux: the desktop folder from XDG_DESKTOP_DIR, else ~/.config/user-dirs.dirs (it's
+ * translated on non-English systems, e.g. ~/Schreibtisch), else ~/Desktop.
+ */
+export function linuxDesktop(env = process.env, home = homedir()) {
+  const expand = (value) => value.replace(/^\$HOME(?=\/|$)/, home).replace(/^~(?=\/|$)/, home);
+  if (env.XDG_DESKTOP_DIR) return expand(env.XDG_DESKTOP_DIR);
+  try {
+    const dirs = readFileSync(join(env.XDG_CONFIG_HOME || join(home, ".config"), "user-dirs.dirs"), "utf8");
+    const m = dirs.match(/^\s*XDG_DESKTOP_DIR\s*=\s*"([^"]+)"/m);
+    if (m) return expand(m[1]);
+  } catch {
+    // no user-dirs file
+  }
+  return join(home, "Desktop");
+}
+
+/**
+ * Is this copy running from npx's temporary cache (…/_npx/…)? npm clears that cache, so a
+ * shortcut to it would stop working.
+ */
+export function isTemporaryCopy(root = ROOT) {
+  return /[\\/]_npx[\\/]/.test(root);
+}
+
 /** Where each shortcut goes on this platform, or null when shortcuts aren't supported. */
 export async function shortcutPaths({ platform = process.platform, env = process.env } = {}) {
   if (platform === "win32") {
@@ -88,7 +114,7 @@ export async function shortcutPaths({ platform = process.platform, env = process
   }
   if (platform === "linux") {
     const data = env.XDG_DATA_HOME || join(homedir(), ".local", "share");
-    return { start: join(data, "applications", "cli-companion.desktop"), desktop: join(homedir(), "Desktop", "cli-companion.desktop") };
+    return { start: join(data, "applications", "cli-companion.desktop"), desktop: join(linuxDesktop(env), "cli-companion.desktop") };
   }
   return null;
 }
@@ -134,6 +160,11 @@ export async function setShortcut(place, on, opts = {}) {
   if (!on) {
     await rm(file, { force: true });
     return file;
+  }
+  if (isTemporaryCopy(opts.root)) {
+    throw new Error(
+      "This copy runs from npx's temporary cache, which npm clears, so the shortcut would stop working. Install it first (npm install -g git+https://github.com/mcgowee/cli-companion.git), then make the shortcut.",
+    );
   }
   await mkdir(dirname(file), { recursive: true });
   if ((opts.platform ?? process.platform) === "win32") {

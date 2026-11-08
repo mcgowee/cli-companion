@@ -12,13 +12,13 @@ let ordinal = 0;
 const line = (type, payload, t = "2026-11-07T04:40:15.000Z") => JSON.stringify({ timestamp: t, ordinal: ordinal++, type, payload });
 const PNG = Buffer.from("fake-png").toString("base64");
 const LINES = [
-  line("session_meta", { session_id: ID, id: ID, timestamp: "2026-11-07T04:39:56.236Z", cwd: "C:\\AI\\codex", cli_version: "0.166.0", base_instructions: { text: "You are Codex…" } }),
+  line("session_meta", { session_id: ID, id: ID, timestamp: "2026-11-07T04:39:56.236Z", cwd: "C:\\work\\codex", cli_version: "0.166.0", base_instructions: { text: "You are Codex…" } }),
   line("event_msg", { type: "task_started", turn_id: "t1" }),
   line("response_item", { type: "additional_tools", id: "at_1", role: "developer", tools: [] }),
   line("response_item", { id: "msg_dev", role: "developer", type: "message", content: [{ type: "input_text", text: "You are Codex…" }] }),
-  line("response_item", { id: "msg_env", role: "user", type: "message", content: [{ type: "input_text", text: "<environment_context>\n  <cwd>C:\\AI\\codex</cwd>\n</environment_context>" }] }),
+  line("response_item", { id: "msg_env", role: "user", type: "message", content: [{ type: "input_text", text: "<environment_context>\n  <cwd>C:\\work\\codex</cwd>\n</environment_context>" }] }),
   line("world_state", { full: true, state: {} }),
-  line("turn_context", { turn_id: "t1", cwd: "C:\\AI\\codex", model: "gpt-6.1-sol" }),
+  line("turn_context", { turn_id: "t1", cwd: "C:\\work\\codex", model: "gpt-6.1-sol" }),
   line("response_item", { id: "msg_u1", role: "user", type: "message", content: [{ type: "input_text", text: "Make hello.txt" }, { type: "input_image", image_url: `data:image/png;base64,${PNG}` }] }),
   line("response_item", { id: "rs_1", type: "reasoning", summary: [{ type: "summary_text", text: "Plan: write the file." }], encrypted_content: "gAAAA" }),
   line("response_item", { status: "completed", id: "msg_a1", role: "assistant", type: "message", content: [{ type: "output_text", text: "I'll create it.", annotations: [] }], phase: "commentary" }),
@@ -43,7 +43,7 @@ test("bookkeeping lines are skipped before parsing", () => {
 
 test("transcript: prompts, replies, reasoning, tool calls with results, compaction", () => {
   const { cwd, model, items } = codexTranscriptItems(parseCodexLines(TEXT));
-  assert.equal(cwd, "C:\\AI\\codex");
+  assert.equal(cwd, "C:\\work\\codex");
   assert.equal(model, "gpt-6.1-sol");
   assert.deepEqual(
     items.map((i) => [i.kind, i.text ?? i.summary]),
@@ -80,7 +80,7 @@ test("images come back from their data URL", () => {
 
 test("meta from the head of the file; busy or idle from the last task event", async () => {
   const meta = await readCodexMeta(async (pos, len) => TEXT.slice(pos, pos + len), TEXT.length);
-  assert.deepEqual(meta, { id: ID, cwd: "C:\\AI\\codex", created: "2026-11-07T04:39:56.236Z", preview: "Make hello.txt" });
+  assert.deepEqual(meta, { id: ID, cwd: "C:\\work\\codex", created: "2026-11-07T04:39:56.236Z", preview: "Make hello.txt" });
   assert.equal(codexTurnState(TEXT), "busy");
   assert.equal(codexTurnState(LINES.slice(0, 17).join("\n")), "idle");
 });
@@ -96,7 +96,7 @@ test("the Codex source scans dated folders and takes titles from session_index.j
   const [meta] = await source.scan();
   assert.equal(meta.id, `codex:${ID}`);
   assert.equal(meta.name, "Hello file");
-  assert.equal(meta.cwd, "C:\\AI\\codex");
+  assert.equal(meta.cwd, "C:\\work\\codex");
   assert.equal(source.resumeCommand(ID), `codex resume ${ID}`);
   assert.deepEqual(await codexSource({ CODEX_HOME: home, CLI_COMPANION_CODEX: "0" }).scan(), []);
 });

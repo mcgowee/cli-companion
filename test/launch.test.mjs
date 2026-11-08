@@ -6,10 +6,10 @@ import { createSources } from "../server/sources/index.mjs";
 test("commands come from the sources' fixed lists; session ids are checked", () => {
   const sources = createSources({ CLAUDE_CONFIG_DIR: "/nowhere/claude", PI_CODING_AGENT_DIR: "/nowhere/pi", CODEX_HOME: "/nowhere/codex" });
   const [pi, claude] = sources;
-  // Pi is always offered (it can be live before its folder exists); others only when installed.
+  // Only CLIs that are installed (their folder exists) are offered, Pi included.
   assert.deepEqual(
     workspaceActions(sources).map((o) => [o.action, o.command]),
-    [["terminal", ""], ["pi", "pi"], ["pi-continue", "pi -c"]],
+    [["terminal", ""]],
   );
   const installed = sources.map((s) => Object.defineProperty({ ...s }, "installed", { value: true }));
   assert.deepEqual(
@@ -29,17 +29,17 @@ test("commands come from the sources' fixed lists; session ids are checked", () 
 });
 
 test("copyLine quotes the folder for PowerShell and POSIX shells", () => {
-  assert.equal(quotePath("C:\\AI\\it's", "win32"), "'C:\\AI\\it''s'");
-  assert.equal(copyLine("C:\\AI\\pi", "pi -c", "win32"), "cd 'C:\\AI\\pi'; pi -c");
-  assert.equal(copyLine("C:\\AI\\pi", "", "win32"), "cd 'C:\\AI\\pi'");
+  assert.equal(quotePath("C:\\work\\it's", "win32"), "'C:\\work\\it''s'");
+  assert.equal(copyLine("C:\\work\\pi", "pi -c", "win32"), "cd 'C:\\work\\pi'; pi -c");
+  assert.equal(copyLine("C:\\work\\pi", "", "win32"), "cd 'C:\\work\\pi'");
   assert.equal(copyLine("/home/me/it's", "claude", "linux"), "cd '/home/me/it'\\''s' && claude");
 });
 
 test("openPlan: Windows Terminal, then a PowerShell window", () => {
-  const [wt, console_] = openPlan("C:\\AI\\pi", "pi", { platform: "win32", shell: "pwsh" });
-  assert.deepEqual(wt, { file: "wt.exe", args: ["-w", "new", "-d", "C:\\AI\\pi", "pwsh", "-NoExit", "-Command", "pi"] });
-  assert.deepEqual(console_, { file: "pwsh", args: ["-NoExit", "-Command", "pi"], cwd: "C:\\AI\\pi" });
-  assert.deepEqual(openPlan("C:\\AI\\pi", "", { platform: "win32", shell: "pwsh" })[0].args.slice(-2), ["pwsh", "-NoLogo"]);
+  const [wt, console_] = openPlan("C:\\work\\pi", "pi", { platform: "win32", shell: "pwsh" });
+  assert.deepEqual(wt, { file: "wt.exe", args: ["-w", "new", "-d", "C:\\work\\pi", "pwsh", "-NoExit", "-Command", "pi"] });
+  assert.deepEqual(console_, { file: "pwsh", args: ["-NoExit", "-Command", "pi"], cwd: "C:\\work\\pi" });
+  assert.deepEqual(openPlan("C:\\work\\pi", "", { platform: "win32", shell: "pwsh" })[0].args.slice(-2), ["pwsh", "-NoLogo"]);
   // ";" breaks Windows Terminal's arguments: only the PowerShell window is left, or an error if that was the choice.
   assert.deepEqual(openPlan("C:\\a;b", "pi", { platform: "win32", shell: "pwsh" }).map((p) => p.file), ["pwsh"]);
   assert.throws(() => openPlan("C:\\a;b", "pi", { platform: "win32", terminal: "wt" }), LaunchError);

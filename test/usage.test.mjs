@@ -16,11 +16,11 @@ test("localDay uses the viewer's offset", () => {
 
 test("usageSummary counts sessions per day by CLI, active days and workspaces", () => {
   const metas = [
-    { source: "pi", cwd: "C:\\AI\\pi\\companion", created: new Date(NOW - 1 * 3600_000).toISOString(), mtimeMs: NOW, size: 100 },
-    { source: "claude", cwd: "C:\\AI\\pi\\companion\\", created: new Date(NOW - 2 * 3600_000).toISOString(), mtimeMs: NOW, size: 50 },
-    { source: "pi", cwd: "C:\\AI\\pi\\charloop", created: new Date(NOW - 3 * DAY).toISOString(), mtimeMs: NOW - 3 * DAY, size: 10 },
+    { source: "pi", cwd: "C:\\work\\pi\\companion", created: new Date(NOW - 1 * 3600_000).toISOString(), mtimeMs: NOW, size: 100 },
+    { source: "claude", cwd: "C:\\work\\pi\\companion\\", created: new Date(NOW - 2 * 3600_000).toISOString(), mtimeMs: NOW, size: 50 },
+    { source: "pi", cwd: "C:\\work\\myapp", created: new Date(NOW - 3 * DAY).toISOString(), mtimeMs: NOW - 3 * DAY, size: 10 },
     // Started last period, still active this period: counted in its workspace, not as started.
-    { source: "claude", cwd: "C:\\AI\\pi\\studio", created: new Date(NOW - 9 * DAY).toISOString(), mtimeMs: NOW - DAY, size: 5 },
+    { source: "claude", cwd: "C:\\work\\pi\\studio", created: new Date(NOW - 9 * DAY).toISOString(), mtimeMs: NOW - DAY, size: 5 },
     // Old: only in the all-time totals.
     { source: "pi", cwd: "C:\\old", created: new Date(NOW - 40 * DAY).toISOString(), mtimeMs: NOW - 40 * DAY, size: 1 },
   ];

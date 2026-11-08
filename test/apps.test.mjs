@@ -19,20 +19,20 @@ test("findApps: leaves out the companion's own address", () => {
 test("findApps: .html paths — bare, relative, absolute, in backticks with spaces, file:// URLs", () => {
   const text = [
     "I wrote `out/My Report.html` and viewer/index.html.",
-    "Open C:\\AI\\pi\\charloop\\docs\\chart.html, or file:///C:/AI/pi/charloop/a%20b.html.",
+    "Open C:\\work\\myapp\\docs\\chart.html, or file:///C:/work/myapp/a%20b.html.",
     "Same again: viewer/index.html. A stylesheet style.css is not an app.",
   ].join("\n");
   assert.deepEqual(findApps(text).files, [
-    "C:/AI/pi/charloop/a b.html",
+    "C:/work/myapp/a b.html",
     "out/My Report.html",
     "viewer/index.html",
-    "C:\\AI\\pi\\charloop\\docs\\chart.html",
+    "C:\\work\\myapp\\docs\\chart.html",
   ]);
 });
 
 test("findApps: images, video, audio, PDFs and text files too; code files are left out", () => {
-  const text = "Rendered `C:/AI/codex/studio/renders/opening v01.mp4`, out/shot.PNG and song.mp3; notes in notes.md and a.pdf. Edited server.mjs, app.js and package.json.";
-  assert.deepEqual(findApps(text).files, ["C:/AI/codex/studio/renders/opening v01.mp4", "out/shot.PNG", "song.mp3", "notes.md", "a.pdf"]);
+  const text = "Rendered `C:/work/studio/renders/opening v01.mp4`, out/shot.PNG and song.mp3; notes in notes.md and a.pdf. Edited server.mjs, app.js and package.json.";
+  assert.deepEqual(findApps(text).files, ["C:/work/studio/renders/opening v01.mp4", "out/shot.PNG", "song.mp3", "notes.md", "a.pdf"]);
   assert.deepEqual(["x.html", "y.JPEG", "z.webm", "w.wav", "v.pdf", "u.csv", "t.js"].map(fileKind), ["html", "image", "video", "audio", "pdf", "text", undefined]);
 });
 

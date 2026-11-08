@@ -33,11 +33,14 @@ import { loadSettings, saveSettings, SettingsError, sourceEnv, validateSettings 
 import { execFileSync, spawn } from "node:child_process";
 import { isProcessAlive } from "./fsutil.mjs";
 import { createSources, describeSources, nativeId, sourceForId } from "./sources/index.mjs";
-import { APP_ID, companionPort, ensureServer, isPortUp, migrateStateFile, stateDir } from "./start.mjs";
+import { APP_ID, accessKey, companionPort, ensureServer, isPortUp, migrateStateFile, stateDir } from "./start.mjs";
+import { hasKey, keyCookie, lockedPage, needsKey, sameKey } from "./access.mjs";
 import { gitSummary, listDir, makeFolder, readFileForView, resolveInside, reviewDiff, reviewStatus, WorkbenchError } from "./workbench.mjs";
 
 const HOST = "127.0.0.1";
 const PORT = companionPort();
+// This computer's access key (server/access.mjs): made on first start, kept in the state folder.
+const ACCESS_KEY = accessKey();
 // Your settings (the Settings page): which CLIs to read, their folders, the terminal for Open.
 const SETTINGS_FILE = join(stateDir(), "settings.json");
 let settings = await loadSettings(SETTINGS_FILE);
@@ -501,6 +504,30 @@ function spawnDetached(file, args, options = {}) {
   });
 }
 
+/**
+ * macOS: run osascript to the end, so a refusal (Terminal or iTerm2 not allowed to be controlled)
+ * comes back as an error instead of nothing happening.
+ */
+function runOsascript(args) {
+  return new Promise((resolveRun, reject) => {
+    const child = spawn("osascript", args, { stdio: ["ignore", "ignore", "pipe"] });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => (stderr += chunk));
+    child.once("error", reject);
+    child.once("close", (code) => {
+      if (code === 0) return resolveRun();
+      const denied = /-1743|not allowed|not authori[sz]ed/i.test(stderr);
+      reject(
+        new LaunchError(
+          denied
+            ? "macOS didn't let the companion control the terminal. Allow it in System Settings → Privacy & Security → Automation (for the browser or node), then try again."
+            : `The terminal didn't open (${stderr.trim().split("\n").pop() || `osascript exited with ${code}`}). Use Copy instead.`,
+        ),
+      );
+    });
+  });
+}
+
 async function openTerminal(cwd, command) {
   const plans = openPlan(cwd, command, {
     shell: process.platform === "win32" ? preferredShell() : undefined,
@@ -510,9 +537,11 @@ async function openTerminal(cwd, command) {
   let lastError;
   for (const plan of plans) {
     try {
-      await spawnDetached(plan.file, plan.args, plan.cwd ? { cwd: plan.cwd } : {});
+      if (plan.file === "osascript") await runOsascript(plan.args);
+      else await spawnDetached(plan.file, plan.args, plan.cwd ? { cwd: plan.cwd } : {});
       return;
     } catch (error) {
+      if (error instanceof LaunchError) throw error; // it ran and said no: don't try another
       lastError = error; // not installed: try the next one
     }
   }
@@ -676,6 +705,25 @@ const server = createServer(async (req, res) => {
   if (who.remote && !remoteAllowed(req.method, url.pathname, remote)) {
     sendJson(res, 403, { error: "Not available from your phone. Use the companion on the computer." });
     return;
+  }
+  // Access key (requests from this computer; the phone is checked by its Tailscale identity).
+  if (!who.remote) {
+    const given = url.searchParams.get("key");
+    if (given !== null && (req.method === "GET" || req.method === "HEAD") && !needsKey(url.pathname) && sameKey(given, ACCESS_KEY)) {
+      // Opened with ?key=: keep it as a cookie and drop it from the address.
+      url.searchParams.delete("key");
+      res.writeHead(302, { location: url.pathname + url.search, "set-cookie": keyCookie(PORT, ACCESS_KEY), "cache-control": "no-store" }).end();
+      return;
+    }
+    const allowed = hasKey(req.headers, { port: PORT, key: ACCESS_KEY });
+    if (!allowed && needsKey(url.pathname)) {
+      sendJson(res, 401, { error: "Open CLI Companion from its shortcut or the cli-companion command (this window has no access key)." });
+      return;
+    }
+    if (!allowed && (url.pathname === "/" || url.pathname === "/index.html")) {
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }).end(lockedPage());
+      return;
+    }
   }
   try {
     if (url.pathname === "/bridge/inbox") {
@@ -974,7 +1022,7 @@ const server = createServer(async (req, res) => {
         const title = transcript.name || live?.name || saved?.name || saved?.preview || "session";
         const git = cwd ? await gitFor(cwd).catch(() => undefined) : undefined;
         const meta = { title, cli: where.source.label, assistant: where.source.assistant, cwd, file: where.file, git, model: transcript.model };
-        const targets = SOURCES.filter((source) => source.enabled && (source.installed || source.live)).map((source) => ({ id: source.id, label: source.label }));
+        const targets = SOURCES.filter((source) => source.enabled && source.installed).map((source) => ({ id: source.id, label: source.label }));
         if (req.method === "GET") {
           const full = params.format === "full";
           const markdown = full ? sessionMarkdown(transcript, meta) : handoffBrief(transcript, meta);
@@ -1159,6 +1207,10 @@ const server = createServer(async (req, res) => {
       sendJson(res, 200, {
         settings,
         file: SETTINGS_FILE,
+        port: PORT,
+        portFromEnv: process.env.CLI_COMPANION_PORT_SET
+          ? process.env.CLI_COMPANION_PORT_SET === "1"
+          : Boolean(process.env.CLI_COMPANION_PORT || process.env.PI_COMPANION_PORT),
         platform: process.platform,
         terminals: terminalsFor(),
         sources: describeSources(SOURCES),

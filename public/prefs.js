@@ -44,7 +44,12 @@
   };
 
   fetch("/api/settings", { cache: "no-store" })
-    .then((res) => (res.ok ? res.json() : null))
+    .then((res) => {
+      // No access key (a window from before the key, or a plain browser tab): reloading shows the
+      // server's "open it from the shortcut" page instead of empty panels.
+      if (res.status === 401) location.reload();
+      return res.ok ? res.json() : null;
+    })
     .then((data) => {
       if (!data) return;
       window.companionSettings = data.settings;
