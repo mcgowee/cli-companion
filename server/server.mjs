@@ -1311,6 +1311,28 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (url.pathname === "/api/app-file") {
+      // A file link in the transcript: where it is inside the session's folder, and how to show it.
+      try {
+        const id = url.searchParams.get("id") ?? "";
+        let path = url.searchParams.get("path") ?? "";
+        if (/^file:/i.test(path)) path = fileURLToPath(path);
+        const root = await workspaceRootFor(id);
+        const rel = root ? await resolveAppFile(root, path) : null;
+        if (!rel) throw new WorkbenchError(404, "That file isn't inside this session's folder (or doesn't exist).");
+        sendJson(res, 200, {
+          kind: "file",
+          type: fileKind(rel) ?? null,
+          name: rel,
+          path: rel,
+          url: `/app-files/${encodeURIComponent(id)}/${rel.split("/").map(encodeURIComponent).join("/")}`,
+        });
+      } catch (error) {
+        sendJson(res, error instanceof WorkbenchError ? error.status : 400, { error: error.message });
+      }
+      return;
+    }
+
     if (url.pathname === "/api/apps") {
       // Apps in the selected session's last exchange (right panel). Page header required: it
       // checks local web addresses, and a cross-site page shouldn't be able to make it do that.

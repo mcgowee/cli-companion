@@ -13,6 +13,14 @@
     });
     out = escapeHtml(out);
     out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+    // [text](C:/path/file.html), [text](./out/x.png), [text](file:///…): a file on this computer.
+    // The right panel opens it (only if it's inside the session's folder; the server checks).
+    out = out.replace(/\[([^\]]+)\]\(&lt;(.+?)&gt;\)|\[([^\]]+)\]\(((?:file:\/\/|[A-Za-z]:[\\/]|\.{0,2}\/|~\/|[\w.-]+[\\/])[^\s)]*|[\w.-]+\.\w{1,5})\)/g, (all, t1, p1, t2, p2) => {
+      const text = t1 ?? t2;
+      const path = p1 ?? p2;
+      if (/^[a-z][\w+.-]*:(?![\\/])/i.test(path) && !/^[A-Za-z]:[\\/]/.test(path)) return all; // another scheme
+      return `<a href="#" class="file-link" data-file-path="${path}" title="Open ${path} in the side panel">${text}</a>`;
+    });
     out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
     out = out.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
     out = out.replace(/~~([^~]+)~~/g, "<del>$1</del>");

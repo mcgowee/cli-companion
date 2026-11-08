@@ -536,7 +536,7 @@
     }
     if (key !== wb.appsKey) return;
     wb.apps = data;
-    if (wb.appView && !data.apps?.some((a) => a.url === wb.appView.url)) wb.appView = null;
+    if (wb.appView && !wb.appView.fromLink && !data.apps?.some((a) => a.url === wb.appView.url)) wb.appView = null;
     renderApps();
     renderAppsDot();
   }
@@ -708,6 +708,35 @@
     }
     void loadApps(key);
   }
+
+  /* ── file links in the transcript ────────────────────── */
+
+  async function openFileLink(link) {
+    if (!wb.sessionId) return;
+    const path = link.dataset.filePath;
+    try {
+      const file = await api("/api/app-file", { path });
+      if (!wb.open) setOpen(true);
+      if (file.type) {
+        wb.tool = "apps";
+        wb.appView = { ...file, fromLink: true };
+        renderTabs();
+        renderApps();
+      } else {
+        await openFile(file.path);
+      }
+    } catch (error) {
+      link.classList.add("missing");
+      link.title = error.message;
+    }
+  }
+
+  document.addEventListener("click", (event) => {
+    const link = event.target.closest?.("a.file-link");
+    if (!link) return;
+    event.preventDefault();
+    void openFileLink(link);
+  });
 
   /* ── hooks from app.js ───────────────────────────────── */
 
