@@ -223,9 +223,14 @@
     return Boolean(liveStatus(s.id)) || (!cliSources.forRow(s).live && Boolean(s.active));
   }
 
-  /** A CLI without a live bridge that is running and working (not idle). */
+  /** A CLI without a live bridge that is running and working (not idle, not asking you). */
   function fileBusy(s) {
-    return !cliSources.forRow(s).live && Boolean(s.active) && s.runStatus !== "idle";
+    return !cliSources.forRow(s).live && Boolean(s.active) && s.runStatus !== "idle" && s.runStatus !== "waiting";
+  }
+
+  /** A CLI without a live bridge that is asking you something in its terminal (approval, question). */
+  function fileWaiting(s) {
+    return !cliSources.forRow(s).live && Boolean(s.active) && s.runStatus === "waiting";
   }
 
   /** Running and in the middle of a turn (not waiting for you). */
@@ -263,7 +268,8 @@
 
   function updateTitle() {
     markSeen();
-    const n = lastActiveRows.filter(({ s }) => !isWorking(s) && activityOf(s) > (seenAt[s.id] ?? 0) + 1000).length;
+    // Asking you something always counts; otherwise new activity since you last looked.
+    const n = lastActiveRows.filter(({ s }) => fileWaiting(s) || (!isWorking(s) && activityOf(s) > (seenAt[s.id] ?? 0) + 1000)).length;
     const title = n ? `(${n}) ${BASE_TITLE}` : BASE_TITLE;
     if (document.title !== title) document.title = title;
   }
@@ -346,8 +352,9 @@
     const active = s.id === state.selectedId ? " active" : "";
     const src = cliSources.forRow(s);
     const busy = fileBusy(s);
-    const dot = status ? esc(status) : !src.live && s.active ? (busy ? "file-busy" : "file-idle") : "saved";
-    const ago = status && status !== "idle" ? statusLabel({ status }) : busy ? "Running" : fmtAgo(s.lastActivity);
+    const waiting = fileWaiting(s);
+    const dot = status ? esc(status) : !src.live && s.active ? (waiting ? "file-waiting" : busy ? "file-busy" : "file-idle") : "saved";
+    const ago = status && status !== "idle" ? statusLabel({ status }) : waiting ? "Needs you" : busy ? "Running" : fmtAgo(s.lastActivity);
     const g = wsName ? gitById.get(s.id) : undefined;
     const tip = `${src.label}: ${rowTitle(s)}${wsName ? ` · ${wsName}` : ""}${g ? `\n${gitTip(g)}` : ""}`;
     const row = `<button class="session${active}" data-id="${esc(s.id)}" data-src="${esc(src.id)}" title="${esc(tip)}">
@@ -721,9 +728,15 @@
       // /api/stat (every 2 s) is fresher than the sidebar row (every 10 s).
       const fresh = state.fileStatFor === state.selectedId;
       const running = fresh ? state.fileActive : found?.row.active;
-      const busy = running && (fresh ? state.fileRunStatus : found?.row.runStatus) !== "idle";
-      pill.textContent = running ? `${src.label} · ${busy ? "Running" : "Idle"}` : src.label;
-      pill.className = `pill file${running ? " active" : ""}`;
+      const runStatus = fresh ? state.fileRunStatus : found?.row.runStatus;
+      const waitingFor = fresh ? state.fileWaitingFor : found?.row.waitingFor;
+      const waiting = running && runStatus === "waiting";
+      const busy = running && !waiting && runStatus !== "idle";
+      pill.textContent = running ? `${src.label} · ${waiting ? "Needs you" : busy ? "Running" : "Idle"}` : src.label;
+      pill.title = waiting
+        ? `${src.label} is asking you something in its terminal${waitingFor ? ` (${waitingFor})` : ""}. Answer it there.`
+        : "";
+      pill.className = `pill file${running ? " active" : ""}${waiting ? " waiting" : ""}`;
       pill.dataset.src = src.id;
     } else {
       pill.textContent = "Saved";
@@ -750,11 +763,12 @@
       const key = `${s.size}:${s.mtimeMs}`;
       const changed = fileStat && fileStat.id === id && fileStat.key !== key;
       const activeChanged =
-        state.fileStatFor !== id || state.fileActive !== s.active || state.fileRunStatus !== s.runStatus;
+        state.fileStatFor !== id || state.fileActive !== s.active || state.fileRunStatus !== s.runStatus || state.fileWaitingFor !== s.waitingFor;
       fileStat = { id, key };
       state.fileStatFor = id;
       state.fileActive = s.active;
       state.fileRunStatus = s.runStatus;
+      state.fileWaitingFor = s.waitingFor;
       if (changed) loadHistory(true);
       if (activeChanged) renderHeader();
     } catch {

@@ -260,10 +260,29 @@ export async function readCodexMeta(readRange, size) {
  * (task_started = working; task_complete or turn_aborted = waiting for you).
  */
 export function codexTurnState(tailText) {
+  return codexTurn(tailText).state;
+}
+
+/**
+ * The turn state plus whether a tool call is still open: { state: "busy" | "idle", openCall }.
+ * openCall is true when the last tool call has no output yet. Codex writes nothing while it asks
+ * you to approve a tool, so an open call plus a quiet file is the only sign of that (a long
+ * command looks the same).
+ */
+export function codexTurn(tailText) {
   let state = "idle";
+  const open = new Set();
   for (const line of tailText.split("\n")) {
     const match = line.match(/"type":"event_msg","payload":\{"type":"(task_started|task_complete|turn_aborted)"/);
-    if (match) state = match[1] === "task_started" ? "busy" : "idle";
+    if (match) {
+      state = match[1] === "task_started" ? "busy" : "idle";
+      if (state === "idle") open.clear();
+      continue;
+    }
+    const call = line.match(/"type":"response_item","payload":\{"type":"(function_call|custom_tool_call|function_call_output|custom_tool_call_output)".*?"call_id":"([^"]+)"/);
+    if (!call) continue;
+    if (call[1].endsWith("_output")) open.delete(call[2]);
+    else open.add(call[2]);
   }
-  return state;
+  return { state, openCall: state === "busy" && open.size > 0 };
 }

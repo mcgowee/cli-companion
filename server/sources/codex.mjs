@@ -11,7 +11,7 @@ import { closeSync, existsSync, openSync, readSync } from "node:fs";
 import { open, readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { codexTranscriptItems, codexTurnState, findCodexImage, parseCodexLines, readCodexMeta } from "../codex-file.mjs";
+import { codexTranscriptItems, codexTurn, findCodexImage, parseCodexLines, readCodexMeta } from "../codex-file.mjs";
 import { appendingJsonlReader, isUnderDir } from "../fsutil.mjs";
 import { mergeCommands } from "../slash-commands.mjs";
 
@@ -99,6 +99,9 @@ function countCodexWindows() {
   });
 }
 
+/** A busy Codex with an open tool call and no writes for this long probably waits for you. */
+const QUIET_MS = 8000;
+
 /**
  * Which loaded sessions have a window: busy ones first, then the most recently written, up to the
  * number of open windows. With the window count unknown, every loaded session counts.
@@ -107,8 +110,9 @@ function countCodexWindows() {
  */
 export function pickRunning(loaded, windows) {
   if (windows === null) return loaded;
-  const ordered = [...loaded].sort((a, b) => (b.status === "busy") - (a.status === "busy") || b.mtimeMs - a.mtimeMs);
-  return ordered.slice(0, Math.max(windows, ordered.filter((s) => s.status === "busy").length));
+  const working = (s) => s.status === "busy" || s.status === "waiting";
+  const ordered = [...loaded].sort((a, b) => working(b) - working(a) || b.mtimeMs - a.mtimeMs);
+  return ordered.slice(0, Math.max(windows, ordered.filter(working).length));
 }
 
 export function codexSource(env = process.env) {
@@ -219,7 +223,10 @@ export function codexSource(env = process.env) {
             const handle = await open(file, "r");
             try {
               const length = Math.min(stats.size, 512 * 1024);
-              status = codexTurnState(await readRange(handle, stats.size - length, length));
+              const turn = codexTurn(await readRange(handle, stats.size - length, length));
+              status = turn.state;
+              // A tool call with no result and no writes for a while: probably asking you.
+              if (turn.openCall && Date.now() - stats.mtimeMs > QUIET_MS) status = "waiting";
             } finally {
               await handle.close();
             }
@@ -230,7 +237,11 @@ export function codexSource(env = process.env) {
         loaded.push({ id: match[1], status, mtimeMs });
       }
       const windows = loaded.length ? await countCodexWindows() : 0;
-      for (const { id, status } of pickRunning(loaded, windows)) map.set(`${PREFIX}${id}`, status);
+      map.waitingFor = new Map();
+      for (const { id, status } of pickRunning(loaded, windows)) {
+        map.set(`${PREFIX}${id}`, status);
+        if (status === "waiting") map.waitingFor.set(`${PREFIX}${id}`, "maybe an approval");
+      }
     }
     runningCache = { at: Date.now(), map };
     return map;

@@ -342,6 +342,10 @@ over on first start.
 - Pulling Pi's draft into the composer for editing is planned. Images go in by path; they're
   not attached to the message directly.
 - Past sessions open read-only; resume one with the terminal icon beside it.
+- **Needs you** (amber dot, header pill, tab-title count) means a CLI is asking you something in
+  its terminal: an approval or a question. Answer it there. Claude Code says so itself. Codex
+  doesn't record its prompts, so a Codex turn with a tool call that has had no result and no
+  writes for 8 s counts as "maybe an approval"; a long-running command can look the same.
 - Tested on Windows 11 with Pi 1.4, Claude Code 2.1 and Codex CLI 0.166. **macOS and Linux are
   experimental**: they use the same code but haven't been tested yet; reports welcome. There, a
   running Codex is recognised only by recent writes to its session file, and on macOS **Open**

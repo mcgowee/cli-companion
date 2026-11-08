@@ -40,6 +40,8 @@ export function claudeSource(env = process.env) {
     map.supported = false;
     // Where each running session is open: "desktop" (the Claude app) or "terminal".
     map.where = new Map();
+    // Why a "waiting" session waits, in Claude Code's words ("input needed", a dialog's name, …).
+    map.waitingFor = new Map();
     try {
       map.supported = (await stat(runningDir)).isDirectory();
       for (const name of await readdir(runningDir)) {
@@ -47,9 +49,13 @@ export function claudeSource(env = process.env) {
         try {
           const info = JSON.parse(await readFile(join(runningDir, name), "utf8"));
           if (typeof info.sessionId !== "string" || !Number.isInteger(info.pid) || !isProcessAlive(info.pid)) continue;
-          // The same session can be open in two processes (CLI and desktop app): busy wins.
+          // The same session can be open in two processes (CLI and desktop app): waiting (a
+          // question or permission prompt is open) wins, then busy.
           const id = `${CLAUDE_PREFIX}${info.sessionId}`;
-          if (map.get(id) !== "busy") map.set(id, info.status === "busy" ? "busy" : "idle");
+          const status = info.status === "waiting" ? "waiting" : info.status === "busy" ? "busy" : "idle";
+          const rank = { waiting: 2, busy: 1, idle: 0 };
+          if (!map.has(id) || rank[status] > rank[map.get(id)]) map.set(id, status);
+          if (status === "waiting") map.waitingFor.set(id, typeof info.waitingFor === "string" ? info.waitingFor.slice(0, 80) : "");
           if (map.where.get(id) !== "terminal") map.where.set(id, /desktop/i.test(String(info.entrypoint ?? "")) ? "desktop" : "terminal");
         } catch {
           // Half-written or unreadable: skip it this time.

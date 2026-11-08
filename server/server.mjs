@@ -402,18 +402,21 @@ async function workspaceRootFor(id) {
 }
 
 /**
- * Running or idle, for sessions without a live bridge: "<source>:<id>" -> "busy" | "idle", from
+ * Running state for sessions without a live bridge: "<source>:<id>" -> "busy" | "idle" |
+ * "waiting" (asking you something; .waitingFor has why), from
  * every enabled source that can tell (each caches its own). .supported = the sources that can.
  */
 async function runningMap() {
   const merged = new Map();
   merged.supported = new Set();
   merged.where = new Map();
+  merged.waitingFor = new Map();
   for (const source of SOURCES) {
     if (!source.enabled || !source.running) continue;
     const map = await source.running();
     for (const [id, status] of map) merged.set(id, status);
     for (const [id, where] of map.where ?? []) merged.where.set(id, where);
+    for (const [id, why] of map.waitingFor ?? []) merged.waitingFor.set(id, why);
     if (map.supported) merged.supported.add(source.id);
   }
   return merged;
@@ -423,7 +426,7 @@ async function runningMap() {
 function fileActivity(source, id, mtimeMs, running) {
   if (source.live) return {};
   const status = running.get(id);
-  if (status) return { active: true, runStatus: status };
+  if (status) return { active: true, runStatus: status, ...(status === "waiting" ? { waitingFor: running.waitingFor?.get(id) ?? "" } : {}) };
   return { active: !running.supported.has(source.id) && now() - mtimeMs < ACTIVE_FALLBACK_MS ? true : undefined };
 }
 
@@ -929,7 +932,7 @@ const server = createServer(async (req, res) => {
       try {
         const s = await stat(where.file);
         const activity = fileActivity(where.source, id, s.mtimeMs, await runningMap());
-        sendJson(res, 200, { size: s.size, mtimeMs: s.mtimeMs, active: Boolean(activity.active), runStatus: activity.runStatus });
+        sendJson(res, 200, { size: s.size, mtimeMs: s.mtimeMs, active: Boolean(activity.active), runStatus: activity.runStatus, waitingFor: activity.waitingFor });
       } catch {
         sendJson(res, 404, { error: "file not found" });
       }

@@ -100,3 +100,12 @@ test("the Codex source scans dated folders and takes titles from session_index.j
   assert.equal(source.resumeCommand(ID), `codex resume ${ID}`);
   assert.deepEqual(await codexSource({ CODEX_HOME: home, CLI_COMPANION_CODEX: "0" }).scan(), []);
 });
+
+test("codexTurn: an open tool call (no output yet) while busy", async () => {
+  const { codexTurn } = await import("../server/codex-file.mjs");
+  const ev = (type) => JSON.stringify({ type: "event_msg", payload: { type } });
+  const call = (type, id) => JSON.stringify({ type: "response_item", payload: { type, name: "exec", call_id: id } });
+  assert.deepEqual(codexTurn([ev("task_started"), call("custom_tool_call", "c1")].join("\n")), { state: "busy", openCall: true });
+  assert.deepEqual(codexTurn([ev("task_started"), call("custom_tool_call", "c1"), call("custom_tool_call_output", "c1")].join("\n")), { state: "busy", openCall: false });
+  assert.deepEqual(codexTurn([ev("task_started"), call("function_call", "f1"), ev("turn_aborted")].join("\n")), { state: "idle", openCall: false });
+});
