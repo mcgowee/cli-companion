@@ -503,6 +503,11 @@
     textRefs,
     insert,
     fenced,
+    setStatus,
+    /** The session the composer is for (images.js saves images into its folder). */
+    get selectedId() {
+      return state.selectedId;
+    },
     /** The selected session changed or its live state updated. */
     update({ selectedId, session }) {
       if (selectedId !== state.selectedId) {
@@ -529,6 +534,8 @@ ${legacyDraft}` : legacyDraft;
         state.lastSent = "";
         setStatus(draft ? "Draft for this session." : "", "", false);
         autoSize();
+        state.selectedId = selectedId;
+        window.dispatchEvent(new Event("composer-session"));
       }
       state.selectedId = selectedId;
       state.session = session ?? null;

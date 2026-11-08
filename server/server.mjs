@@ -35,6 +35,7 @@ import { isProcessAlive } from "./fsutil.mjs";
 import { createSources, describeSources, nativeId, sourceForId } from "./sources/index.mjs";
 import { APP_ID, accessKey, companionPort, ensureServer, isPortUp, migrateStateFile, stateDir } from "./start.mjs";
 import { hasKey, keyCookie, lockedPage, needsKey, sameKey } from "./access.mjs";
+import { MAX_UPLOAD, saveUpload } from "./uploads.mjs";
 import { gitSummary, listDir, makeFolder, readFileForView, resolveInside, reviewDiff, reviewStatus, WorkbenchError } from "./workbench.mjs";
 
 const HOST = "127.0.0.1";
@@ -336,6 +337,27 @@ function readBody(req) {
       chunks.push(chunk);
     });
     req.on("end", () => resolveBody(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+}
+
+/** The raw request body as a Buffer, up to `limit` bytes. */
+function readRaw(req, limit) {
+  return new Promise((resolveBody, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on("data", (chunk) => {
+      size += chunk.length;
+      // Too big: stop keeping it, but read the rest so the answer still reaches the page
+      // (cut off only if it goes on far past the limit).
+      if (size > limit) {
+        chunks.length = 0;
+        if (size > limit * 2) req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => (size > limit ? reject(new WorkbenchError(413, "Images can be up to 20 MB.")) : resolveBody(Buffer.concat(chunks))));
     req.on("error", reject);
   });
 }
@@ -834,7 +856,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (req.method !== "GET" && !["/api/dashboards", "/api/favorites", "/api/folder", "/api/handoff", "/api/launch", "/api/prompts", "/api/remote", "/api/settings", "/api/shortcut"].includes(url.pathname)) {
+    if (req.method !== "GET" && !["/api/dashboards", "/api/favorites", "/api/folder", "/api/handoff", "/api/launch", "/api/prompts", "/api/remote", "/api/settings", "/api/shortcut", "/api/upload"].includes(url.pathname)) {
       res.writeHead(405).end();
       return;
     }
@@ -925,6 +947,29 @@ const server = createServer(async (req, res) => {
       }
       res.writeHead(200, { "content-type": image.mimeType, "cache-control": "private, max-age=3600" });
       res.end(image.data);
+      return;
+    }
+
+    if (url.pathname === "/api/upload") {
+      // An image from the composer, saved into the selected session's folder (server/uploads.mjs).
+      // The body is the image itself. Page header required; the phone can't (remoteAllowed).
+      if (req.method !== "POST" || req.headers["x-pi-companion-page"] !== "1") {
+        res.writeHead(req.method !== "POST" ? 405 : 403).end();
+        return;
+      }
+      try {
+        const root = await workspaceRootFor(url.searchParams.get("id") ?? "");
+        const info = await stat(root).catch(() => null);
+        if (!info?.isDirectory()) throw new WorkbenchError(404, "This session's folder doesn't exist any more.");
+        if (Number(req.headers["content-length"]) > MAX_UPLOAD) throw new WorkbenchError(413, "Images can be up to 20 MB.");
+        const body = await readRaw(req, MAX_UPLOAD);
+        const path = await saveUpload(root, body, { hint: url.searchParams.get("name") ?? "" }).catch((error) => {
+          throw error instanceof WorkbenchError ? error : new WorkbenchError(400, error.message);
+        });
+        sendJson(res, 200, { path, url: `/app-files/${encodeURIComponent(url.searchParams.get("id"))}/${path.split("/").map(encodeURIComponent).join("/")}` });
+      } catch (error) {
+        sendJson(res, error instanceof WorkbenchError ? error.status : 500, { error: error.message });
+      }
       return;
     }
 

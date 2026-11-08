@@ -91,6 +91,12 @@ next to it:
   in one go. If
   Pi is busy, the message waits until it finishes. `/` commands and `!` shell lines are left
   for you to send from the terminal.
+  **Images**: paste one (Ctrl+V), drop it on the composer, or click **Image**. It is saved in the
+  session's folder under `.cli-companion/images/` (PNG, JPEG, GIF or WebP, up to 20 MB) and its
+  path goes into the text where the cursor is, so Pi, Claude Code or Codex can open it. A
+  thumbnail shows above the text; × takes the path out again. That folder has its own
+  `.gitignore`, so git ignores the images, and images older than 30 days are deleted. Not
+  available from the phone.
   Type **/** at the start of a line for a list of the selected CLI's slash commands (↑/↓,
   Enter or Tab to insert, Esc to close). For Pi: its built-ins plus the extension, prompt and
   skill commands the running Pi reports. For Claude Code: its common built-ins plus your
@@ -306,6 +312,7 @@ What the companion writes (all in `~/.cli-companion`, or `CLI_COMPANION_HOME`, u
 | Start menu / desktop | The **CLI Companion** shortcut, only if you add one |
 | `tailscale serve` | One forwarding entry, only while phone access is on |
 | A session's folder | **New folder** in the Files panel, only when you make one |
+| A session's `.cli-companion/images/` | Images you add in the composer (older than 30 days deleted), and a `.gitignore` there |
 
 It never writes the CLIs' files (Pi's, Claude Code's or Codex's sessions and settings). Suggested
 replies use a local [Ollama](https://ollama.com) model only, and only if you turn them on.
@@ -332,7 +339,8 @@ over on first start.
 
 ## Limits
 
-- Images from the composer, and pulling Pi's draft into the composer for editing, are planned.
+- Pulling Pi's draft into the composer for editing is planned. Images go in by path; they're
+  not attached to the message directly.
 - Past sessions open read-only; resume one with the terminal icon beside it.
 - Tested on Windows 11 with Pi 1.4, Claude Code 2.1 and Codex CLI 0.166. **macOS and Linux are
   experimental**: they use the same code but haven't been tested yet; reports welcome. There, a

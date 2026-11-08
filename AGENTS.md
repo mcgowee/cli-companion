@@ -22,6 +22,7 @@ Pi package (`pi install git:github.com/mcgowee/cli-companion`) and a standalone
 | `server/commands.mjs`, `slash-commands.mjs` | What the composer may send to a running CLI (paste), and its `/` command lookup. |
 | `server/settings.mjs`, `dashboards.mjs`, `usage.mjs`, `launch.mjs`, `fsutil.mjs` | Settings (`~/.cli-companion/settings.json`, written only from the Settings page), user dashboards (http(s) links only), usage stats from the index, opening workspaces/sessions in a terminal (the page names an action, never a command/path), shared file/process helpers. |
 | `bin/cli-companion.mjs` | Standalone launcher: start the server if needed and open the window, without Pi. |
+| `server/uploads.mjs`, `public/images.js` | Composer images: saved into the session folder (`.cli-companion/images/`, own .gitignore, 30-day cleanup), path put into the text. |
 | `public/*.js` | Vanilla JS, no build, no CDN. Plain IIFEs loaded by `<script>` order: `sources.js`, `markdown.js`, `resize.js`, `composer.js`, `app.js`, `workbench.js`, `launch.js`, `dashboards.js`, `settings.js`, `menu.js` (hash-routed top menu: Home, Dashboards, Settings, About — other pages only hide Home's state). |
 | `test/*.test.mjs` | `node:test` + `assert/strict`, fixtures inline, ~1 s, no network. |
 

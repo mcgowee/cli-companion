@@ -843,3 +843,12 @@ kbd { font: 11px var(--mono); padding: 1px 5px; border-radius: 4px; background: 
 /* File links in the transcript ([text](C:/…/page.html)): open in the side panel. */
 a.file-link { cursor: pointer; }
 a.file-link.missing { text-decoration: line-through; opacity: 0.7; cursor: help; }
+
+/* Images in the composer (public/images.js). */
+.composer-images { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.img-chip { position: relative; width: 56px; height: 56px; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); background: var(--panel); }
+.img-chip img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.img-x { position: absolute; top: 2px; right: 2px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; line-height: 20px; font-size: 14px; cursor: pointer;
+  background: color-mix(in srgb, var(--bg) 85%, transparent); color: var(--text); }
+.composer.drop-here .composer-body { outline: 2px dashed var(--accent); outline-offset: 4px; border-radius: 10px; }
+.remote-view #composer-image { display: none; }
