@@ -46,10 +46,26 @@ export async function settingsStamp(file) {
   }
 }
 
+/**
+ * Read the file as it is: a missing file is defaults (a fresh install), but JSON that doesn't
+ * parse throws. For refreshes while the server runs — a hand edit with a typo, or an editor
+ * caught mid-write, must never replace the settings already loaded (loadSettings' fallback
+ * would make them defaults, and the next save would write defaults over the user's file).
+ */
+export async function readSettingsStrict(file) {
+  let raw;
+  try {
+    raw = await readFile(file, "utf8");
+  } catch {
+    return defaultSettings();
+  }
+  return validateSettings(JSON.parse(raw), { lenient: true });
+}
+
+/** The lenient read for startup: a file that can't be parsed loads as defaults. */
 export async function loadSettings(file) {
   try {
-    const raw = JSON.parse(await readFile(file, "utf8"));
-    return validateSettings(raw, { lenient: true });
+    return await readSettingsStrict(file);
   } catch {
     return defaultSettings();
   }

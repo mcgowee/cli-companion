@@ -243,6 +243,7 @@
     root.innerHTML = `<div class="page-inner">
       <h1>Settings</h1>
       <p class="page-lead">Saved in <code>${esc(data.file)}</code>.</p>
+      ${data.error ? `<p class="set-status error" role="alert">${esc(data.error)}</p>` : ""}
       <form id="settings-form" autocomplete="off">
         <h2>Appearance</h2>
         ${appearanceHtml()}

@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { defaultSettings, loadSettings, saveSettings, SettingsError, settingsStamp, sourceEnv, validateSettings } from "../server/settings.mjs";
+import { defaultSettings, loadSettings, readSettingsStrict, saveSettings, SettingsError, settingsStamp, sourceEnv, validateSettings } from "../server/settings.mjs";
 import { createSources } from "../server/sources/index.mjs";
 
 const abs = process.platform === "win32" ? "D:\\claude" : "/data/claude";
@@ -100,6 +100,33 @@ test("a hand edit on disk survives a save: the server re-reads it, and a stale p
   const after = JSON.parse(readFileSync(file, "utf8"));
   assert.equal(after.port, 30144, "the hand-edited port survives the save");
   assert.equal(after.appearance.clock, "24");
+});
+
+test("a hand edit that doesn't parse never becomes the live settings: the refresh throws, startup stays lenient", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "companion-settings-"));
+  const file = join(dir, "settings.json");
+  // No file yet: both reads agree on defaults.
+  assert.deepEqual(await readSettingsStrict(file), defaultSettings());
+  // The server is running with a good file (what refreshSettings holds in memory).
+  await saveSettings(file, validateSettings({ port: 30144 }));
+  const current = await readSettingsStrict(file);
+  const rev = await settingsStamp(file);
+  assert.equal(current.port, 30144);
+  // A typo (or an editor caught mid-write): the stamp moves, but the strict read refuses, so the
+  // server keeps `current` and `rev` — saves can't match a rev the file never gets, so they're
+  // refused — and the file stays exactly as typed for the user to fix.
+  const broken = '{ "port": 30144, ';
+  writeFileSync(file, broken);
+  assert.notEqual(await settingsStamp(file), rev, "the edit is noticed");
+  await assert.rejects(() => readSettingsStrict(file), SyntaxError);
+  assert.equal(current.port, 30144, "the loaded settings are untouched");
+  assert.equal(readFileSync(file, "utf8"), broken, "the file is untouched");
+  // Only startup falls back to defaults for a broken file.
+  assert.deepEqual(await loadSettings(file), defaultSettings());
+  // Fixing the file: the next refresh (stamp still differs from `rev`) picks it up.
+  writeFileSync(file, JSON.stringify({ port: 30145 }));
+  assert.notEqual(await settingsStamp(file), rev);
+  assert.equal((await readSettingsStrict(file)).port, 30145);
 });
 
 test("validateSettings: port is optional, 1024–65535", () => {

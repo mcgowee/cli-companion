@@ -29,7 +29,7 @@ import { handoffBrief, handoffFileName, saveHandoff, sessionMarkdown } from "./h
 import { PLACES, setShortcut, shortcutStatus } from "./shortcut.mjs";
 import { frequentPrompts, loadPrompts, PromptError, savePrompts, validatePrompts } from "./prompts.mjs";
 import { classifyRequest, loadRemote, remoteAllowed, saveRemote, serveOff, serveOn, serving, tailscaleSelf } from "./remote.mjs";
-import { loadSettings, saveSettings, SettingsError, settingsStamp, sourceEnv, validateSettings } from "./settings.mjs";
+import { loadSettings, readSettingsStrict, saveSettings, SettingsError, settingsStamp, sourceEnv, validateSettings } from "./settings.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import { isProcessAlive } from "./fsutil.mjs";
 import { createSources, describeSources, nativeId, sourceForId } from "./sources/index.mjs";
@@ -48,6 +48,8 @@ const SETTINGS_FILE = join(stateDir(), "settings.json");
 let settings = await loadSettings(SETTINGS_FILE);
 // The file's stamp when `settings` was read; moves on disk mean a hand edit to pick up.
 let settingsRev = await settingsStamp(SETTINGS_FILE);
+// Non-empty while settings.json on disk can't be parsed: GET shows it, saves are refused.
+let settingsError = "";
 // Phone access over Tailscale (server/remote.mjs): off unless switched on in Settings.
 const REMOTE_FILE = join(stateDir(), "remote.json");
 let remote = await loadRemote(REMOTE_FILE);
@@ -67,10 +69,26 @@ function applySettings(next, rev) {
   broadcast({ type: "sources" });
 }
 
-/** Pick up hand edits: re-read settings.json when it changed on disk since the server read it. */
+/**
+ * Pick up hand edits: re-read settings.json when it changed on disk since the server read it.
+ * A file that doesn't parse (a typo, or an editor caught mid-write) changes nothing: the loaded
+ * settings stay live, settingsRev stays put so the next refresh tries the file again, and
+ * settingsError tells the page (and refuses saves) until the file is fixed.
+ */
 async function refreshSettings() {
   const rev = await settingsStamp(SETTINGS_FILE);
-  if (rev !== settingsRev) applySettings(await loadSettings(SETTINGS_FILE), rev);
+  if (rev === settingsRev) {
+    settingsError = "";
+    return;
+  }
+  try {
+    const next = await readSettingsStrict(SETTINGS_FILE);
+    settingsError = "";
+    applySettings(next, rev);
+  } catch (error) {
+    if (!settingsError) console.error(`[companion] ${SETTINGS_FILE} changed but isn't valid JSON (${error.message}); keeping the settings already loaded.`);
+    settingsError = `settings.json isn't valid JSON, so the settings shown are from before that edit, and saving is off. Fix the file (${SETTINGS_FILE}), then reload this page.`;
+  }
 }
 // With no running/idle signal from a CLI, a transcript written this recently counts as running.
 const ACTIVE_FALLBACK_MS = 2 * 60_000;
@@ -1328,6 +1346,10 @@ const server = createServer(async (req, res) => {
           const body = JSON.parse(await readBody(req));
           const next = validateSettings(body);
           await refreshSettings();
+          if (settingsError) {
+            sendJson(res, 409, { error: `Not saved: ${settingsError}` });
+            return;
+          }
           if (body.rev !== settingsRev) {
             sendJson(res, 409, { error: "Settings were changed on disk after this page read them. Reload the page to see the current settings, then make your changes again." });
             return;
@@ -1344,6 +1366,7 @@ const server = createServer(async (req, res) => {
       sendJson(res, 200, {
         settings,
         rev: settingsRev,
+        error: settingsError,
         file: SETTINGS_FILE,
         port: PORT,
         portFromEnv: process.env.CLI_COMPANION_PORT_SET
