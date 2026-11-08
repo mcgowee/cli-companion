@@ -8,6 +8,12 @@
 // Open uses the terminal picked in Settings: on Windows, Windows Terminal (else a PowerShell
 // window); on macOS, Terminal or iTerm2 (through osascript); on Linux, the first terminal
 // program found. Copy always works. macOS and Linux are less tested than Windows.
+//
+// Headless (Linux/BSD with no graphical session): Open can't work, so the menu says why and
+// offers only the lines to paste over SSH — for a Pi running inside tmux, an attach line.
+
+import { readFileSync } from "node:fs";
+import { hostname } from "node:os";
 
 const SESSION_ID = /^[0-9a-f][0-9a-f-]{7,63}$/i;
 
@@ -130,6 +136,67 @@ function plan(id, cwd, command, { platform, shell, userShell, encoded }) {
     default:
       return undefined;
   }
+}
+
+/**
+ * No window to open one in: Linux (or another non-Windows, non-macOS system) with no graphical
+ * session. Windows and macOS always have a desktop, so they never count as headless.
+ */
+export function isHeadless({ platform = process.platform, env = process.env } = {}) {
+  return platform !== "win32" && platform !== "darwin" && !env.DISPLAY && !env.WAYLAND_DISPLAY;
+}
+
+/** What the menu says instead of Open buttons on a headless computer. */
+export function headlessNote(host = hostname()) {
+  return `This computer has no graphical terminal, so Open can't work here. Copy a line and paste it into a terminal logged in to ${host} (for example over SSH).`;
+}
+
+/**
+ * The pid and its parents, nearest first, read from /proc/<pid>/stat (Linux only; [] where
+ * /proc isn't available). The chain is capped, and a vanished process ends it quietly.
+ */
+export function pidAncestry(pid, read = (p) => readFileSync(`/proc/${p}/stat`, "utf8")) {
+  const chain = [];
+  let current = Number(pid);
+  while (Number.isInteger(current) && current > 1 && chain.length < 32) {
+    chain.push(current);
+    try {
+      // "pid (comm) state ppid …" — comm can hold spaces and ")", so parse after the last ")".
+      const stat = read(current);
+      current = Number(stat.slice(stat.lastIndexOf(")") + 1).trim().split(" ")[1]);
+    } catch {
+      break;
+    }
+  }
+  return chain;
+}
+
+/**
+ * The tmux session holding a process: `panes` is `tmux list-panes -a -F "#{pane_pid}\t#{session_name}"`
+ * output, `ancestry` the process's pid chain (pidAncestry). A pane's pid is the shell tmux
+ * started in it, so the CLI running there has it as an ancestor. "" when it isn't in tmux.
+ */
+export function tmuxSessionFromPanes(panes, ancestry) {
+  const byPid = new Map();
+  for (const line of String(panes ?? "").split("\n")) {
+    const tab = line.indexOf("\t");
+    if (tab > 0) byPid.set(Number(line.slice(0, tab)), line.slice(tab + 1));
+  }
+  for (const pid of ancestry) {
+    const name = byPid.get(pid);
+    if (name) return name;
+  }
+  return "";
+}
+
+/** The menu entry that reaches a running tmux session from another computer. */
+export function sshAttachOption(tmuxSession, host = hostname()) {
+  return {
+    action: "ssh-attach",
+    label: `Attach over SSH (tmux: ${tmuxSession})`,
+    command: "",
+    copy: `ssh -t ${host} tmux attach -t ${quotePath(tmuxSession, "linux")}`,
+  };
 }
 
 /**

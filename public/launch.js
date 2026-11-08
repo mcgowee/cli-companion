@@ -39,6 +39,7 @@
     menu.innerHTML = `
       <div class="launch-head"><span>${kind === "workspace" || data.options?.some((o) => o.action === "terminal") ? "Open in a terminal" : "Resume in a terminal"}</span>
         <code title="${esc(data.cwd)}">${esc(data.cwd)}</code></div>
+      ${data.note ? `<div class="launch-msg">${esc(data.note)}</div>` : ""}
       ${data.options
         .map(
           (o, i) => `<div class="launch-item${o.disabled ? " disabled" : ""}" role="none">

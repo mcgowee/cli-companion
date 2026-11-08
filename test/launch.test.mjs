@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkSessionId, copyLine, LaunchError, openPlan, quotePath, resumeCommand, workspaceActions } from "../server/launch.mjs";
+import { checkSessionId, copyLine, headlessNote, isHeadless, LaunchError, openPlan, pidAncestry, quotePath, resumeCommand, sshAttachOption, tmuxSessionFromPanes, workspaceActions } from "../server/launch.mjs";
 import { createSources } from "../server/sources/index.mjs";
 
 test("commands come from the sources' fixed lists; session ids are checked", () => {
@@ -52,6 +52,52 @@ test("openPlan: macOS Terminal or iTerm via AppleScript, quotes escaped", () => 
   // The shell line is  cd '/Users/me/it'\''s "x"' && pi -c ; AppleScript doubles its \ and escapes its ".
   assert.equal(terminal.args[1], `tell application "Terminal" to do script "cd '/Users/me/it'\\\\''s \\"x\\"' && pi -c"`);
   assert.match(iterm.args[1], /^tell application "iTerm"/);
+});
+
+test("isHeadless: only Linux-likes without a graphical session; Windows and macOS never", () => {
+  assert.equal(isHeadless({ platform: "linux", env: {} }), true);
+  assert.equal(isHeadless({ platform: "linux", env: { DISPLAY: ":0" } }), false);
+  assert.equal(isHeadless({ platform: "linux", env: { WAYLAND_DISPLAY: "wayland-0" } }), false);
+  assert.equal(isHeadless({ platform: "win32", env: {} }), false);
+  assert.equal(isHeadless({ platform: "darwin", env: {} }), false);
+  assert.equal(isHeadless({ platform: "freebsd", env: {} }), true);
+});
+
+test("pidAncestry walks /proc parents, survives odd comm names, stops at init or a vanished process", () => {
+  // 400 (pi) ← 300 (the pane's shell, comm with spaces and ")") ← 200 (tmux server, parent 1).
+  const stats = {
+    400: "400 (pi) S 300 400 300 0 -1",
+    300: "300 (my (weird) sh) S 200 300 300 0 -1",
+    200: "200 (tmux: server) S 1 200 200 0 -1",
+  };
+  const read = (pid) => {
+    if (!stats[pid]) throw new Error("ENOENT");
+    return stats[pid];
+  };
+  assert.deepEqual(pidAncestry(400, read), [400, 300, 200]);
+  assert.deepEqual(pidAncestry(300, read), [300, 200]);
+  // The process is gone (or /proc isn't there): the chain is just what was asked about.
+  assert.deepEqual(pidAncestry(999, read), [999]);
+  assert.deepEqual(pidAncestry(undefined, read), []);
+});
+
+test("tmuxSessionFromPanes: the pane whose shell is an ancestor names the session", () => {
+  const panes = "300\tcharloop\n500\tother one\n";
+  assert.equal(tmuxSessionFromPanes(panes, [400, 300, 200]), "charloop");
+  assert.equal(tmuxSessionFromPanes(panes, [501, 500, 1]), "other one");
+  assert.equal(tmuxSessionFromPanes(panes, [700, 600]), "");
+  assert.equal(tmuxSessionFromPanes("", [400, 300]), "");
+  assert.equal(tmuxSessionFromPanes(undefined, [400]), "");
+});
+
+test("the headless menu: an ssh attach line for tmux, and a note naming the host", () => {
+  const option = sshAttachOption("charloop", "aegis");
+  assert.equal(option.copy, "ssh -t aegis tmux attach -t 'charloop'");
+  assert.equal(option.action, "ssh-attach");
+  assert.equal(option.label, "Attach over SSH (tmux: charloop)");
+  assert.equal(option.command, "", "nothing for Open to run — it's a line to paste elsewhere");
+  assert.match(headlessNote("aegis"), /no graphical terminal/i);
+  assert.match(headlessNote("aegis"), /aegis/);
 });
 
 test("openPlan: Linux terminals run a login shell that stays open", () => {

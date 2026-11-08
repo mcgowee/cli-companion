@@ -24,7 +24,7 @@ import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDash
 import { usageSummary } from "./usage.mjs";
 import { createTokenTracker } from "./token-usage.mjs";
 import { createSearchIndex } from "./search.mjs";
-import { copyLine, LaunchError, openPlan, quotePath, resumeCommand, terminalsFor, workspaceActions } from "./launch.mjs";
+import { copyLine, headlessNote, isHeadless, LaunchError, openPlan, pidAncestry, quotePath, resumeCommand, sshAttachOption, terminalsFor, tmuxSessionFromPanes, workspaceActions } from "./launch.mjs";
 import { handoffBrief, handoffFileName, saveHandoff, sessionMarkdown } from "./handoff.mjs";
 import { PLACES, setShortcut, shortcutStatus } from "./shortcut.mjs";
 import { frequentPrompts, loadPrompts, PromptError, savePrompts, validatePrompts } from "./prompts.mjs";
@@ -495,13 +495,16 @@ async function launchTarget(kind, id) {
     const sessionId = nativeId(source, id);
     let running;
     let where;
-    if (source.live) running = Boolean(sessions.get(id) && !sessions.get(id).ended);
-    else {
+    let pid;
+    if (source.live) {
+      running = Boolean(sessions.get(id) && !sessions.get(id).ended);
+      pid = sessions.get(id)?.pid;
+    } else {
       const map = await runningMap();
       running = map.has(id);
       where = map.where.get(id);
     }
-    return { kind, cwd: await existingDir(meta.cwd), source, sessionId, running, where };
+    return { kind, cwd: await existingDir(meta.cwd), source, sessionId, running, where, pid };
   }
   if (kind === "workspace") {
     const meta = [...savedById.values()].find((m) => workspaceKey(m.cwd) === id);
@@ -545,6 +548,17 @@ function launchOptions(target) {
     ];
   }
   return workspaceActions(SOURCES).map((option) => make(option));
+}
+
+/** The tmux session a running CLI sits in ("" when it isn't in one, or tmux isn't here). */
+function tmuxSessionOf(pid) {
+  if (!Number.isInteger(pid) || process.platform === "win32") return "";
+  try {
+    const panes = execFileSync("tmux", ["list-panes", "-a", "-F", "#{pane_pid}\t#{session_name}"], { encoding: "utf8", timeout: 2000, windowsHide: true });
+    return tmuxSessionFromPanes(panes, pidAncestry(pid));
+  } catch {
+    return ""; // no tmux, or no tmux server running for this user
+  }
 }
 
 let shellName;
@@ -1401,9 +1415,18 @@ const server = createServer(async (req, res) => {
       try {
         const target = await launchTarget(String(params.kind ?? ""), String(params.id ?? ""));
         if (req.method === "GET") {
-          sendJson(res, 200, { cwd: target.cwd, canOpen: true, platform: process.platform, options: launchOptions(target) });
+          // Headless (no graphical session to open a terminal in): hide Open, say why, and lead
+          // with the line that reaches a running tmux session from another computer.
+          const headless = isHeadless();
+          const options = launchOptions(target);
+          if (headless && target.running) {
+            const tmux = tmuxSessionOf(target.pid);
+            if (tmux) options.unshift(sshAttachOption(tmux));
+          }
+          sendJson(res, 200, { cwd: target.cwd, canOpen: !headless, platform: process.platform, ...(headless ? { note: headlessNote() } : {}), options });
           return;
         }
+        if (isHeadless()) throw new LaunchError(headlessNote());
         const option = launchOptions(target).find((o) => o.action === params.action);
         if (!option) throw new LaunchError("That isn't available here.");
         if (option.disabled) throw new LaunchError(option.disabled);
