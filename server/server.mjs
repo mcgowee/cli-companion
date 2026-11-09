@@ -12,6 +12,7 @@
 
 import { commandFromRequest } from "./commands.mjs";
 import { createServer } from "node:http";
+import { homedir } from "node:os";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,7 +21,7 @@ import { lastExchange, localModels, ollamaUrl, SuggestError, suggestionCache, su
 import { addFavorite, FavoriteError, loadFavorites, removeFavorite } from "./favorites.mjs";
 import { APP_FILE_HEADERS, APP_MIME, exchangeText, fileKind, findApps, resolveAppFile, urlName } from "./apps.mjs";
 import { createReadStream } from "node:fs";
-import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard } from "./dashboards.mjs";
+import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard, setDashboardStart } from "./dashboards.mjs";
 import { usageSummary } from "./usage.mjs";
 import { createTokenTracker } from "./token-usage.mjs";
 import { createSearchIndex } from "./search.mjs";
@@ -36,7 +37,7 @@ import { createSources, describeSources, nativeId, sourceForId } from "./sources
 import { APP_ID, accessKey, companionPort, ensureServer, isPortUp, migrateStateFile, removeRuntimeFile, shutdownPlan, stateDir, writeRuntimeFile } from "./start.mjs";
 import { hasKey, keyCookie, lockedPage, needsKey, sameKey } from "./access.mjs";
 import { MAX_UPLOAD, saveUpload } from "./uploads.mjs";
-import { createRunner, encodedCommand, looksInteractive, MAX_COMMAND } from "./runner.mjs";
+import { createRunner, encodedCommand, looksInteractive, MAX_COMMAND, runPlan } from "./runner.mjs";
 import { gitSummary, listDir, makeFolder, readFileForView, resolveInside, reviewDiff, reviewStatus, WorkbenchError } from "./workbench.mjs";
 
 const HOST = "127.0.0.1";
@@ -916,7 +917,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (req.method !== "GET" && !["/api/dashboards", "/api/favorites", "/api/folder", "/api/handoff", "/api/launch", "/api/prompts", "/api/remote", "/api/settings", "/api/shortcut", "/api/upload", "/api/run", "/api/run/stop", "/api/run/open"].includes(url.pathname)) {
+    if (req.method !== "GET" && !["/api/dashboards", "/api/dashboards/start", "/api/favorites", "/api/folder", "/api/handoff", "/api/launch", "/api/prompts", "/api/remote", "/api/settings", "/api/shortcut", "/api/upload", "/api/run", "/api/run/stop", "/api/run/open"].includes(url.pathname)) {
       res.writeHead(405).end();
       return;
     }
@@ -1570,6 +1571,56 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (url.pathname === "/api/dashboards/start") {
+      // Start an offline dashboard's server with its saved start command: detached, no window,
+      // so it outlives the companion. Same gate as the Terminal tab (Settings → Terminal →
+      // "Let the companion run commands"), page header only, never from the phone (remote.mjs).
+      if (req.method !== "POST") {
+        res.writeHead(405).end();
+        return;
+      }
+      if (req.headers["x-pi-companion-page"] !== "1") {
+        res.writeHead(403).end();
+        return;
+      }
+      if (settings.runCommands !== true) {
+        sendJson(res, 403, { error: "Running commands is off. Turn it on in Settings → Terminal, or copy the command and run it yourself." });
+        return;
+      }
+      const d = (await loadDashboards(DASHBOARDS_FILE)).find((x) => x.id === (url.searchParams.get("id") ?? ""));
+      if (!d) {
+        sendJson(res, 404, { error: "That dashboard is gone." });
+        return;
+      }
+      if (!d.start) {
+        sendJson(res, 400, { error: "This dashboard has no start command yet." });
+        return;
+      }
+      const cwd = d.startCwd || homedir();
+      const info = await stat(cwd).catch(() => null);
+      if (!info?.isDirectory()) {
+        sendJson(res, 400, { error: `The start folder doesn't exist: ${cwd}` });
+        return;
+      }
+      try {
+        const plan = runPlan(d.start, { shell: process.platform === "win32" ? preferredShell() : "pwsh", userShell: process.env.SHELL });
+        // Not systemd's child: a server started here mustn't think a service manager restarts it.
+        const env = { ...process.env };
+        delete env.INVOCATION_ID;
+        // Windows: not detached. A detached PowerShell gets no usable console and quits before
+        // running anything; a plain child already outlives the companion there. Elsewhere detached
+        // (its own session), so stopping the companion doesn't take the dashboard down with it.
+        const child = spawn(plan.file, plan.args, { cwd, env, detached: process.platform !== "win32", stdio: "ignore", windowsHide: true });
+        child.on("error", () => undefined);
+        child.unref();
+        console.log(`[companion] starting dashboard "${d.name}": ${d.start}`);
+        sendJson(res, 202, { started: true });
+      } catch (error) {
+        sendJson(res, 500, { error: error.message });
+      }
+      return;
+    }
+
     if (url.pathname === "/api/dashboards") {
       if (req.method === "GET") {
         const list = await loadDashboards(DASHBOARDS_FILE);
@@ -1597,6 +1648,10 @@ const server = createServer(async (req, res) => {
       try {
         if (req.method === "POST") {
           sendJson(res, 201, await addDashboard(DASHBOARDS_FILE, JSON.parse(await readBody(req))));
+        } else if (req.method === "PUT") {
+          // Only the start command and its folder change here; name and address stay as added.
+          const updated = await setDashboardStart(DASHBOARDS_FILE, url.searchParams.get("id") ?? "", JSON.parse(await readBody(req)));
+          sendJson(res, updated ? 200 : 404, updated ?? { error: "That dashboard is gone." });
         } else if (req.method === "DELETE") {
           const removed = await removeDashboard(DASHBOARDS_FILE, url.searchParams.get("id") ?? "");
           sendJson(res, removed ? 200 : 404, { removed });

@@ -178,7 +178,11 @@ next to it:
     in `~/.cli-companion/token-usage.json`. **Custom**
     dashboards are links to any page, such as a local server's status page: add them with the
     form, open them inside the companion or in a new tab. Ones on this computer show online
-    or offline. The list is kept in `~/.cli-companion/dashboards.json`.
+    or offline. A dashboard can also keep the command that starts its server: when it is
+    offline, opening it shows **isn't running** with that command to **Copy**, or to **Run it**
+    (only with Settings → Terminal → *Let the companion run commands* on; it starts in the
+    background, without a window, and the dashboard loads itself once it answers).
+    The list is kept in `~/.cli-companion/dashboards.json`.
     **Old sessions** lists saved sessions you have not used for 14, 30, 60 or 90+ days (not running),
     oldest, largest or most tokens first, with the space they use. Read-only: open one, or copy its
     file path; nothing is moved or deleted.
@@ -316,7 +320,7 @@ What the companion writes (all in `~/.cli-companion`, or `CLI_COMPANION_HOME`, u
 |---|---|
 | `settings.json` | The Settings page |
 | `access-key` | The access key (made on first start) |
-| `favorites.json`, `dashboards.json`, `prompts.json` | Starred items, custom dashboards, saved prompts |
+| `favorites.json`, `dashboards.json`, `prompts.json` | Starred items, custom dashboards (with their start commands), saved prompts |
 | `token-usage.json` | Token counts per session file (a cache; safe to delete) |
 | `handoffs/` | Handoff briefs you made (newest 20 kept) |
 | `remote.json` | Phone access on/off and your Tailscale name |

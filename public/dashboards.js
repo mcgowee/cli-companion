@@ -3,12 +3,14 @@
 //   #/dashboards              the list, with an Add form
 //   #/dashboards/usage        Usage overview (from /api/usage)
 //   #/dashboards/old          Old sessions: not used for a while (from /api/old-sessions), read-only
-//   #/dashboards/view/<id>    a custom dashboard shown inside the companion
+//   #/dashboards/view/<id>    a custom dashboard shown inside the companion; when its server
+//                             isn't answering: "Not running", its start command (Copy, Run when
+//                             Settings → Terminal allows running commands), then it loads itself
 // menu.js calls dashboardsPage.show(rest) on every route change (rest = null: page hidden).
 (function () {
   const root = document.getElementById("page-dashboards");
   const esc = window.escapeHtml;
-  const state = { list: null, usageDays: 30, usage: null, view: null, oldDays: 30, oldSort: "oldest", old: null };
+  const state = { list: null, usageDays: 30, usage: null, view: null, oldDays: 30, oldSort: "oldest", old: null, canRun: null, forceOpen: null, waiting: null };
 
   const BUILT_IN = [
     {
@@ -164,7 +166,7 @@
           <span class="dash-url">${esc(d.url)}</span>
           ${d.description ? `<span class="dash-desc">${esc(d.description)}</span>` : ""}
           <span class="dash-actions">
-            <a class="btn primary small" href="#/dashboards/view/${encodeURIComponent(d.id)}">Open</a>
+            <a class="btn primary small" href="#/dashboards/view/${encodeURIComponent(d.id)}">${d.online === false ? (d.start ? "Start…" : "Open") : "Open"}</a>
             <a class="btn small" href="${esc(d.url)}" target="_blank" rel="noopener">New tab</a>
             <button class="mini" type="button" data-remove="${esc(d.id)}" data-name="${esc(d.name)}">Remove</button>
           </span>
@@ -179,6 +181,7 @@
         <label>Name <input name="name" required maxlength="80" placeholder="GPU and Ollama"></label>
         <label>Address <input name="url" required placeholder="http://127.0.0.1:30142"></label>
         <label class="full">Description <input name="description" maxlength="300" placeholder="Optional"></label>
+        <label class="full">Start command <input name="start" maxlength="2000" placeholder="Optional: what starts its server, e.g. pwsh -File C:\\tools\\start-dash.ps1"></label>
         <div class="dash-add-foot">
           <span class="dash-msg" id="dash-msg" role="status"></span>
           <button class="btn primary" type="submit">Add</button>
@@ -243,6 +246,137 @@
 
   /* ── custom dashboard inside the companion ────────────── */
 
+  async function loadCanRun() {
+    try {
+      const res = await fetch("/api/settings", { cache: "no-store" });
+      state.canRun = res.ok ? (await res.json()).settings?.runCommands === true : false;
+    } catch {
+      state.canRun = false;
+    }
+  }
+
+  /** Not answering: say so, show its start command (Copy / Run) and an editor for it. */
+  function renderOffline(d) {
+    root.className = "page";
+    const waiting = state.waiting?.id === d.id;
+    root.innerHTML = `<div class="page-inner">
+      <p class="page-lead"><a href="#/dashboards">← Dashboards</a></p>
+      <h1>${esc(d.name)} isn't running</h1>
+      <p class="page-lead">Nothing answers at <code>${esc(d.url)}</code>.${d.start ? " Start its server, and the dashboard opens here once it answers." : " Add the command that starts its server, and you can start it from here next time."}</p>
+      ${
+        d.start
+          ? `<div class="dash-start">
+        <code class="dash-cmd">${esc(d.start)}</code>
+        <div class="dash-start-row">
+          <button class="btn small" type="button" id="dash-copy">Copy command</button>
+          ${
+            state.canRun
+              ? `<button class="btn primary small" type="button" id="dash-run" ${waiting ? "disabled" : ""}>${waiting ? "Starting…" : "Run it"}</button>`
+              : `<span class="dash-msg">To run it from here, turn on <a href="#/settings">Settings → Terminal → Let the companion run commands</a>.</span>`
+          }
+          <button class="btn small" type="button" id="dash-force">Open anyway</button>
+        </div>
+        ${d.startCwd ? `<p class="dash-file">Runs in <code>${esc(d.startCwd)}</code></p>` : ""}
+        <p class="dash-msg" id="dash-run-msg" role="status">${waiting ? `Waiting for ${esc(d.url)} to answer…` : ""}</p>
+      </div>`
+          : ""
+      }
+      <form class="dash-add" id="dash-start-form" autocomplete="off">
+        <h3>${d.start ? "Change the start command" : "Start command"}</h3>
+        <label class="full">Command <input name="start" maxlength="2000" value="${esc(d.start ?? "")}" placeholder="pwsh -File C:\\tools\\start-dash.ps1"></label>
+        <label class="full">Run in folder <input name="startCwd" value="${esc(d.startCwd ?? "")}" placeholder="Optional full path (default: your home folder)"></label>
+        <div class="dash-add-foot">
+          <span class="dash-msg" id="dash-start-msg" role="status"></span>
+          <button class="btn primary" type="submit">Save</button>
+        </div>
+      </form>
+    </div>`;
+
+    root.querySelector("#dash-copy")?.addEventListener("click", async (event) => {
+      const b = event.currentTarget;
+      try {
+        await navigator.clipboard.writeText(d.start);
+        b.textContent = "Copied ✓";
+      } catch {
+        b.textContent = "Copy failed";
+      }
+      setTimeout(() => (b.textContent = "Copy command"), 1500);
+    });
+    root.querySelector("#dash-force")?.addEventListener("click", () => {
+      state.forceOpen = d.id;
+      state.view = null;
+      renderView(d.id);
+    });
+    root.querySelector("#dash-run")?.addEventListener("click", () => runStart(d));
+    root.querySelector("#dash-start-form").addEventListener("submit", (event) => saveStart(event, d));
+  }
+
+  async function runStart(d) {
+    const msg = root.querySelector("#dash-run-msg");
+    try {
+      const res = await fetch(`/api/dashboards/start?id=${encodeURIComponent(d.id)}`, {
+        method: "POST",
+        headers: { "x-pi-companion-page": "1" },
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `HTTP ${res.status}`);
+    } catch (error) {
+      msg.textContent = error.message;
+      msg.dataset.kind = "error";
+      return;
+    }
+    // Poll until it answers (up to 90 s), then show it.
+    state.waiting = { id: d.id, until: Date.now() + 90_000 };
+    renderOffline(d);
+    const tick = async () => {
+      if (state.waiting?.id !== d.id || state.view !== d.id) return;
+      await loadList();
+      const now = (state.list?.dashboards ?? []).find((x) => x.id === d.id);
+      if (now?.online) {
+        state.waiting = null;
+        state.view = null;
+        renderView(d.id);
+        return;
+      }
+      if (Date.now() > state.waiting.until) {
+        state.waiting = null;
+        renderOffline(now ?? d);
+        const m = root.querySelector("#dash-run-msg");
+        if (m) {
+          m.textContent = "It still isn't answering after 90 seconds. Check the command by running it in a terminal.";
+          m.dataset.kind = "error";
+        }
+        return;
+      }
+      setTimeout(tick, 2000);
+    };
+    setTimeout(tick, 2000);
+  }
+
+  async function saveStart(event, d) {
+    event.preventDefault();
+    const msg = root.querySelector("#dash-start-msg");
+    const body = Object.fromEntries(new FormData(event.currentTarget));
+    try {
+      const res = await fetch(`/api/dashboards?id=${encodeURIComponent(d.id)}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json", "x-pi-companion-page": "1" },
+        body: JSON.stringify(body),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `HTTP ${res.status}`);
+      await loadList();
+      const now = (state.list?.dashboards ?? []).find((x) => x.id === d.id) ?? { ...d, ...out };
+      renderOffline(now);
+      const done = root.querySelector("#dash-start-msg");
+      done.textContent = "Saved.";
+      done.dataset.kind = "ok";
+    } catch (error) {
+      msg.textContent = error.message;
+      msg.dataset.kind = "error";
+    }
+  }
+
   function renderView(id) {
     const d = (state.list?.dashboards ?? []).find((x) => x.id === id);
     root.className = "page page-frame";
@@ -252,6 +386,13 @@
       return;
     }
     if (state.view === d.id && root.querySelector("iframe")) return; // keep it loaded
+    if (d.online === false && state.forceOpen !== d.id) {
+      if (state.view !== d.id || !root.querySelector("#dash-start-form")) {
+        state.view = d.id;
+        renderOffline(d);
+      }
+      return;
+    }
     state.view = d.id;
     root.innerHTML = `<div class="frame-bar">
         <a class="frame-back" href="#/dashboards">← Dashboards</a>
@@ -597,8 +738,12 @@
         await loadUsage();
         renderUsage();
       } else if (sub === "view" && id) {
-        if (!state.list) await loadList();
-        renderView(decodeURIComponent(id));
+        const want = decodeURIComponent(id);
+        if (!state.list || !(state.view === want && root.querySelector("iframe"))) {
+          if (state.view !== want) state.forceOpen = null;
+          await Promise.all([loadList(), loadCanRun()]);
+        }
+        renderView(want);
       } else {
         state.view = null;
         if (state.list === null) renderList();
