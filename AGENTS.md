@@ -13,6 +13,7 @@ Pi package (`pi install git:github.com/mcgowee/cli-companion`) and a standalone
 | `server/start.mjs` | Server start + window open, the port, the state folder and the access key, shared by the Pi extension's `/companion` and the CLI. |
 | `server/access.mjs` | The access-key gate: which paths need the key, header/cookie check, the locked page. |
 | `server/remote.mjs` | Phone access over `tailscale serve` (identity check, what a phone may do). |
+| `server/favorites.mjs`, `colors.mjs` | Sidebar Favorites (ids) and per-session colours (id → strict `#rrggbb`, set from a row's ⋯ / right-click menu). |
 | `server/prompts.mjs`, `handoff.mjs`, `shortcut.mjs`, `apps.mjs` | Saved prompts, handoff briefs, the Start menu/desktop shortcut, and the Apps tab's link finder. |
 | `server/server.mjs` | HTTP server on `127.0.0.1`: `/ingest`, `/events` (SSE), `/api/{history,sessions,workspaces,image}`, `/bridge/{inbox,ack}`, `/healthz`, workbench endpoints, and static `public/`. |
 | `server/sources/*.mjs` | One module per CLI the companion knows (Pi, Claude Code, Codex). Adding a CLI means adding a module here + a transcript parser (`claude-file.mjs`, `codex-file.mjs` produce the same items the page renders for Pi) — no changes to server or page. |

@@ -20,6 +20,8 @@
     filter: "",
     /** Favorite session ids, most recently added first (kept by the server in favorites.json). */
     favorites: [],
+    /** Session id → "#rrggbb", picked from a row's ⋯ / right-click menu (session-colors.json). */
+    colors: {},
   };
 
   function loadPref(key, fallback) {
@@ -357,7 +359,9 @@
     const ago = status && status !== "idle" ? statusLabel({ status }) : waiting ? "Needs you" : busy ? "Running" : fmtAgo(s.lastActivity);
     const g = wsName ? gitById.get(s.id) : undefined;
     const tip = `${src.label}: ${rowTitle(s)}${wsName ? ` · ${wsName}` : ""}${g ? `\n${gitTip(g)}` : ""}`;
-    const row = `<button class="session${active}" data-id="${esc(s.id)}" data-src="${esc(src.id)}" title="${esc(tip)}">
+    const color = state.colors[s.id];
+    const colorAttr = color && /^#[0-9a-f]{6}$/.test(color) ? ` style="--scolor:${color}"` : "";
+    const row = `<button class="session${active}${colorAttr ? " has-color" : ""}"${colorAttr} data-id="${esc(s.id)}" data-src="${esc(src.id)}" title="${esc(tip)}">
       <span class="sdot ${dot}"></span>
       ${src.tag ? `<span class="src-tag" aria-label="${esc(src.label)}">${esc(src.tag)}</span>` : ""}
       ${
@@ -384,6 +388,117 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg>
     </button>`;
   }
+
+  /** The ⋯ beside a row in Active and Favorites: the row's menu (its colour). Right-click does the same. */
+  function moreButton(s) {
+    const label = `More for ${rowTitle(s)}: colour`;
+    return `<button class="row-more" type="button" data-more="${esc(s.id)}" aria-haspopup="menu" aria-label="${esc(label)}" title="${esc(label)}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5.5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18.5" cy="12" r="1.6"/></svg>
+    </button>`;
+  }
+
+  // Close to Windows Terminal's own tab colours, so a session can match its terminal tab;
+  // "Custom…" takes any colour.
+  const SESSION_COLORS = [
+    ["Red", "#e74856"], ["Orange", "#f7630c"], ["Yellow", "#f9c513"], ["Green", "#16c60c"],
+    ["Teal", "#00b7c3"], ["Blue", "#0078d4"], ["Purple", "#886ce4"], ["Pink", "#e3008c"],
+    ["Brown", "#8e562e"], ["Gray", "#767676"],
+  ];
+  const colorMenu = document.createElement("div");
+  colorMenu.className = "launch-menu color-menu";
+  colorMenu.setAttribute("role", "menu");
+  colorMenu.hidden = true;
+  document.body.append(colorMenu);
+  function closeColorMenu() {
+    colorMenu.hidden = true;
+  }
+
+  function openColorMenu(id, x, y) {
+    const found = treeWithLive().flatMap((ws) => ws.sessions).find((s) => s.id === id);
+    const current = state.colors[id] ?? "";
+    colorMenu.innerHTML = `<div class="launch-head"><span>${esc(found ? rowTitle(found) : "Session")}</span><code>Colour in the sidebar</code></div>
+      <div class="color-swatches">${SESSION_COLORS.map(
+        ([name, hex]) =>
+          `<button type="button" class="color-swatch${hex === current ? " on" : ""}" role="menuitemradio" aria-checked="${hex === current}" data-color="${hex}" style="--swatch:${hex}" title="${name}" aria-label="${name}"></button>`,
+      ).join("")}</div>
+      <label class="launch-item color-custom"><span class="launch-label">Custom…</span><input type="color" value="${current || "#0078d4"}"></label>
+      <button type="button" class="launch-path color-clear"${current ? "" : " disabled"}>No colour</button>`;
+    colorMenu.hidden = false;
+    const w = colorMenu.offsetWidth;
+    const h = colorMenu.offsetHeight;
+    colorMenu.style.left = `${Math.max(8, Math.min(x, innerWidth - w - 8))}px`;
+    colorMenu.style.top = `${Math.max(8, Math.min(y, innerHeight - h - 8))}px`;
+    for (const b of colorMenu.querySelectorAll(".color-swatch")) {
+      b.addEventListener("click", () => {
+        closeColorMenu();
+        void setSessionColor(id, b.dataset.color);
+      });
+    }
+    // Live preview while dragging in the picker; saved when the picker closes.
+    const input = colorMenu.querySelector('input[type="color"]');
+    input.addEventListener("input", () => {
+      for (const row of document.querySelectorAll(`#session-list .session[data-id="${CSS.escape(id)}"]`)) {
+        row.classList.add("has-color");
+        row.style.setProperty("--scolor", input.value);
+      }
+    });
+    input.addEventListener("change", () => {
+      closeColorMenu();
+      void setSessionColor(id, input.value);
+    });
+    colorMenu.querySelector(".color-clear").addEventListener("click", () => {
+      closeColorMenu();
+      void setSessionColor(id, "");
+    });
+    colorMenu.querySelector(".color-swatch")?.focus();
+  }
+
+  async function setSessionColor(id, color) {
+    const before = state.colors;
+    state.colors = { ...state.colors };
+    if (color) state.colors[id] = color.toLowerCase();
+    else delete state.colors[id];
+    renderSidebar();
+    try {
+      const res = await fetch("/api/session-colors", {
+        method: "PUT",
+        headers: { "content-type": "application/json", "x-pi-companion-page": "1" },
+        body: JSON.stringify({ id, color }),
+      });
+      if (res.ok) state.colors = (await res.json()).colors ?? state.colors;
+      else state.colors = before;
+    } catch {
+      // Keep what is shown; the next load corrects it.
+    }
+    renderSidebar();
+  }
+
+  async function loadSessionColors() {
+    try {
+      const res = await fetch("/api/session-colors", { cache: "no-store" });
+      if (!res.ok) return;
+      state.colors = (await res.json()).colors ?? {};
+      renderSidebar();
+    } catch {
+      // Server restarting: try again on the next hello.
+    }
+  }
+
+  document.addEventListener("pointerdown", (event) => {
+    if (!colorMenu.hidden && !colorMenu.contains(event.target) && !event.target.closest?.(".row-more")) closeColorMenu();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !colorMenu.hidden) closeColorMenu();
+  });
+  window.addEventListener("resize", closeColorMenu);
+  $("session-list").addEventListener("scroll", closeColorMenu, { passive: true });
+  // Right-click on any session row (Active, Favorites or the tree) opens the same menu.
+  $("session-list").addEventListener("contextmenu", (event) => {
+    const row = event.target.closest?.(".session[data-id]");
+    if (!row || document.documentElement.classList.contains("remote-view")) return;
+    event.preventDefault();
+    openColorMenu(row.dataset.id, event.clientX, event.clientY);
+  });
 
   async function loadFavorites() {
     try {
@@ -480,14 +595,14 @@
     const activeHtml = `<div class="section-head side-section">Active${activeRows.length ? ` <span class="ws-count">${activeRows.length}</span>` : ""}</div>
       <div class="active-list">${
         activeRows.length
-          ? activeRows.map(({ s, ws }) => `<div class="row-wrap">${sessionRow(s, ws.name)}${favButton(s)}</div>`).join("")
+          ? activeRows.map(({ s, ws }) => `<div class="row-wrap">${sessionRow(s, ws.name)}${favButton(s)}${moreButton(s)}</div>`).join("")
           : `<p class="hint">${filter ? "No running sessions match." : "No running sessions."}</p>`
       }</div>
       <div class="section-head side-section">Favorites${favRows.length ? ` <span class="ws-count">${favRows.length}</span>` : ""}</div>
       <div class="fav-list">${
         favRows.length
           ? favRows
-              .map(({ s, ws }) => `<div class="row-wrap">${sessionRow(s, ws.name)}${termButton("session", s.id, isActive(s) ? `Open a terminal for ${rowTitle(s)}` : `Resume ${rowTitle(s)} in a terminal`)}${favButton(s)}</div>`)
+              .map(({ s, ws }) => `<div class="row-wrap">${sessionRow(s, ws.name)}${termButton("session", s.id, isActive(s) ? `Open a terminal for ${rowTitle(s)}` : `Resume ${rowTitle(s)} in a terminal`)}${favButton(s)}${moreButton(s)}</div>`)
               .join("")
           : `<p class="hint">${filter && state.favorites.length ? "No favorites match." : "Click the star beside a session under Active to keep it here."}</p>`
       }</div>
@@ -559,6 +674,14 @@
       button.addEventListener("click", (event) => {
         event.stopPropagation();
         void toggleFavorite(button.dataset.fav);
+      });
+    }
+    for (const button of list.querySelectorAll(".row-more")) {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        if (!colorMenu.hidden) return closeColorMenu();
+        const r = button.getBoundingClientRect();
+        openColorMenu(button.dataset.more, r.right - 4, r.bottom + 4);
       });
     }
     for (const button of list.querySelectorAll(".session")) {
@@ -1263,6 +1386,9 @@
         // Changed here or in another window.
         state.favorites = msg.favorites ?? [];
         renderSidebar();
+      } else if (msg.type === "session-colors") {
+        state.colors = msg.colors ?? {};
+        renderSidebar();
       } else if (msg.type === "sources") {
         // Settings changed (which CLIs are read, suggested replies): refresh the list, then the sidebar.
         window.suggest?.reset();
@@ -1288,5 +1414,6 @@
 
   loadWorkspaces();
   loadFavorites();
+  loadSessionColors();
   connect();
 })();

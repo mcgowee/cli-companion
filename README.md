@@ -43,6 +43,9 @@ next to it:
   the ones waiting with something you haven't seen yet, like "(2) CLI Companion". Under it, **Favorites**:
   click the star beside a session in Active to keep it there, running or not (newest first, with
   its terminal icon); click the filled star to remove it. Kept in `~/.cli-companion/favorites.json`.
+  To give a session a colour (to match the tab colour you gave its terminal, say), click the **⋯**
+  beside it in Active or Favorites, or right-click any session row: pick a swatch, Custom…, or No
+  colour. The row gets a coloured stripe everywhere it's listed. Kept in `~/.cli-companion/session-colors.json`.
   Below that, **Workspaces**, grouped by CLI first: Pi, Claude Code, Codex, each with a caret
   that opens its workspaces (project folders), newest first and collapsed, with that CLI's
   sessions underneath (running ones keep their live dot there too), including past sessions you
@@ -204,7 +207,7 @@ next to it:
     owns this computer's Tailscale (your own devices); no token to type. From the phone you can read
     sessions, search, use dashboards and copy or download a handoff brief. **Allow replies to Pi**
     (off by default) also lets the composer put text in, or send it to, a running Pi session.
-    Never from the phone: terminals, Continue in…, settings, shortcuts, favorites, dashboards,
+    Never from the phone: terminals, Continue in…, settings, shortcuts, favorites, session colours, dashboards,
     new folders, restart. Switching it off removes the `tailscale serve` entry (only if it points
     at the companion; an existing serve entry for something else is left alone and blocks turning
     it on). Needs Tailscale on both devices, signed in to the same account, with HTTPS certificates
@@ -320,7 +323,7 @@ What the companion writes (all in `~/.cli-companion`, or `CLI_COMPANION_HOME`, u
 |---|---|
 | `settings.json` | The Settings page |
 | `access-key` | The access key (made on first start) |
-| `favorites.json`, `dashboards.json`, `prompts.json` | Starred items, custom dashboards (with their start commands), saved prompts |
+| `favorites.json`, `session-colors.json`, `dashboards.json`, `prompts.json` | Starred items, session colours (ids and colours only), custom dashboards (with their start commands), saved prompts |
 | `token-usage.json` | Token counts per session file (a cache; safe to delete) |
 | `handoffs/` | Handoff briefs you made (newest 20 kept) |
 | `remote.json` | Phone access on/off and your Tailscale name |

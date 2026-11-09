@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { groupByWorkspace, workspaceKey } from "./session-index.mjs";
 import { lastExchange, localModels, ollamaUrl, SuggestError, suggestionCache, suggestReplies } from "./suggest.mjs";
 import { addFavorite, FavoriteError, loadFavorites, removeFavorite } from "./favorites.mjs";
+import { ColorError, loadColors, setColor } from "./colors.mjs";
 import { APP_FILE_HEADERS, APP_MIME, exchangeText, fileKind, findApps, resolveAppFile, urlName } from "./apps.mjs";
 import { createReadStream } from "node:fs";
 import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard, setDashboardStart } from "./dashboards.mjs";
@@ -100,6 +101,7 @@ const SERVER_STARTED_AT = Date.now();
 migrateStateFile("dashboards.json");
 const DASHBOARDS_FILE = join(stateDir(), "dashboards.json");
 const FAVORITES_FILE = join(stateDir(), "favorites.json");
+const COLORS_FILE = join(stateDir(), "session-colors.json");
 const PROMPTS_FILE = join(stateDir(), "prompts.json");
 // Token use per session, read from the CLIs' session files (cached in token-usage.json).
 const tokenUsage = createTokenTracker({ cacheFile: join(stateDir(), "token-usage.json") });
@@ -917,7 +919,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (req.method !== "GET" && !["/api/dashboards", "/api/dashboards/start", "/api/favorites", "/api/folder", "/api/handoff", "/api/launch", "/api/prompts", "/api/remote", "/api/settings", "/api/shortcut", "/api/upload", "/api/run", "/api/run/stop", "/api/run/open"].includes(url.pathname)) {
+    if (req.method !== "GET" && !["/api/dashboards", "/api/dashboards/start", "/api/favorites", "/api/session-colors", "/api/folder", "/api/handoff", "/api/launch", "/api/prompts", "/api/remote", "/api/settings", "/api/shortcut", "/api/upload", "/api/run", "/api/run/stop", "/api/run/open"].includes(url.pathname)) {
       res.writeHead(405).end();
       return;
     }
@@ -1567,6 +1569,31 @@ const server = createServer(async (req, res) => {
         sendJson(res, 200, { favorites });
       } catch (error) {
         sendJson(res, error instanceof FavoriteError || error instanceof SyntaxError ? 400 : 500, { error: error.message });
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/session-colors") {
+      // A colour per session for the sidebar. Changes need the page header; every window hears them.
+      if (req.method === "GET") {
+        sendJson(res, 200, { colors: await loadColors(COLORS_FILE) });
+        return;
+      }
+      if (req.method !== "PUT") {
+        res.writeHead(405).end();
+        return;
+      }
+      if (req.headers["x-pi-companion-page"] !== "1") {
+        res.writeHead(403).end();
+        return;
+      }
+      try {
+        const body = JSON.parse(await readBody(req));
+        const colors = await setColor(COLORS_FILE, body?.id, body?.color);
+        broadcast({ type: "session-colors", colors });
+        sendJson(res, 200, { colors });
+      } catch (error) {
+        sendJson(res, error instanceof ColorError || error instanceof SyntaxError ? 400 : 500, { error: error.message });
       }
       return;
     }
