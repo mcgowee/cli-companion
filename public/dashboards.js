@@ -6,11 +6,14 @@
 //   #/dashboards/view/<id>    a custom dashboard shown inside the companion; when its server
 //                             isn't answering: "Not running", its start command (Copy, Run when
 //                             Settings → Terminal allows running commands), then it loads itself
+//   #/dashboards/launch/<id>  New tab for a dashboard that isn't answering: the same panel in a
+//                             tab of its own, which turns into the dashboard's own address once
+//                             it answers (or at once, if it already does)
 // menu.js calls dashboardsPage.show(rest) on every route change (rest = null: page hidden).
 (function () {
   const root = document.getElementById("page-dashboards");
   const esc = window.escapeHtml;
-  const state = { list: null, usageDays: 30, usage: null, view: null, oldDays: 30, oldSort: "oldest", old: null, canRun: null, forceOpen: null, waiting: null };
+  const state = { list: null, usageDays: 30, usage: null, view: null, oldDays: 30, oldSort: "oldest", old: null, canRun: null, forceOpen: null, waiting: null, launch: false };
 
   const BUILT_IN = [
     {
@@ -167,7 +170,7 @@
           ${d.description ? `<span class="dash-desc">${esc(d.description)}</span>` : ""}
           <span class="dash-actions">
             <a class="btn primary small" href="#/dashboards/view/${encodeURIComponent(d.id)}">${d.online === false ? (d.start ? "Start…" : "Open") : "Open"}</a>
-            <a class="btn small" href="${esc(d.url)}" target="_blank" rel="noopener">New tab</a>
+            <a class="btn small" href="${d.online === false ? `#/dashboards/launch/${encodeURIComponent(d.id)}` : esc(d.url)}" target="_blank" rel="noopener">New tab</a>
             <button class="mini" type="button" data-remove="${esc(d.id)}" data-name="${esc(d.name)}">Remove</button>
           </span>
         </div>`,
@@ -260,7 +263,7 @@
     root.className = "page";
     const waiting = state.waiting?.id === d.id;
     root.innerHTML = `<div class="page-inner">
-      <p class="page-lead"><a href="#/dashboards">← Dashboards</a></p>
+      ${state.launch ? "" : `<p class="page-lead"><a href="#/dashboards">← Dashboards</a></p>`}
       <h1>${esc(d.name)} isn't running</h1>
       <p class="page-lead">Nothing answers at <code>${esc(d.url)}</code>.${d.start ? " Start its server, and the dashboard opens here once it answers." : " Add the command that starts its server, and you can start it from here next time."}</p>
       ${
@@ -275,6 +278,7 @@
               : `<span class="dash-msg">To run it from here, turn on <a href="#/settings">Settings → Terminal → Let the companion run commands</a>.</span>`
           }
           <button class="btn small" type="button" id="dash-force">Open anyway</button>
+          ${state.launch ? "" : `<a class="btn small" href="#/dashboards/launch/${encodeURIComponent(d.id)}" target="_blank" rel="noopener">New tab</a>`}
         </div>
         ${d.startCwd ? `<p class="dash-file">Runs in <code>${esc(d.startCwd)}</code></p>` : ""}
         <p class="dash-msg" id="dash-run-msg" role="status">${waiting ? `Waiting for ${esc(d.url)} to answer…` : ""}</p>
@@ -303,6 +307,10 @@
       setTimeout(() => (b.textContent = "Copy command"), 1500);
     });
     root.querySelector("#dash-force")?.addEventListener("click", () => {
+      if (state.launch) {
+        location.replace(d.url);
+        return;
+      }
       state.forceOpen = d.id;
       state.view = null;
       renderView(d.id);
@@ -334,6 +342,10 @@
       const now = (state.list?.dashboards ?? []).find((x) => x.id === d.id);
       if (now?.online) {
         state.waiting = null;
+        if (state.launch) {
+          location.replace(now.url);
+          return;
+        }
         state.view = null;
         renderView(d.id);
         return;
@@ -737,7 +749,25 @@
         }
         await loadUsage();
         renderUsage();
+      } else if (sub === "launch" && id) {
+        // A tab of its own: go straight to the dashboard if it answers, else offer to start it.
+        const want = decodeURIComponent(id);
+        state.launch = true;
+        state.view = want;
+        root.className = "page";
+        root.innerHTML = `<div class="page-inner"><p class="page-lead">Checking…</p></div>`;
+        await Promise.all([loadList(), loadCanRun()]);
+        const d = (state.list?.dashboards ?? []).find((x) => x.id === want);
+        if (!d) {
+          root.innerHTML = `<div class="page-inner"><h1>Dashboard not found</h1>
+            <p class="page-lead"><a href="#/dashboards">Back to Dashboards</a></p></div>`;
+        } else if (d.online !== false) {
+          location.replace(d.url);
+        } else {
+          renderOffline(d);
+        }
       } else if (sub === "view" && id) {
+        state.launch = false;
         const want = decodeURIComponent(id);
         if (!state.list || !(state.view === want && root.querySelector("iframe"))) {
           if (state.view !== want) state.forceOpen = null;
@@ -745,6 +775,7 @@
         }
         renderView(want);
       } else {
+        state.launch = false;
         state.view = null;
         if (state.list === null) renderList();
         await loadList();
