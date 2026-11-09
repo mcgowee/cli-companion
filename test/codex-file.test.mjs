@@ -109,3 +109,32 @@ test("codexTurn: an open tool call (no output yet) while busy", async () => {
   assert.deepEqual(codexTurn([ev("task_started"), call("custom_tool_call", "c1"), call("custom_tool_call_output", "c1")].join("\n")), { state: "busy", openCall: false });
   assert.deepEqual(codexTurn([ev("task_started"), call("function_call", "f1"), ev("turn_aborted")].join("\n")), { state: "idle", openCall: false });
 });
+
+test("codexTurnFromFile: a long turn whose task_started is far before the last 512 KB is still busy", async () => {
+  const { codexTurnFromFile } = await import("../server/codex-file.mjs");
+  const ev = (type) => JSON.stringify({ type: "event_msg", payload: { type } });
+  const filler = JSON.stringify({ type: "response_item", payload: { type: "reasoning", text: "é".repeat(500) } });
+  const lines = [ev("task_started"), ev("task_complete"), ev("task_started")];
+  for (let i = 0; i < 4000; i++) lines.push(filler); // ~4 MB after the turn started
+  const buf = Buffer.from(lines.join("\n") + "\n");
+  let read = 0;
+  const readRange = async (pos, len) => {
+    read += len;
+    return buf.subarray(pos, pos + len).toString("utf8");
+  };
+  const first = await codexTurnFromFile(readRange, buf.length);
+  assert.equal(first.state, "busy");
+  assert.ok(first.taskAt >= 0 && first.taskAt < 200);
+  // Later calls start from the remembered event.
+  read = 0;
+  const again = await codexTurnFromFile(readRange, buf.length, first.taskAt);
+  assert.equal(again.state, "busy");
+  assert.equal(read, buf.length - first.taskAt);
+  // Finished: the task_complete at the end is in the tail.
+  const done = Buffer.concat([buf, Buffer.from(ev("task_complete") + "\n")]);
+  const r2 = async (pos, len) => done.subarray(pos, pos + len).toString("utf8");
+  assert.equal((await codexTurnFromFile(r2, done.length, first.taskAt)).state, "idle");
+  // No task event anywhere: idle, nothing remembered.
+  const none = Buffer.from(filler + "\n");
+  assert.deepEqual(await codexTurnFromFile(async (p, l) => none.subarray(p, p + l).toString("utf8"), none.length), { state: "idle", openCall: false, taskAt: undefined });
+});

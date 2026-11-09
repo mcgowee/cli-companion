@@ -269,6 +269,40 @@ export function codexTurnState(tailText) {
  * you to approve a tool, so an open call plus a quiet file is the only sign of that (a long
  * command looks the same).
  */
+const TURN_TAIL = 512 * 1024;
+const TURN_MAX_BACK = 32 * 1024 * 1024;
+const TASK_MARKS = ['"payload":{"type":"task_started"', '"payload":{"type":"task_complete"', '"payload":{"type":"turn_aborted"'];
+
+/** Where the last task event's line starts in `text`, or -1. */
+function lastTaskLine(text) {
+  const at = Math.max(...TASK_MARKS.map((m) => text.lastIndexOf(m)));
+  return at < 0 ? -1 : text.lastIndexOf("\n", at) + 1;
+}
+
+/**
+ * codexTurn for a whole session file, read in ranges. A long turn can write megabytes (tool
+ * output, reasoning) after its task_started, so when the last 512 KB has no task event, look
+ * further back (4× each time, up to 32 MB) rather than calling it idle. `knownAt` (the `taskAt`
+ * a previous call returned for this file) lets later calls read only from that event onward.
+ * `readRange(position, length)` returns the bytes as a string.
+ */
+export async function codexTurnFromFile(readRange, size, knownAt) {
+  let from = Math.max(0, size - TURN_TAIL);
+  if (Number.isInteger(knownAt) && knownAt >= 0 && knownAt < from && size - knownAt <= TURN_MAX_BACK) from = knownAt;
+  for (;;) {
+    const text = await readRange(from, size - from);
+    const line = lastTaskLine(text);
+    if (line >= 0 || from === 0 || size - from >= TURN_MAX_BACK) {
+      const turn = codexTurn(line >= 0 ? text.slice(line) : text);
+      // A few bytes early is harmless (a partial line is skipped); the decode of a split
+      // character at `from` can shift the count by a byte or two.
+      const taskAt = line >= 0 ? Math.max(0, from + Buffer.byteLength(text.slice(0, line)) - 16) : undefined;
+      return { ...turn, taskAt };
+    }
+    from = Math.max(0, size - Math.min(TURN_MAX_BACK, (size - from) * 4));
+  }
+}
+
 export function codexTurn(tailText) {
   let state = "idle";
   const open = new Set();

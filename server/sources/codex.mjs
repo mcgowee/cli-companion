@@ -11,7 +11,7 @@ import { closeSync, existsSync, openSync, readSync } from "node:fs";
 import { open, readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { codexTranscriptItems, codexTurn, findCodexImage, parseCodexLines, readCodexMeta } from "../codex-file.mjs";
+import { codexTranscriptItems, codexTurnFromFile, findCodexImage, parseCodexLines, readCodexMeta } from "../codex-file.mjs";
 import { appendingJsonlReader, isUnderDir } from "../fsutil.mjs";
 import { mergeCommands } from "../slash-commands.mjs";
 
@@ -197,6 +197,8 @@ export function codexSource(env = process.env) {
   }
 
   let runningCache = { at: 0, map: new Map() };
+  // Running session file → byte offset of its last task event, so a long turn isn't re-searched.
+  const taskAt = new Map();
   async function running() {
     if (Date.now() - runningCache.at < 3000) return runningCache.map;
     const map = new Map();
@@ -222,8 +224,9 @@ export function codexSource(env = process.env) {
             mtimeMs = stats.mtimeMs;
             const handle = await open(file, "r");
             try {
-              const length = Math.min(stats.size, 512 * 1024);
-              const turn = codexTurn(await readRange(handle, stats.size - length, length));
+              const turn = await codexTurnFromFile((position, length) => readRange(handle, position, length), stats.size, taskAt.get(file));
+              if (turn.taskAt === undefined) taskAt.delete(file);
+              else taskAt.set(file, turn.taskAt);
               status = turn.state;
               // A tool call with no result and no writes for a while: probably asking you.
               if (turn.openCall && Date.now() - stats.mtimeMs > QUIET_MS) status = "waiting";
