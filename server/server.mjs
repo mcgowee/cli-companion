@@ -20,7 +20,7 @@ import { groupByWorkspace, workspaceKey } from "./session-index.mjs";
 import { lastExchange, localModels, ollamaUrl, SuggestError, suggestionCache, suggestReplies } from "./suggest.mjs";
 import { addFavorite, FavoriteError, loadFavorites, removeFavorite } from "./favorites.mjs";
 import { ColorError, loadColors, setColor } from "./colors.mjs";
-import { addComputer, addRecent, markStarted, sshAttachCommand, sshResumeCommand, sshShellCommand, rememberRemoteSession, startedHere, checkFolder, checkHost, checkQuery, checkRemoteSessionFile, EnvError, keyPushScript, loadStart, LOCAL_ID, localRoots, parseRemoteDir, parseRemoteRecent, parseRemoteSearch, pickComputer, recentFolders, recentFor, remoteDirScript, remoteListScript, remoteReadScript, remoteRecentScript, remoteSearchScript, remoteTestScript, removeComputer, searchLocal, setPin, sshPiCommand, testResults, tildePath, tunnelPort, updateStart, windowsFolderDialogScript } from "./envs.mjs";
+import { addComputer, addRecent, markStarted, checkRemotePath, remoteSessionName, sshAttachCommand, sshResumeCommand, sshShellCommand, rememberRemoteSession, startedHere, checkFolder, checkHost, checkQuery, checkRemoteSessionFile, EnvError, keyPushScript, loadStart, LOCAL_ID, localRoots, parseRemoteDir, parseRemoteRecent, parseRemoteSearch, pickComputer, recentFolders, recentFor, remoteDirScript, remoteListScript, remoteReadScript, remoteRecentScript, remoteSearchScript, remoteTestScript, removeComputer, searchLocal, setPin, sshPiCommand, testResults, tildePath, tunnelPort, updateStart, windowsFolderDialogScript } from "./envs.mjs";
 import { APP_FILE_HEADERS, APP_MIME, exchangeText, fileKind, findApps, resolveAppFile, urlName } from "./apps.mjs";
 import { createReadStream, existsSync as fileExists } from "node:fs";
 import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard, setDashboardStart } from "./dashboards.mjs";
@@ -177,6 +177,7 @@ function applyBatch(batch, via) {
   if (Array.isArray(batch.commands)) session.commands = batch.commands.slice(0, 500);
   session.lastEventAt = now();
   session.ended = false;
+  session.detachedAt = undefined; // heard from again (reattached)
 
   let persisted = false;
   for (const event of Array.isArray(batch.events) ? batch.events : []) {
@@ -296,6 +297,8 @@ function publicSession(session) {
     ended: session.ended,
     hasHistory: Boolean(session.sessionFile || session.remoteFile),
     via: session.via,
+    // The tunnel went quiet without Pi quitting: still running there, no live view until Reattach.
+    detached: Boolean(session.detachedAt),
     mode: session.mode,
     // The bridge polls for commands while the session is open; this says whether it is listening now.
     listening: (inboxes.get(session.id)?.waiters.length ?? 0) > 0 || now() - (inboxes.get(session.id)?.lastPollAt ?? 0) < 35_000,
@@ -366,19 +369,56 @@ function scheduleSessionBroadcast(session) {
 // Drop sessions whose Pi process has exited.
 setInterval(() => {
   for (const [id, session] of sessions) {
-    // A session over a tunnel: its process is on the other computer, so it goes when it falls
-    // silent (the extension sends a heartbeat every 15 s and long-polls the inbox).
-    const gone = session.via
-      ? now() - Math.max(session.lastEventAt, inboxes.get(id)?.lastPollAt ?? 0) > 60_000
-      : session.pid && !isProcessAlive(session.pid);
-    if (gone) {
-      if (session.via && session.remoteFile) remember(session); // stays in Recent; history over ssh
-      sessions.delete(id);
-      inboxes.delete(id);
-      broadcast({ type: "removed", id });
-    }
+    if (session.via) checkTunnelSession(id, session);
+    else if (session.pid && !isProcessAlive(session.pid)) dropSession(id, session);
   }
 }, 10_000).unref();
+
+function dropSession(id, session) {
+  if (session.via && session.remoteFile) remember(session); // stays in Recent; history over ssh
+  sessions.delete(id);
+  inboxes.delete(id);
+  broadcast({ type: "removed", id });
+}
+
+/*
+ * A session over a tunnel: its process is on the other computer. The extension sends a heartbeat
+ * every 15 s and long-polls the inbox, so silence means either Pi quit or the connection closed
+ * (the ssh window was closed, the network dropped). Pi quitting sends a shutdown first; without
+ * one the session is marked detached and stays in Active (Pi keeps running in tmux there; the
+ * terminal menu's Reattach goes back in and brings the tunnel back). Once a minute a fixed ssh
+ * check asks whether that folder's tmux session is still there; when it isn't, or after
+ * DETACHED_MAX_MS without word, the session moves to Recent.
+ */
+const TUNNEL_SILENT_MS = 60_000;
+const DETACHED_CHECK_MS = 60_000;
+const DETACHED_MAX_MS = 12 * 60 * 60_000;
+function checkTunnelSession(id, session) {
+  if (now() - Math.max(session.lastEventAt, inboxes.get(id)?.lastPollAt ?? 0) <= TUNNEL_SILENT_MS) return;
+  if (session.ended || !session.cwd) return dropSession(id, session);
+  if (!session.detachedAt) {
+    session.detachedAt = now();
+    scheduleSessionBroadcast(session);
+  }
+  if (now() - session.detachedAt > DETACHED_MAX_MS) return dropSession(id, session);
+  if (session.checkingTmux || now() - (session.tmuxCheckedAt ?? 0) < DETACHED_CHECK_MS) return;
+  let script;
+  try {
+    script = `tmux has-session -t =${remoteSessionName(session.via, checkRemotePath(session.cwd))} 2>/dev/null && echo yes || echo no`;
+  } catch {
+    return dropSession(id, session); // a folder no ssh line could name
+  }
+  session.checkingTmux = true;
+  runRemote(session.via, script)
+    .then((out) => {
+      if (out.trim() === "no" && sessions.get(id) === session && session.detachedAt) dropSession(id, session);
+    })
+    .catch(() => {}) // can't reach it: stay detached (up to DETACHED_MAX_MS)
+    .finally(() => {
+      session.checkingTmux = false;
+      session.tmuxCheckedAt = now();
+    });
+}
 
 function sendJson(res, status, value) {
   const body = JSON.stringify(value);
@@ -659,7 +699,7 @@ function launchOptions(target) {
     return [
       // Still running: it sits in the folder's tmux session there (Start Pi put it in one), so a
       // closed window or a dropped connection doesn't lose it; this goes back in.
-      ...(target.running ? [remoteOption({ action: "attach", label: `Reattach (tmux on ${name})`, line: sshAttachCommand(host, target.cwd) })] : []),
+      ...(target.running ? [remoteOption({ action: "attach", label: `Reattach (tmux on ${name})`, line: sshAttachCommand(host, target.cwd, { port: PORT }) })] : []),
       remoteOption({ action: "terminal", label: `Terminal here (on ${name})`, line: sshShellCommand(host, target.cwd) }),
       remoteOption(
         { action: "resume", label: `Resume in ${target.source.label}`, line: sshResumeCommand(host, target.cwd, target.sessionId, { port: PORT }) },

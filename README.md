@@ -81,7 +81,10 @@ next to it:
   opens a menu (for a session on an SSH computer, the lines are ssh commands: **Terminal here**
   opens a shell in its folder there, **Resume in Pi** resumes it in that folder's tmux session
   with the tunnel, so it shows here live again; while it runs, **Reattach** goes back into that
-  tmux session, for when its window was closed). A running session's resume line stays visible to
+  tmux session with the tunnel, for when its window was closed). If the connection closes while Pi
+  is still running there, the session stays in Active marked **detached** (dashed dot and tag) until
+  you Reattach; once a minute the companion asks over ssh whether its tmux session is still there,
+  and moves it to Recent when it isn't (or after 12 hours without word). A running session's resume line stays visible to
   copy, with a note that it's running. For a workspace: **Terminal here**, then start or continue each installed CLI
   (**Start Pi**, `pi -c`, **Start Claude Code**, **Start Codex**, `codex resume --last`), and
   **Copy folder path**. For a saved session: resume it in its own CLI (`pi --session <id>`,

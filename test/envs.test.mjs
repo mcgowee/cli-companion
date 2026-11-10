@@ -249,4 +249,5 @@ test("terminal menu on an SSH computer: a shell in the folder, and resume with t
   const { sshAttachCommand } = await import("../server/envs.mjs");
   assert.equal(sshAttachCommand("aegis", "/home/me/projects/char.loop"), "ssh -t aegis 'tmux attach -t =char-loop'");
   assert.throws(() => sshAttachCommand("aegis", "~/x'; rm -rf ~"));
+  assert.equal(sshAttachCommand("aegis", "~/projects/charloop", { port: 30143 }), `ssh -t -R ${t}:127.0.0.1:30143 aegis 'tmux attach -t =charloop'`);
 });

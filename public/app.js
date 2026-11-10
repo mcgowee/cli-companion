@@ -162,7 +162,7 @@
         ws = { id: key, cwd: live.cwd, name: basename(live.cwd) || "(unknown)", lastActivity: 0, sessions: [] };
         groups.unshift(ws);
       }
-      ws.sessions.unshift({ id: live.id, name: live.name, preview: "", lastActivity: live.lastEventAt });
+      ws.sessions.unshift({ id: live.id, name: live.name, preview: "", lastActivity: live.lastEventAt, via: live.via });
     }
     return groups;
   }
@@ -307,8 +307,10 @@
     const src = cliSources.forRow(s);
     const busy = fileBusy(s);
     const waiting = fileWaiting(s);
-    const dot = status ? esc(status) : !src.live && s.active ? (waiting ? "file-waiting" : busy ? "file-busy" : "file-idle") : "saved";
-    const ago = status && status !== "idle" ? statusLabel({ status }) : waiting ? "Needs you" : busy ? "Running" : fmtAgo(s.lastActivity);
+    // Detached: running on an SSH computer, but the connection here closed (no live view until Reattach).
+    const detached = Boolean(status && state.sessions.get(s.id)?.detached);
+    const dot = detached ? "detached" : status ? esc(status) : !src.live && s.active ? (waiting ? "file-waiting" : busy ? "file-busy" : "file-idle") : "saved";
+    const ago = detached ? "Detached" : status && status !== "idle" ? statusLabel({ status }) : waiting ? "Needs you" : busy ? "Running" : fmtAgo(s.lastActivity);
     const g = wsName ? gitById.get(s.id) : undefined;
     const tip = `${src.label}: ${rowTitle(s)}${wsName ? ` · ${wsName}` : ""}${g ? `\n${gitTip(g)}` : ""}`;
     const color = state.colors[s.id];
@@ -316,7 +318,15 @@
     const row = `<button class="session${active}${colorAttr ? " has-color" : ""}"${colorAttr} data-id="${esc(s.id)}" data-src="${esc(src.id)}" title="${esc(tip)}">
       <span class="sdot ${dot}"></span>
       ${src.tag ? `<span class="src-tag" aria-label="${esc(src.label)}">${esc(src.tag)}</span>` : ""}
-      ${s.via ? `<span class="via-tag" title="${esc(`Running on ${s.via}, shown here through New session's SSH tunnel`)}">${esc(s.via)}</span>` : ""}
+      ${
+        s.via
+          ? `<span class="via-tag${detached ? " detached" : ""}" title="${esc(
+              detached
+                ? `Still running on ${s.via}, but its connection here closed. To get back in: the terminal icon → Reattach.`
+                : `Running on ${s.via}, shown here through Start Pi's SSH tunnel`,
+            )}">${esc(s.via)}</span>`
+          : ""
+      }
       ${
         wsName
           ? `<span class="stext"><span class="sname">${esc(rowTitle(s))}</span><span class="sws">${esc(wsName)}${

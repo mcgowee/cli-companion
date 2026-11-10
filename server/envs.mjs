@@ -290,10 +290,13 @@ export function sshShellCommand(host, path) {
 /**
  * The terminal menu's "Reattach" for a session still running on an SSH computer: back into the
  * folder's tmux session, where Start Pi put it (survives a closed window or a dropped connection).
+ * With `port`, the tunnel too, so Pi there reaches this companion again and the session is live here.
  */
-export function sshAttachCommand(host, path) {
+export function sshAttachCommand(host, path, { port = 0 } = {}) {
   const h = checkHost(host);
-  return `ssh -t ${h} 'tmux attach -t =${remoteSessionName(h, checkRemotePath(path))}'`;
+  const p = Number(port);
+  const tunnel = p ? ` -R ${tunnelPort(h)}:127.0.0.1:${p}` : "";
+  return `ssh -t${tunnel} ${h} 'tmux attach -t =${remoteSessionName(h, checkRemotePath(path))}'`;
 }
 
 /** The terminal menu's "Resume in Pi" for a session that ran on an SSH computer (with the tunnel when `port`). */
