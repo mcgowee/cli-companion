@@ -13,13 +13,9 @@
     historyLoading: false,
     stickToBottom: true,
     workspaces: [],
-    /** workspace id -> true (open) / false (closed), set by the user; remembered per browser. */
-    wsOpen: loadPref("pi-companion.wsOpen", {}), // by "<cli>|<workspace id>"
-    cliOpen: loadPref("pi-companion.cliOpen", {}),
-    showAll: new Set(),
     filter: "",
-    /** Favorite session ids, most recently added first (kept by the server in favorites.json). */
-    favorites: [],
+    /** How many Recent rows show (Show more adds RECENT_SHOWN). */
+    recentShown: 20,
     /** Session id → "#rrggbb", picked from a row's ⋯ / right-click menu (session-colors.json). */
     colors: {},
   };
@@ -119,7 +115,7 @@
     return [...state.sessions.values()].sort((a, b) => (b.lastEventAt ?? 0) - (a.lastEventAt ?? 0));
   }
 
-  const SESSIONS_SHOWN = 6;
+  const RECENT_SHOWN = 20;
 
   function fmtAgo(ms) {
     if (!ms) return "";
@@ -169,50 +165,6 @@
       ws.sessions.unshift({ id: live.id, name: live.name, preview: "", lastActivity: live.lastEventAt });
     }
     return groups;
-  }
-
-  /**
-   * CLI groups and workspaces start collapsed; only the ones holding the open session open by
-   * themselves. `key` is the group's key in `prefs` (state.cliOpen or state.wsOpen).
-   */
-  function isOpen(prefs, key, sessions) {
-    if (state.filter) return true;
-    if (key in prefs) return prefs[key];
-    return sessions.some((s) => s.id === state.selectedId);
-  }
-
-  /**
-   * The Workspaces tree, by CLI first: one group per CLI (in Settings order) holding that CLI's
-   * workspaces, each with only that CLI's sessions. Newest activity first within a group.
-   */
-  function byCli(groups) {
-    const out = new Map(cliSources.list().map((src) => [src.id, { src, workspaces: [] }]));
-    for (const ws of groups) {
-      const split = new Map();
-      for (const s of ws.sessions) {
-        const id = cliSources.forRow(s).id;
-        if (!split.has(id)) split.set(id, []);
-        split.get(id).push(s);
-      }
-      for (const [id, sessions] of split) {
-        if (!out.has(id)) out.set(id, { src: cliSources.get(id), workspaces: [] });
-        const lastActivity = Math.max(0, ...sessions.map((s) => s.lastActivity ?? 0));
-        out.get(id).workspaces.push({ ...ws, sessions, lastActivity });
-      }
-    }
-    return [...out.values()]
-      .filter((g) => g.workspaces.length)
-      .map((g) => ({ ...g, workspaces: g.workspaces.sort((a, b) => b.lastActivity - a.lastActivity) }));
-  }
-
-  /** The dot beside a CLI or workspace name: shown while one of its sessions runs, pulsing while one works. */
-  function liveDot(sessions) {
-    if (!sessions.some(isActive)) return "";
-    const busy = sessions.some((s) => {
-      const status = liveStatus(s.id);
-      return status === "running" || status === "compacting" || fileBusy(s);
-    });
-    return `<span class="ws-live${busy ? " busy" : ""}"></span>`;
   }
 
   function liveStatus(id) {
@@ -277,7 +229,7 @@
   }
   document.addEventListener("visibilitychange", updateTitle);
 
-  /* ── git branch and uncommitted changes (Active and Favorites rows, the header) ── */
+  /* ── git branch and uncommitted changes (Active and Recent rows, the header) ── */
 
   const gitById = new Map(); // session id -> summary | null (not a git folder)
   let gitWanted = [];
@@ -381,16 +333,7 @@
     return `<div class="row-wrap">${row}${termButton("session", s.id, label)}</div>`;
   }
 
-  /** The star beside a row in Active and Favorites: adds the session to Favorites or removes it. */
-  function favButton(s) {
-    const on = state.favorites.includes(s.id);
-    const label = on ? `Remove ${rowTitle(s)} from Favorites` : `Add ${rowTitle(s)} to Favorites`;
-    return `<button class="row-fav${on ? " on" : ""}" type="button" data-fav="${esc(s.id)}" aria-pressed="${on}" aria-label="${esc(label)}" title="${esc(label)}">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg>
-    </button>`;
-  }
-
-  /** The ⋯ beside a row in Active and Favorites: the row's menu (its colour). Right-click does the same. */
+  /** The ⋯ beside a row: the row's menu (its colour). Right-click does the same. */
   function moreButton(s) {
     const label = `More for ${rowTitle(s)}: colour`;
     return `<button class="row-more" type="button" data-more="${esc(s.id)}" aria-haspopup="menu" aria-label="${esc(label)}" title="${esc(label)}">
@@ -493,42 +436,13 @@
   });
   window.addEventListener("resize", closeColorMenu);
   $("session-list").addEventListener("scroll", closeColorMenu, { passive: true });
-  // Right-click on any session row (Active, Favorites or the tree) opens the same menu.
+  // Right-click on any session row (Active or Recent) opens the same menu.
   $("session-list").addEventListener("contextmenu", (event) => {
     const row = event.target.closest?.(".session[data-id]");
     if (!row || document.documentElement.classList.contains("remote-view")) return;
     event.preventDefault();
     openColorMenu(row.dataset.id, event.clientX, event.clientY);
   });
-
-  async function loadFavorites() {
-    try {
-      const res = await fetch("/api/favorites", { cache: "no-store" });
-      if (!res.ok) return;
-      state.favorites = (await res.json()).favorites ?? [];
-      renderSidebar();
-    } catch {
-      // Server restarting: the SSE hello reloads them.
-    }
-  }
-
-  async function toggleFavorite(id) {
-    const on = state.favorites.includes(id);
-    // Show it at once; the server's answer (and its broadcast to other windows) settles it.
-    state.favorites = on ? state.favorites.filter((other) => other !== id) : [id, ...state.favorites];
-    renderSidebar();
-    try {
-      const res = await fetch(on ? `/api/favorites?id=${encodeURIComponent(id)}` : "/api/favorites", {
-        method: on ? "DELETE" : "POST",
-        headers: { "content-type": "application/json", "x-pi-companion-page": "1" },
-        body: on ? undefined : JSON.stringify({ id }),
-      });
-      if (res.ok) state.favorites = (await res.json()).favorites ?? state.favorites;
-    } catch {
-      // Keep what is shown; the next load corrects it.
-    }
-    renderSidebar();
-  }
 
   /** The small terminal icon that opens the Open / Copy menu (public/launch.js). */
   function termButton(kind, id, label) {
@@ -564,50 +478,38 @@
   function renderSidebar() {
     const list = $("session-list");
     const filter = state.filter.trim().toLowerCase();
-    let groups = treeWithLive();
-    if (filter) {
-      groups = groups
-        .map((ws) => {
-          const wsMatch = `${ws.name} ${ws.cwd}`.toLowerCase().includes(filter);
-          const sessions = wsMatch
-            ? ws.sessions
-            : ws.sessions.filter((s) => `${s.name ?? ""} ${s.preview ?? ""}`.toLowerCase().includes(filter));
-          return { ...ws, sessions };
-        })
-        .filter((ws) => ws.sessions.length);
-    }
-    // Newest activity first (a running session keeps its workspace near the top anyway).
-    groups.sort((a, b) => (b.lastActivity ?? 0) - (a.lastActivity ?? 0));
+    const groups = treeWithLive();
+    // Every session, flat, with its workspace (its folder); the search box matches name, first
+    // message, folder and computer.
+    const all = groups.flatMap((ws) => ws.sessions.map((s) => ({ s, ws })));
+    const match = ({ s, ws }) => !filter || `${s.name ?? ""} ${s.preview ?? ""} ${ws.name} ${ws.cwd} ${s.via ?? ""}`.toLowerCase().includes(filter);
+    const found = all.filter(match);
 
-    // Active: every running session, flat, with its workspace name. They stay in the tree too.
-    // Waiting for you first, the one that finished most recently on top (its last write is when
-    // it finished); sessions still working go below them, so the top is always what to do next.
-    const activeRows = groups
-      .flatMap((ws) => ws.sessions.filter(isActive).map((s) => ({ s, ws })))
-      .sort((a, b) => isWorking(a.s) - isWorking(b.s) || activityOf(b.s) - activityOf(a.s));
-    // Favorites: in the order they were added, newest first; running or not. Ids whose session is
-    // gone (or hidden by the filter) are left out.
-    const byId = new Map(groups.flatMap((ws) => ws.sessions.map((s) => [s.id, { s, ws }])));
-    const favRows = state.favorites.map((id) => byId.get(id)).filter(Boolean);
+    // Active: every running session. Waiting for you first, the one that finished most recently
+    // on top (its last write is when it finished); sessions still working go below them, so the
+    // top is always what to do next.
+    const activeRows = found.filter(({ s }) => isActive(s)).sort((a, b) => isWorking(a.s) - isWorking(b.s) || activityOf(b.s) - activityOf(a.s));
+    // Recent: the rest, newest first, RECENT_SHOWN at a time (Show more adds more).
+    const recentAll = found.filter(({ s }) => !isActive(s)).sort((a, b) => activityOf(b.s) - activityOf(a.s));
+    const recentRows = recentAll.slice(0, state.recentShown);
+    const picked = recentAll.find(({ s }) => s.id === state.selectedId);
+    if (picked && !recentRows.includes(picked)) recentRows.push(picked); // keep the open one listed
+    const hidden = recentAll.length - recentRows.length;
     lastActiveRows = activeRows;
     updateTitle();
-    gitWanted = [...activeRows, ...favRows].map(({ s }) => s.id);
+    gitWanted = [...activeRows, ...recentRows.slice(0, RECENT_SHOWN)].map(({ s }) => s.id);
     void refreshGit();
-    const activeHtml = `<div class="section-head side-section">Active${activeRows.length ? ` <span class="ws-count">${activeRows.length}</span>` : ""}</div>
+
+    const row = ({ s, ws }) =>
+      `<div class="row-wrap">${sessionRow(s, ws.name)}${s.via ? "" : termButton("session", s.id, isActive(s) ? `Open a terminal for ${rowTitle(s)}` : `Resume ${rowTitle(s)} in a terminal`)}${moreButton(s)}</div>`;
+    const html = `<div class="section-head side-section">Active${activeRows.length ? ` <span class="ws-count">${activeRows.length}</span>` : ""}</div>
       <div class="active-list">${
-        activeRows.length
-          ? activeRows.map(({ s, ws }) => `<div class="row-wrap">${sessionRow(s, ws.name)}${favButton(s)}${moreButton(s)}</div>`).join("")
-          : `<p class="hint">${filter ? "No running sessions match." : "No running sessions."}</p>`
+        activeRows.length ? activeRows.map(row).join("") : `<p class="hint">${filter ? "No running sessions match." : "No running sessions."}</p>`
       }</div>
-      <div class="section-head side-section">Favorites${favRows.length ? ` <span class="ws-count">${favRows.length}</span>` : ""}</div>
-      <div class="fav-list">${
-        favRows.length
-          ? favRows
-              .map(({ s, ws }) => `<div class="row-wrap">${sessionRow(s, ws.name)}${termButton("session", s.id, isActive(s) ? `Open a terminal for ${rowTitle(s)}` : `Resume ${rowTitle(s)} in a terminal`)}${favButton(s)}${moreButton(s)}</div>`)
-              .join("")
-          : `<p class="hint">${filter && state.favorites.length ? "No favorites match." : "Click the star beside a session under Active to keep it here."}</p>`
-      }</div>
-      <div class="section-head side-section">Workspaces</div>`;
+      <div class="section-head side-section">Recent</div>
+      <div class="recent-list">${
+        recentRows.length ? recentRows.map(row).join("") : `<p class="hint">${filter ? "No sessions match." : "Sessions that ran show here, newest first."}</p>`
+      }${hidden > 0 ? `<button class="ws-more recent-more" data-recent-more>Show ${Math.min(hidden, RECENT_SHOWN)} more</button>` : ""}</div>`;
 
     $("empty-hint").hidden = groups.length > 0 || Boolean(filter);
     // The welcome card is for a real first run: only once the list has loaded, and gone again
@@ -615,48 +517,6 @@
     const welcome = transcriptEl.querySelector(".welcome");
     if (!groups.length && !filter && !state.selectedId && state.workspacesLoaded) renderWelcome();
     else if (welcome && groups.length) transcriptEl.innerHTML = `<div class="placeholder" id="placeholder">Pick a session on the left.</div>`;
-    const wsSection = (ws, cliId) => {
-        const key = `${cliId}|${ws.id}`;
-        const open = isOpen(state.wsOpen, key, ws.sessions);
-        const showAll = state.showAll.has(key) || Boolean(filter);
-        const shown = showAll ? ws.sessions : ws.sessions.slice(0, SESSIONS_SHOWN);
-        // Keep the selected session visible even past the cut.
-        const selectedRow = ws.sessions.find((s) => s.id === state.selectedId);
-        if (selectedRow && !shown.includes(selectedRow)) shown.push(selectedRow);
-        const hidden = ws.sessions.length - shown.length;
-        const rows = shown.map((s) => sessionRow(s)).join("");
-        return `<section class="ws${open ? " open" : ""}">
-          <div class="row-wrap ws-row-wrap">
-          <button class="ws-head" data-ws="${esc(key)}" title="${esc(ws.cwd)}" aria-expanded="${open}">
-            <svg class="ws-icon closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.6l2 2h7.4a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>
-            <svg class="ws-icon opened" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 17.5V7.5a2 2 0 0 1 2-2h3.6l2 2h6.4a2 2 0 0 1 2 2v1"/><path d="M3.5 17.5l2.3-5.6a2 2 0 0 1 1.9-1.3H21a1 1 0 0 1 .9 1.4l-2.2 5.3a2 2 0 0 1-1.9 1.2H5.5a2 2 0 0 1-2-1z"/></svg>
-            <span class="ws-name">${esc(ws.name)}</span>
-            ${liveDot(ws.sessions)}
-            <span class="ws-count">${ws.sessions.length}</span>
-          </button>
-          ${termButton("workspace", ws.id, `Open ${ws.name} in a terminal`)}
-          </div>
-          <div class="ws-sessions">${rows}${
-            hidden > 0 ? `<button class="ws-more" data-more="${esc(key)}">Show ${hidden} more</button>` : ""
-          }</div>
-        </section>`;
-    };
-    const html = activeHtml + byCli(groups)
-      .map(({ src, workspaces }) => {
-        const sessions = workspaces.flatMap((ws) => ws.sessions);
-        const open = isOpen(state.cliOpen, src.id, sessions);
-        return `<section class="cli-group${open ? " open" : ""}">
-          <button class="cli-head" data-cli="${esc(src.id)}" aria-expanded="${open}">
-            <svg class="cli-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
-            <span class="src-dot" data-src="${esc(src.id)}"></span>
-            <span class="ws-name">${esc(src.label)}</span>
-            ${liveDot(sessions)}
-            <span class="ws-count" title="${workspaces.length} workspaces, ${sessions.length} sessions">${workspaces.length}</span>
-          </button>
-          <div class="cli-workspaces">${workspaces.map((ws) => wsSection(ws, src.id)).join("")}</div>
-        </section>`;
-      })
-      .join("");
     // A working session streams many updates a second, and each one comes here. Replacing the rows
     // between a mouse press and release loses the click, so: leave the rows alone when nothing on
     // them changed, and while a button is held down over the list, wait until it's released.
@@ -671,12 +531,6 @@
     sidebarHtml = html;
     list.innerHTML = html;
 
-    for (const button of list.querySelectorAll(".row-fav")) {
-      button.addEventListener("click", (event) => {
-        event.stopPropagation();
-        void toggleFavorite(button.dataset.fav);
-      });
-    }
     for (const button of list.querySelectorAll(".row-more")) {
       button.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -691,32 +545,10 @@
         select(button.dataset.id);
       });
     }
-    for (const head of list.querySelectorAll(".cli-head")) {
-      head.addEventListener("click", () => {
-        const section = head.closest(".cli-group");
-        const open = !section.classList.contains("open");
-        state.cliOpen[head.dataset.cli] = open;
-        savePref("pi-companion.cliOpen", state.cliOpen);
-        section.classList.toggle("open", open);
-        head.setAttribute("aria-expanded", String(open));
-      });
-    }
-    for (const head of list.querySelectorAll(".ws-head")) {
-      head.addEventListener("click", () => {
-        const section = head.closest(".ws");
-        const open = !section.classList.contains("open");
-        state.wsOpen[head.dataset.ws] = open;
-        savePref("pi-companion.wsOpen", state.wsOpen);
-        section.classList.toggle("open", open);
-        head.setAttribute("aria-expanded", String(open));
-      });
-    }
-    for (const more of list.querySelectorAll(".ws-more")) {
-      more.addEventListener("click", () => {
-        state.showAll.add(more.dataset.more);
-        renderSidebar();
-      });
-    }
+    list.querySelector("[data-recent-more]")?.addEventListener("click", () => {
+      state.recentShown += RECENT_SHOWN;
+      renderSidebar();
+    });
     considerSuggest();
   }
 
@@ -1383,10 +1215,6 @@
         renderLive();
         notifyComposer();
         loadHistory(true);
-      } else if (msg.type === "favorites") {
-        // Changed here or in another window.
-        state.favorites = msg.favorites ?? [];
-        renderSidebar();
       } else if (msg.type === "envs") {
         // Start Pi's computers or folders changed here or in another window: public/start.js reloads them.
         window.dispatchEvent(new Event("companion-envs"));
@@ -1417,7 +1245,6 @@
   }
 
   loadWorkspaces();
-  loadFavorites();
   loadSessionColors();
   connect();
 })();

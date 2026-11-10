@@ -39,17 +39,10 @@
         </button>
       </div>
 
-      <nav class="side-nav" aria-label="Views">
-        <button class="nav-item active" type="button" data-view="workspaces" aria-current="page">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.6l2 2h7.4a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>
-          <span>Workspaces</span>
-        </button>
-      </nav>
-
       <div class="sessions-head">
-        <input id="filter" class="filter" type="search" placeholder="Filter workspaces and sessions" aria-label="Filter workspaces and sessions">
+        <input id="filter" class="filter" type="search" placeholder="Search sessions" aria-label="Search sessions (name, first message, folder)">
       </div>
-      <nav id="session-list" class="session-list" aria-label="Workspaces and sessions"></nav>
+      <nav id="session-list" class="session-list" aria-label="Sessions"></nav>
       <p class="hint" id="empty-hint" hidden>No sessions yet. Start Pi, Claude Code or Codex in a terminal; they show up here within a few seconds.</p>
 
       <div class="env-bar" id="env-bar">

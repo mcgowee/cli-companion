@@ -25,7 +25,7 @@ next to it:
   compaction becomes a card with the summary the model now sees and the files it lists;
   messages that were summarized are dimmed.
 - **Context meter** and a status pill (Idle, Running, Compacting).
-- **Git at a glance**: rows in Active and Favorites, and the session header, show the folder's
+- **Git at a glance**: rows in Active and Recent, and the session header, show the folder's
   branch, commits not yet pushed ("2 ahead") and uncommitted changes ("+140 −3", or a file count
   when only new files). Hover for the full sentence. Refreshed every 20 seconds; read-only
   (`git status` and `git diff --numstat`).
@@ -37,14 +37,17 @@ next to it:
   chip shows your plan's 5-hour and weekly limits instead. The context meter shows for saved
   and Claude Code / Codex sessions too (Claude Code's files don't say how big the window is,
   so there it's a token count without a bar).
-- **Active and Workspaces**: the sidebar starts with **Active**, a flat list of every running
-  session with its folder name under the title. Sessions waiting for you come first, the one
-  that finished most recently on top, then the ones still working. The browser tab title counts
-  the ones waiting with something you haven't seen yet, like "(2) CLI Companion". Under it, **Favorites**:
-  click the star beside a session in Active to keep it there, running or not (newest first, with
-  its terminal icon); click the filled star to remove it. Kept in `~/.cli-companion/favorites.json`.
+- **Active and Recent**: the sidebar starts with **Search sessions** (name, first message, folder,
+  computer), then **Active**, a flat list of every running session with its folder name under the
+  title. Sessions waiting for you come first, the one that finished most recently on top, then the
+  ones still working. The browser tab title counts the ones waiting with something you haven't seen
+  yet, like "(2) CLI Companion". Under it, **Recent**: the sessions that ran, from every CLI, newest
+  first, 20 at a time (**Show more**), each with its terminal icon (resume it). Nothing to add by
+  hand: they come from each CLI's own session files, plus sessions that ran on an SSH computer
+  through Start Pi's tunnel (remembered, so they stay listed after the connection closes; their
+  history is read over ssh). The window follows the most recently active session unless you pick one.
   To give a session a colour (to match the tab colour you gave its terminal, say), click the **⋯**
-  beside it in Active or Favorites, or right-click any session row: pick a swatch, Custom…, or No
+  beside it, or right-click any session row: pick a swatch, Custom…, or No
   colour. The row gets a coloured stripe everywhere it's listed. Kept in `~/.cli-companion/session-colors.json`.
   At the bottom of the sidebar, **Start Pi** (showing which computer). It opens a popover: the
   computers as chips (**This computer**, your SSH computers, and **+** to add one), a search box,
@@ -71,14 +74,8 @@ next to it:
   (`/ingest`, `/bridge/*`) answers, with this computer's key, which starting Pi (or ⧉) on an SSH
   computer puts there first. Kept in `~/.cli-companion/computers.json` (an older
   `environments.json` is read into it once: its SSH computers added, its folders pinned).
-  Below that, **Workspaces**, grouped by CLI first: Pi, Claude Code, Codex, each with a caret
-  that opens its workspaces (project folders), newest first and collapsed, with that CLI's
-  sessions underneath (running ones keep their live dot there too), including past sessions you
-  can open and read. Only the CLI and folder of the open session expand by themselves; what you
-  open or close is remembered. Nothing to add by hand: they come from each CLI's own session files. A
-  filter box searches folder names and session titles in both lists. The window follows the most recently active session unless you pick one.
   The left panel can be hidden with its button or **Ctrl+B** (⌘B on macOS).
-- **Open in a terminal**: the small terminal icon beside a workspace or a saved session
+- **Open in a terminal**: the small terminal icon beside a session
   opens a menu. For a workspace: **Terminal here**, then start or continue each installed CLI
   (**Start Pi**, `pi -c`, **Start Claude Code**, **Start Codex**, `codex resume --last`), and
   **Copy folder path**. For a saved session: resume it in its own CLI (`pi --session <id>`,
@@ -348,8 +345,8 @@ What the companion writes (all in `~/.cli-companion`, or `CLI_COMPANION_HOME`, u
 |---|---|
 | `settings.json` | The Settings page |
 | `access-key` | The access key (made on first start) |
-| `favorites.json`, `session-colors.json`, `dashboards.json`, `prompts.json` | Starred items, session colours (ids and colours only), custom dashboards (with their start commands), saved prompts |
-| `computers.json` | Start Pi: the SSH computers you added (names), pinned folders, folders you started Pi in, and which computer is picked |
+| `favorites.json`, `session-colors.json`, `dashboards.json`, `prompts.json` | Starred items (from before Recent replaced Favorites; no longer written), session colours (ids and colours only), custom dashboards (with their start commands), saved prompts |
+| `computers.json` | Start Pi: the SSH computers you added (names), pinned folders, folders you started Pi in, which computer is picked, and sessions that ran there through the tunnel (id, session file and folder there, name, time) |
 | An SSH computer's `~/.cli-companion-tunnel/access-key` | This computer's access key (readable only by you there), put there when you start Pi (or copy its command) on an SSH computer, so Pi there can report through the tunnel |
 | `token-usage.json` | Token counts per session file (a cache; safe to delete) |
 | `handoffs/` | Handoff briefs you made (newest 20 kept) |

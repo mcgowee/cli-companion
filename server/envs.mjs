@@ -118,7 +118,8 @@ export async function loadStart(file, { oldFile, home } = {}) {
     .map((p) => ({ computer: p.computer, path: p.path, at: p.at }))
     .slice(0, MAX_RECENT);
   const current = data.current === LOCAL_ID || hosts.has(data.current) ? data.current : LOCAL_ID;
-  return { current, computers, pins, recent };
+  const sessions = (Array.isArray(data.sessions) ? data.sessions : []).map(cleanRemoteSession).filter((x) => x && hosts.has(x.via)).slice(0, MAX_REMOTE_SESSIONS);
+  return { current, computers, pins, recent, sessions };
 }
 
 async function saveStart(file, state) {
@@ -152,6 +153,7 @@ export function addComputer(state, host) {
 
 export function removeComputer(state, host) {
   state.computers = state.computers.filter((c) => c.host !== host);
+  state.sessions = state.sessions.filter((x) => x.via !== host);
   state.pins = state.pins.filter((p) => p.computer !== host);
   state.recent = state.recent.filter((p) => p.computer !== host);
   if (state.current === host) state.current = LOCAL_ID;
@@ -163,6 +165,34 @@ export function setPin(state, place, pinned) {
     if (state.pins.length >= MAX_PINS) throw new EnvError(`At most ${MAX_PINS} pinned folders.`);
     state.pins.unshift({ computer: place.computer, path: place.path });
   }
+}
+
+/*
+ * Sessions on SSH computers that reported here through the tunnel are remembered (id, computer,
+ * session file and folder there, name, last activity), so they stay in the sidebar's Recent after
+ * the connection closes and their history can still be read over ssh.
+ */
+const MAX_REMOTE_SESSIONS = 60;
+export function cleanRemoteSession(x) {
+  if (typeof x?.id !== "string" || !/^[\w-]{1,100}$/.test(x.id) || !HOST.test(x.via ?? "")) return null;
+  const file = checkRemoteSessionFile(x.file);
+  if (!file || typeof x.cwd !== "string" || !x.cwd.startsWith("/") || /[\0\n\r]/.test(x.cwd)) return null;
+  return {
+    id: x.id,
+    via: x.via,
+    file,
+    cwd: x.cwd.slice(0, 1000),
+    name: typeof x.name === "string" ? x.name.slice(0, 200) : undefined,
+    at: Number.isFinite(x.at) ? x.at : 0,
+  };
+}
+
+/** Remember (or update) one; newest first. */
+export function rememberRemoteSession(state, session) {
+  const clean = cleanRemoteSession(session);
+  if (!clean || !state.computers.some((c) => c.host === clean.via)) return;
+  const had = state.sessions.find((x) => x.id === clean.id);
+  state.sessions = [{ ...had, ...clean, name: clean.name ?? had?.name }, ...state.sessions.filter((x) => x.id !== clean.id)].slice(0, MAX_REMOTE_SESSIONS);
 }
 
 /** Pi was started in a folder: it goes to the top of that computer's recent ones. */

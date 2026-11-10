@@ -86,7 +86,7 @@ test("Start Pi: computers, pinned and recent folders, survive a reload", async (
     const file = join(dir, "computers.json");
     const opts = { home: HOME };
     let s = await loadStart(file, opts);
-    assert.deepEqual(s, { current: LOCAL_ID, computers: [], pins: [], recent: [] });
+    assert.deepEqual(s, { current: LOCAL_ID, computers: [], pins: [], recent: [], sessions: [] });
     s = await updateStart(file, opts, (x) => addComputer(x, " aegis "));
     assert.deepEqual(s.computers, [{ host: "aegis" }]);
     assert.equal(s.current, "aegis", "a computer you add is picked");
@@ -197,4 +197,21 @@ test("the tunnel: a fixed port per computer, the ssh line, the key and session-f
   }
   assert.match(remoteReadScript(f, 100), /tail -c \+101 /);
   assert.throws(() => remoteReadScript("/etc/passwd"), EnvError);
+});
+
+test("sessions that ran over the tunnel are remembered, checked, newest first, and go with their computer", async () => {
+  const { rememberRemoteSession, cleanRemoteSession } = await import("../server/envs.mjs");
+  const state = { current: LOCAL_ID, computers: [{ host: "aegis" }], pins: [], recent: [], sessions: [] };
+  const file = "/home/me/.pi/agent/sessions/--home-me-x--/a.jsonl";
+  rememberRemoteSession(state, { id: "s1", via: "aegis", file, cwd: "/home/me/x", name: "first", at: 1 });
+  rememberRemoteSession(state, { id: "s2", via: "aegis", file, cwd: "/home/me/x", at: 2 });
+  rememberRemoteSession(state, { id: "s1", via: "aegis", file, cwd: "/home/me/x", at: 3 });
+  assert.deepEqual(state.sessions.map((x) => [x.id, x.name, x.at]), [["s1", "first", 3], ["s2", undefined, 2]], "updated in place, name kept");
+  rememberRemoteSession(state, { id: "s3", via: "other", file, cwd: "/home/me/x", at: 4 });
+  assert.equal(state.sessions.length, 2, "only computers in the list");
+  for (const bad of [{ id: "a b", via: "aegis", file, cwd: "/x" }, { id: "s", via: "aegis", file: "/etc/passwd", cwd: "/x" }, { id: "s", via: "aegis", file, cwd: "relative" }]) {
+    assert.equal(cleanRemoteSession(bad), null);
+  }
+  removeComputer(state, "aegis");
+  assert.equal(state.sessions.length, 0);
 });

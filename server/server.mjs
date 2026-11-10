@@ -20,7 +20,7 @@ import { groupByWorkspace, workspaceKey } from "./session-index.mjs";
 import { lastExchange, localModels, ollamaUrl, SuggestError, suggestionCache, suggestReplies } from "./suggest.mjs";
 import { addFavorite, FavoriteError, loadFavorites, removeFavorite } from "./favorites.mjs";
 import { ColorError, loadColors, setColor } from "./colors.mjs";
-import { addComputer, addRecent, checkFolder, checkHost, checkQuery, checkRemoteSessionFile, EnvError, keyPushScript, loadStart, LOCAL_ID, localRoots, parseRemoteDir, parseRemoteRecent, parseRemoteSearch, pickComputer, recentFolders, recentFor, remoteDirScript, remoteListScript, remoteReadScript, remoteRecentScript, remoteSearchScript, remoteTestScript, removeComputer, searchLocal, setPin, sshPiCommand, testResults, tildePath, tunnelPort, updateStart, windowsFolderDialogScript } from "./envs.mjs";
+import { addComputer, addRecent, rememberRemoteSession, checkFolder, checkHost, checkQuery, checkRemoteSessionFile, EnvError, keyPushScript, loadStart, LOCAL_ID, localRoots, parseRemoteDir, parseRemoteRecent, parseRemoteSearch, pickComputer, recentFolders, recentFor, remoteDirScript, remoteListScript, remoteReadScript, remoteRecentScript, remoteSearchScript, remoteTestScript, removeComputer, searchLocal, setPin, sshPiCommand, testResults, tildePath, tunnelPort, updateStart, windowsFolderDialogScript } from "./envs.mjs";
 import { APP_FILE_HEADERS, APP_MIME, exchangeText, fileKind, findApps, resolveAppFile, urlName } from "./apps.mjs";
 import { createReadStream, existsSync as fileExists } from "node:fs";
 import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard, setDashboardStart } from "./dashboards.mjs";
@@ -160,7 +160,11 @@ function applyBatch(batch, via) {
     // Pi on an SSH computer, through New session's tunnel: its file is there, read over ssh.
     session.via = via;
     const file = checkRemoteSessionFile(batch.sessionFile);
-    if (file) session.remoteFile = file;
+    if (file && (session.remoteFile !== file || (typeof batch.name === "string" && batch.name !== remembered.get(id)?.name))) {
+      session.remoteFile = file;
+      if (typeof batch.name === "string") session.name = batch.name;
+      remember(session);
+    } else if (file) session.remoteFile = file;
   } else if (PI.owns(batch.sessionFile)) session.sessionFile = batch.sessionFile;
   if (typeof batch.cwd === "string") session.cwd = batch.cwd;
   if (typeof batch.name === "string") session.name = batch.name;
@@ -366,6 +370,7 @@ setInterval(() => {
       ? now() - Math.max(session.lastEventAt, inboxes.get(id)?.lastPollAt ?? 0) > 60_000
       : session.pid && !isProcessAlive(session.pid);
     if (gone) {
+      if (session.via && session.remoteFile) remember(session); // stays in Recent; history over ssh
       sessions.delete(id);
       inboxes.delete(id);
       broadcast({ type: "removed", id });
@@ -445,10 +450,43 @@ async function refreshSaved() {
 }
 
 /** Where a session's history lives: a live session first, else the saved index. */
+/*
+ * Sessions that ran on an SSH computer (through the tunnel), remembered in computers.json so they
+ * stay in Recent after they end: id -> { id, via, file, cwd, name, at }.
+ */
+let remembered = new Map();
+async function loadRemembered() {
+  try {
+    const { sessions: list } = await loadStart(START_FILE, { oldFile: ENVS_FILE, home: homedir() });
+    remembered = new Map(list.map((x) => [x.id, x]));
+  } catch {
+    // keep what we have
+  }
+}
+void loadRemembered();
+let rememberChain = Promise.resolve();
+function remember(session) {
+  const entry = { id: session.id, via: session.via, file: session.remoteFile, cwd: session.cwd ?? "", name: session.name, at: session.lastEventAt ?? now() };
+  remembered.set(entry.id, { ...remembered.get(entry.id), ...entry, name: entry.name ?? remembered.get(entry.id)?.name });
+  // One write at a time, so quick updates don't overwrite each other.
+  rememberChain = rememberChain
+    .then(() => updateStart(START_FILE, { oldFile: ENVS_FILE, home: homedir() }, (st) => rememberRemoteSession(st, entry)))
+    .then((st) => {
+      remembered = new Map(st.sessions.map((x) => [x.id, x]));
+    })
+    .catch(() => {});
+}
+/** The SSH computer a session ran on (live through the tunnel, or remembered), if any. */
+function viaOf(id) {
+  return sessions.get(id)?.via ?? remembered.get(id)?.via;
+}
+
 function locate(id) {
   const live = sessions.get(id);
   if (live?.sessionFile) return { file: live.sessionFile, leafId: live.leafId, historyVersion: live.historyVersion, source: PI };
   if (live?.via && live.remoteFile) return { file: live.remoteFile, leafId: live.leafId, historyVersion: live.historyVersion, source: remotePi(live.via), remote: live.via };
+  const past = !live && remembered.get(id);
+  if (past) return { file: past.file, leafId: undefined, historyVersion: 0, source: remotePi(past.via), remote: past.via };
   const saved = savedById.get(id);
   if (saved) return { file: saved.file, leafId: undefined, historyVersion: 0, source: sourceById(saved.source) };
   return undefined;
@@ -505,8 +543,8 @@ async function readRemoteEntries(host, file) {
 
 /** The workspace folder of a session (live or saved). Only these folders are ever browsed. */
 async function workspaceRootFor(id) {
-  if (!sessions.has(id) && !savedById.has(id)) await refreshSaved();
-  const root = sessions.get(id)?.cwd ?? savedById.get(id)?.cwd;
+  if (!sessions.has(id) && !savedById.has(id) && !remembered.has(id)) await refreshSaved();
+  const root = sessions.get(id)?.cwd ?? savedById.get(id)?.cwd ?? remembered.get(id)?.cwd;
   if (!root) throw new WorkbenchError(404, "unknown session");
   return root;
 }
@@ -900,6 +938,11 @@ async function workspaceTree() {
     if (live.name && !["New thread", "New session"].includes(live.name)) row.name = live.name;
     row.lastActivity = Math.max(row.lastActivity ?? 0, live.lastEventAt ?? 0);
     rows.set(live.id, row);
+  }
+  // Past sessions on SSH computers (remembered; their files are there).
+  for (const past of remembered.values()) {
+    if (rows.has(past.id)) continue;
+    rows.set(past.id, { id: past.id, source: "pi", cwd: past.cwd, name: past.name, preview: "", created: undefined, lastActivity: past.at, via: past.via });
   }
   return groupByWorkspace([...rows.values()]).map(({ key, ...group }) => ({ id: key, ...group }));
 }
@@ -1356,7 +1399,7 @@ const server = createServer(async (req, res) => {
         return;
       }
       try {
-        const remoteHost = sessions.get(url.searchParams.get("id") ?? "")?.via;
+        const remoteHost = viaOf(url.searchParams.get("id") ?? "");
         if (remoteHost) throw new WorkbenchError(501, `New folder isn't available yet for sessions running on ${remoteHost}.`);
         const root = await workspaceRootFor(url.searchParams.get("id") ?? "");
         const body = JSON.parse(await readBody(req));
@@ -1517,7 +1560,7 @@ const server = createServer(async (req, res) => {
         const root = await workspaceRootFor(url.searchParams.get("id") ?? "");
         const path = url.searchParams.get("path") ?? "";
         const scope = url.searchParams.get("scope") === "branch" ? "branch" : "uncommitted";
-        const via = sessions.get(url.searchParams.get("id") ?? "")?.via;
+        const via = viaOf(url.searchParams.get("id") ?? "");
         if (via) {
           // A session on an SSH computer (through the tunnel): its folder is there, read over ssh.
           await remoteWorkbench(res, url, via, root, path);
@@ -1866,6 +1909,7 @@ const server = createServer(async (req, res) => {
           sendJson(res, 200, startView(await change((s) => addComputer(s, body.host))));
         } else if (p === "/api/start/computer" && m === "DELETE") {
           sendJson(res, 200, startView(await change((s) => removeComputer(s, url.searchParams.get("host") ?? ""))));
+          void loadRemembered();
         } else if (p === "/api/start/test" && m === "POST") {
           // Add computer → Test: one ssh call running a fixed script; a checklist back.
           const host = checkHost(body.host);
