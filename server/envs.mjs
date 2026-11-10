@@ -14,8 +14,8 @@
 // line is built from fixed text and those words only.
 
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute } from "node:path";
+import { mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, parse } from "node:path";
 import { tmuxName } from "./launch.mjs";
 
 export class EnvError extends Error {}
@@ -130,6 +130,94 @@ export function remotePiLine(host, path) {
   const p = checkRemotePath(path);
   const s = remoteSessionName(h, p);
   return `tmux has-session -t =${s} 2>/dev/null && tmux new-window -t =${s}: -c ${p} bash -lc pi; tmux new-session -A -s ${s} -c ${p} bash -lc pi`;
+}
+
+/* ── folder search for + New environment ── */
+
+/** What the Folder box may search for: a plain word. */
+const QUERY = /^[\w.-]{2,60}$/;
+/** Folders the search never goes into (big, generated, hidden, or the system's own). */
+const SKIP = new Set(["node_modules", "__pycache__", "venv", ".venv", "site-packages", "python_embeded", "$recycle.bin", "appdata", "windows", "program files", "program files (x86)", "programdata"]);
+
+export function checkQuery(q) {
+  const s = String(q ?? "").trim();
+  if (!QUERY.test(s)) throw new EnvError("Type part of a folder name (letters, digits, . _ -), or a full path.");
+  return s;
+}
+
+/**
+ * Where to search on this computer: your home folder, plus the top folder of each workspace the
+ * companion knows (C:\AI for C:\AI\pi\companion), except system folders and ones holding home.
+ */
+export function localRoots(home, workspaceDirs, platform = process.platform) {
+  const roots = new Map([[home.toLowerCase(), home]]);
+  const homeLow = home.toLowerCase();
+  for (const dir of workspaceDirs) {
+    if (!dir || !isAbsolute(dir)) continue;
+    const { root } = parse(dir);
+    // On Windows only drive paths (a Linux path from another computer's index has no drive).
+    if (platform === "win32" && !/^[A-Za-z]:[\\/]$/.test(root)) continue;
+    const first = dir.slice(root.length).split(/[\\/]/).filter(Boolean)[0];
+    if (!first || SKIP.has(first.toLowerCase()) || /^(usr|etc|var|opt|proc|sys|bin|lib|tmp|private|system)$/i.test(first)) continue;
+    const top = join(root, first);
+    const low = top.toLowerCase();
+    if (homeLow.startsWith(low) || low.startsWith(homeLow)) continue;
+    roots.set(low, top);
+  }
+  return [...roots.values()];
+}
+
+/**
+ * Folders whose name contains `q` (any case) under `roots`, breadth first (shallow ones first),
+ * at most `maxDepth` levels down; hidden and SKIP folders left out. Stops at `limit` results,
+ * `maxDirs` folders looked at, or `maxMs`. Returns [{ path, name }].
+ */
+export async function searchLocal(roots, q, { maxDepth = 4, limit = 30, maxDirs = 40000, maxMs = 2500 } = {}) {
+  const needle = checkQuery(q).toLowerCase();
+  const started = Date.now();
+  const found = [];
+  const seen = new Set();
+  let queue = roots.map((dir) => ({ dir, depth: 0 }));
+  let looked = 0;
+  while (queue.length) {
+    const next = [];
+    for (const { dir, depth } of queue) {
+      if (found.length >= limit || looked >= maxDirs || Date.now() - started > maxMs) return found;
+      looked++;
+      let entries;
+      try {
+        entries = await readdir(dir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const e of entries) {
+        if (!e.isDirectory() || e.name.startsWith(".") || SKIP.has(e.name.toLowerCase())) continue;
+        const path = join(dir, e.name);
+        const key = path.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (e.name.toLowerCase().includes(needle)) found.push({ path, name: e.name });
+        if (depth + 1 < maxDepth) next.push({ dir: path, depth: depth + 1 });
+      }
+    }
+    queue = next;
+  }
+  return found.slice(0, limit);
+}
+
+/** The fixed remote script: folders under ~ (4 levels down) whose name contains `q`, as ~/paths. */
+export function remoteSearchScript(q) {
+  const s = checkQuery(q);
+  return `cd ~ && find . -mindepth 1 -maxdepth 4 \\( -name node_modules -o -name '.*' -o -name venv -o -name __pycache__ -o -name snap -o -name site-packages \\) -prune -o -type d -iname '*${s}*' -printf '%d ~/%P\\n' 2>/dev/null | sort -n | head -40; true`;
+}
+
+/** Its output → [{ path, name }], shallow first; anything that isn't a plain ~/path left out. */
+export function parseRemoteSearch(text) {
+  return String(text ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^\d+ /, "").trim())
+    .filter((path) => path.startsWith("~/") && REMOTE_PATH.test(path))
+    .map((path) => ({ path, name: basename(path) }));
 }
 
 /** The line to paste (PowerShell or a POSIX shell) for an SSH environment's New session. */

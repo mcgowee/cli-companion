@@ -626,6 +626,13 @@ body.resizing { cursor: col-resize; user-select: none; }
 .env-kinds { display: flex; gap: 14px; }
 .env-kinds label { flex-direction: row; align-items: center; gap: 5px; color: var(--text); font-size: 13px; cursor: pointer; }
 .env-hint { margin: 0; font-size: 11.5px; color: var(--muted); }
+.env-suggest { display: flex; flex-direction: column; margin-top: -4px; max-height: 220px; overflow: auto; border: 1px solid var(--line);
+  border-radius: 6px; background: var(--bg); }
+.env-suggest[hidden] { display: none; }
+.env-suggest-item { all: unset; box-sizing: border-box; display: flex; flex-direction: column; padding: 5px 9px; cursor: pointer; min-width: 0; }
+.env-suggest-item:hover, .env-suggest-item:focus-visible { background: color-mix(in srgb, var(--accent) 10%, transparent); outline: none; }
+.env-suggest-msg { padding: 6px 9px; font-size: 12px; color: var(--muted); }
+.env-suggest-msg.error { color: var(--bad); }
 .env-form-foot { display: flex; align-items: center; gap: 6px; }
 .env-form-msg { flex: 1; font-size: 12px; color: var(--bad); }
 /* The Open / Copy menu */

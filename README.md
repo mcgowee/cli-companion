@@ -51,7 +51,9 @@ next to it:
   the top, to pick another: a searchable list grouped **Local** (This computer, your home folder,
   plus folders you added) and **SSH**, and **+ New environment** (a name, then a folder on this
   computer, or an SSH computer — what you type after `ssh`, logging in without a password prompt
-  — and a folder there: `~`, `~/projects/app` or `/full/path`). New session opens a terminal
+  — and a folder there: `~`, `~/projects/app` or `/full/path`; or type part of a folder's name in
+  the Folder box to search: this computer's home folder and workspace top folders, 4 levels down,
+  or the SSH computer's home folder, 4 levels down). New session opens a terminal
   running Pi there; for SSH, inside a tmux session named after the folder (a new Pi window if the
   session is already running), so it survives a dropped connection. Sessions on the other
   computer show in its own companion, not this one. Kept in `~/.cli-companion/environments.json`.

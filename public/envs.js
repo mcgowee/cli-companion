@@ -92,9 +92,11 @@
       ${
         f.kind === "ssh"
           ? `<label>Computer <input name="host" required value="${esc(f.host ?? "")}" placeholder="What you type after ssh, e.g. aegis"></label>
-             <label>Folder there <input name="path" value="${esc(f.path ?? "")}" placeholder="~ (home), ~/projects/pi/charloop, or /full/path"></label>
+             <label>Folder there <input name="path" value="${esc(f.path ?? "")}" placeholder="Type to search (e.g. charl), or ~ / ~/path / /full/path"></label>
+             <div class="env-suggest" role="listbox" aria-label="Matching folders" hidden></div>
              <p class="env-hint">It must log in without asking for a password. New session opens Pi in a tmux session named after the folder.</p>`
-          : `<label>Folder <input name="path" required value="${esc(f.path ?? "")}" placeholder="Full path, e.g. C:\\AI\\pi\\charloop"></label>`
+          : `<label>Folder <input name="path" required value="${esc(f.path ?? "")}" placeholder="Type to search (e.g. charl), or a full path"></label>
+             <div class="env-suggest" role="listbox" aria-label="Matching folders" hidden></div>`
       }
       <div class="env-form-foot">
         <span class="env-form-msg error" role="status">${esc(st.error)}</span>
@@ -185,7 +187,74 @@
     }
   });
 
+  /* ── the Folder box: a plain word searches (this computer, or the SSH computer typed above) ── */
+  let folderTimer;
+  let folderSeq = 0;
+  const suggestBox = () => menu.querySelector(".env-suggest");
+
+  function showSuggest(html) {
+    const box = suggestBox();
+    if (!box) return;
+    box.innerHTML = html;
+    box.hidden = !html;
+    place();
+  }
+
+  function scheduleFolderSearch(input) {
+    clearTimeout(folderTimer);
+    const q = input.value.trim();
+    if (!/^[\w.-]{2,60}$/.test(q)) {
+      folderSeq++;
+      showSuggest("");
+      return;
+    }
+    const form = input.form;
+    const kind = form.querySelector('[name="kind"]:checked')?.value ?? "local";
+    const host = form.querySelector('[name="host"]')?.value.trim() ?? "";
+    if (kind === "ssh" && !host) {
+      showSuggest(`<div class="env-suggest-msg">Fill in Computer first, then the search looks there.</div>`);
+      return;
+    }
+    folderTimer = setTimeout(async () => {
+      const seq = ++folderSeq;
+      showSuggest(`<div class="env-suggest-msg">Searching${kind === "ssh" ? ` ${esc(host)}` : ""}…</div>`);
+      let html;
+      try {
+        const params = new URLSearchParams({ kind, q, ...(kind === "ssh" ? { host } : {}) });
+        const res = await fetch(`/api/envs/folders?${params}`, { cache: "no-store", headers: page });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(out.error || `HTTP ${res.status}`);
+        html = out.folders.length
+          ? out.folders
+              .map(
+                (f) => `<button type="button" class="env-suggest-item" role="option" data-folder="${esc(f.path)}" data-folder-name="${esc(f.name)}">
+                  <span class="env-iname">${esc(f.name)}</span><span class="env-sub">${esc(f.path)}</span></button>`,
+              )
+              .join("")
+          : `<div class="env-suggest-msg">No folder named like “${esc(q)}”${kind === "ssh" ? ` on ${esc(host)}` : ""}.</div>`;
+      } catch (error) {
+        html = `<div class="env-suggest-msg error">${esc(error.message)}</div>`;
+      }
+      if (seq === folderSeq && !menu.hidden) showSuggest(html);
+    }, 300);
+  }
+
+  function useFolder(item) {
+    const form = menu.querySelector("[data-env-form]");
+    if (!form) return;
+    form.querySelector('[name="path"]').value = item.dataset.folder;
+    const name = form.querySelector('[name="name"]');
+    if (!name.value.trim()) name.value = item.dataset.folderName;
+    folderSeq++;
+    showSuggest("");
+    form.querySelector('button[type="submit"]').focus();
+  }
+
   menu.addEventListener("input", (event) => {
+    if (event.target.name === "path" && event.target.closest("[data-env-form]")) {
+      scheduleFolderSearch(event.target);
+      return;
+    }
     if (event.target.classList.contains("env-search")) {
       st.q = event.target.value;
       const caret = event.target.selectionStart;
@@ -198,6 +267,27 @@
   });
 
   menu.addEventListener("keydown", (event) => {
+    // In the Folder box: Enter takes the first match, ↓ moves into the list.
+    if (event.target.name === "path" && !suggestBox()?.hidden) {
+      const first = suggestBox()?.querySelector("[data-folder]");
+      if (event.key === "Enter" && first) {
+        event.preventDefault();
+        useFolder(first);
+        return;
+      }
+      if (event.key === "ArrowDown" && first) {
+        event.preventDefault();
+        first.focus();
+        return;
+      }
+    }
+    if (event.target.classList?.contains("env-suggest-item") && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+      event.preventDefault();
+      const sib = event.key === "ArrowDown" ? event.target.nextElementSibling : event.target.previousElementSibling;
+      if (sib) sib.focus();
+      else if (event.key === "ArrowUp") menu.querySelector('[data-env-form] [name="path"]')?.focus();
+      return;
+    }
     // Enter in the search box picks the first match.
     if (event.key === "Enter" && event.target.classList.contains("env-search")) {
       event.preventDefault();
@@ -233,6 +323,11 @@
 
   menu.addEventListener("click", async (event) => {
     const t = event.target;
+    const folder = t.closest("[data-folder]");
+    if (folder) {
+      useFolder(folder);
+      return;
+    }
     if (t.closest("[data-new]")) {
       st.form = { kind: "local" };
       st.error = "";

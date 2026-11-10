@@ -28,6 +28,31 @@ test("the remote line: new Pi window in the folder's tmux session, else create i
   assert.equal(sshPiCommand("aegis", "~"), `ssh -t aegis '${remotePiLine("aegis", "~")}'`);
 });
 
+test("folder search: plain words only; remote output parsed; local roots and search", async () => {
+  const { checkQuery, localRoots, parseRemoteSearch, remoteSearchScript, searchLocal } = await import("../server/envs.mjs");
+  const { mkdir } = await import("node:fs/promises");
+  assert.equal(checkQuery(" charl "), "charl");
+  for (const bad of ["", "c", "a b", "a'b", "*", "$(x)", "x".repeat(61)]) assert.throws(() => checkQuery(bad), EnvError, bad);
+  assert.ok(remoteSearchScript("charl").includes("-iname '*charl*'"));
+  assert.deepEqual(parseRemoteSearch("2 ~/projects/charloop\n3 ~/projects/pi/charloop\n2 ~/a b\n1 /etc\n"), [
+    { path: "~/projects/charloop", name: "charloop" },
+    { path: "~/projects/pi/charloop", name: "charloop" },
+  ]);
+  if (process.platform === "win32") {
+    assert.deepEqual(
+      localRoots("C:\\Users\\me", ["C:\\AI\\pi\\app", "C:\\Users\\me\\x", "D:\\work\\y", "C:\\WINDOWS\\system32", "\\home\\me\\p"]),
+      ["C:\\Users\\me", "C:\\AI", "D:\\work"],
+    );
+  }
+  const dir = await mkdtemp(join(tmpdir(), "cc-fsearch-"));
+  try {
+    for (const p of ["a/charloop", "b/c/CharLoop2", "node_modules/charloop-pkg", ".hidden/charloop"]) await mkdir(join(dir, p), { recursive: true });
+    assert.deepEqual((await searchLocal([dir], "charl")).map((f) => f.name), ["charloop", "CharLoop2"]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("environments: This computer always there, add local/ssh, pick, remove, survive a reload", async () => {
   const dir = await mkdtemp(join(tmpdir(), "cc-envs-"));
   try {

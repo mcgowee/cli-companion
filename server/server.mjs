@@ -20,7 +20,7 @@ import { groupByWorkspace, workspaceKey } from "./session-index.mjs";
 import { lastExchange, localModels, ollamaUrl, SuggestError, suggestionCache, suggestReplies } from "./suggest.mjs";
 import { addFavorite, FavoriteError, loadFavorites, removeFavorite } from "./favorites.mjs";
 import { ColorError, loadColors, setColor } from "./colors.mjs";
-import { addEnv, EnvError, loadEnvs, pickEnv, removeEnv, sshPiCommand } from "./envs.mjs";
+import { addEnv, checkHost, checkQuery, EnvError, loadEnvs, localRoots, parseRemoteSearch, pickEnv, remoteSearchScript, removeEnv, searchLocal, sshPiCommand } from "./envs.mjs";
 import { APP_FILE_HEADERS, APP_MIME, exchangeText, fileKind, findApps, resolveAppFile, urlName } from "./apps.mjs";
 import { createReadStream, existsSync as fileExists } from "node:fs";
 import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard, setDashboardStart } from "./dashboards.mjs";
@@ -33,7 +33,7 @@ import { PLACES, setShortcut, shortcutStatus } from "./shortcut.mjs";
 import { frequentPrompts, loadPrompts, PromptError, savePrompts, validatePrompts } from "./prompts.mjs";
 import { classifyRequest, loadRemote, remoteAllowed, saveRemote, serveOff, serveOn, serving, tailscaleSelf } from "./remote.mjs";
 import { loadSettings, readSettingsStrict, saveSettings, SettingsError, settingsStamp, sourceEnv, validateSettings } from "./settings.mjs";
-import { execFileSync, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import { isProcessAlive } from "./fsutil.mjs";
 import { createSources, describeSources, nativeId, sourceForId } from "./sources/index.mjs";
 import { APP_ID, accessKey, companionPort, ensureServer, isPortUp, migrateStateFile, removeRuntimeFile, shutdownPlan, stateDir, writeRuntimeFile } from "./start.mjs";
@@ -646,6 +646,25 @@ function sshExe() {
   if (process.platform !== "win32") return "ssh";
   const own = join(process.env.SystemRoot || "C:\\Windows", "System32", "OpenSSH", "ssh.exe");
   return fileExists(own) ? own : "ssh";
+}
+
+/** Folders on an SSH computer whose name contains q (the Folder box in + New environment). Never prompts. */
+function remoteFolderSearch(host, q) {
+  return new Promise((resolveList, reject) => {
+    execFile(
+      sshExe(),
+      ["-o", "BatchMode=yes", "-o", "ConnectTimeout=8", checkHost(host), remoteSearchScript(q)],
+      { encoding: "utf8", timeout: 20000, windowsHide: true, maxBuffer: 1024 * 1024 },
+      (error, stdout, stderr) => {
+        if (error) {
+          const why = String(stderr || error.message).trim().split("\n").pop();
+          reject(new EnvError(`Couldn't reach ${host} over SSH${why ? ` (${why})` : ""}. Check that \`ssh ${host}\` works in a terminal without asking for a password.`));
+          return;
+        }
+        resolveList(parseRemoteSearch(stdout));
+      },
+    );
+  });
 }
 
 /** What New session runs in a terminal for an environment, and the line to copy. */
@@ -1591,6 +1610,29 @@ const server = createServer(async (req, res) => {
         sendJson(res, 200, { favorites });
       } catch (error) {
         sendJson(res, error instanceof FavoriteError || error instanceof SyntaxError ? 400 : 500, { error: error.message });
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/envs/folders") {
+      // The Folder box in + New environment: folders whose name contains q, on this computer
+      // (kind=local) or on the SSH computer being added (kind=ssh&host=…). Page header: it can run ssh.
+      if (req.headers["x-pi-companion-page"] !== "1") {
+        res.writeHead(403).end();
+        return;
+      }
+      try {
+        const q = checkQuery(url.searchParams.get("q"));
+        let folders;
+        if (url.searchParams.get("kind") === "ssh") {
+          folders = await remoteFolderSearch(url.searchParams.get("host") ?? "", q);
+        } else {
+          await refreshSaved();
+          folders = await searchLocal(localRoots(homedir(), [...savedById.values()].map((m) => m.cwd)), q);
+        }
+        sendJson(res, 200, { folders });
+      } catch (error) {
+        sendJson(res, error instanceof EnvError ? 400 : 500, { error: error.message });
       }
       return;
     }
