@@ -46,17 +46,15 @@ next to it:
   To give a session a colour (to match the tab colour you gave its terminal, say), click the **⋯**
   beside it in Active or Favorites, or right-click any session row: pick a swatch, Custom…, or No
   colour. The row gets a coloured stripe everywhere it's listed. Kept in `~/.cli-companion/session-colors.json`.
-  Click the **Workspaces** box at the top of the sidebar for its menu. Its search box finds folders
-  by name, at once on this computer (your home folder and the top folder of each workspace, like
-  `C:\AI`, 4 levels down; **Add** puts one under Folders) and on each SSH computer (3 levels down in
-  `~/projects`, with **Terminal / Pi / Copy**). Below it: **Add a folder by path…** keeps a
-  folder in the sidebar (under **Folders**) even before it has a session, with the usual terminal
-  menu (Terminal here, or start Pi / Claude Code / Codex there). **Add an SSH computer…** takes
-  the name you type after `ssh` (it must log in without a password prompt); click it to list the
-  folders in `~/projects` there, then **Terminal** or **Pi** opens a terminal here, ssh'd into
-  that folder's tmux session (`tmux new-session -A`: it rejoins the session if it's running, ● in
-  the list). **Copy** gives the line (Shift+click for the Pi one). Sessions on the other computer
-  show in its own companion, not this one. Kept in `~/.cli-companion/places.json`.
+  At the bottom of the sidebar, the **environment** bar (like the Claude Code desktop app's
+  environment picker) shows where **New session** starts Pi. Click it, or the **Workspaces** box at
+  the top, to pick another: a searchable list grouped **Local** (This computer, your home folder,
+  plus folders you added) and **SSH**, and **+ New environment** (a name, then a folder on this
+  computer, or an SSH computer — what you type after `ssh`, logging in without a password prompt
+  — and a folder there: `~`, `~/projects/app` or `/full/path`). New session opens a terminal
+  running Pi there; for SSH, inside a tmux session named after the folder (a new Pi window if the
+  session is already running), so it survives a dropped connection. Sessions on the other
+  computer show in its own companion, not this one. Kept in `~/.cli-companion/environments.json`.
   Below that, **Workspaces**, grouped by CLI first: Pi, Claude Code, Codex, each with a caret
   that opens its workspaces (project folders), newest first and collapsed, with that CLI's
   sessions underneath (running ones keep their live dot there too), including past sessions you
@@ -335,7 +333,7 @@ What the companion writes (all in `~/.cli-companion`, or `CLI_COMPANION_HOME`, u
 | `settings.json` | The Settings page |
 | `access-key` | The access key (made on first start) |
 | `favorites.json`, `session-colors.json`, `dashboards.json`, `prompts.json` | Starred items, session colours (ids and colours only), custom dashboards (with their start commands), saved prompts |
-| `places.json` | Folders you added from the Workspaces menu (paths) and SSH computer names |
+| `environments.json` | Environments you added (names, folder paths, SSH computer names) and which one is picked |
 | `token-usage.json` | Token counts per session file (a cache; safe to delete) |
 | `handoffs/` | Handoff briefs you made (newest 20 kept) |
 | `remote.json` | Phone access on/off and your Tailscale name |

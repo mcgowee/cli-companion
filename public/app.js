@@ -22,8 +22,6 @@
     favorites: [],
     /** Session id → "#rrggbb", picked from a row's ⋯ / right-click menu (session-colors.json). */
     colors: {},
-    /** Folders added from the Workspaces menu (places.json): [{ id, path }]. */
-    folders: [],
   };
 
   function loadPref(key, fallback) {
@@ -475,17 +473,6 @@
     renderSidebar();
   }
 
-  async function loadFolders() {
-    try {
-      const res = await fetch("/api/places", { cache: "no-store" });
-      if (!res.ok) return;
-      state.folders = (await res.json()).folders ?? [];
-      renderSidebar();
-    } catch {
-      // Server restarting: the next "places" message or reload brings them.
-    }
-  }
-
   async function loadSessionColors() {
     try {
       const res = await fetch("/api/session-colors", { cache: "no-store" });
@@ -619,19 +606,6 @@
               .join("")
           : `<p class="hint">${filter && state.favorites.length ? "No favorites match." : "Click the star beside a session under Active to keep it here."}</p>`
       }</div>
-      ${
-        state.folders.length
-          ? `<div class="folders-section"><div class="section-head side-section">Folders <span class="ws-count">${state.folders.length}</span></div>
-      <div class="folders-list">${state.folders
-        .map((f) => {
-          const name = String(f.path).split(/[\\/]/).filter(Boolean).pop() || f.path;
-          return `<button class="folder-row" type="button" data-launch-kind="folder" data-launch-id="${esc(f.id)}" title="${esc(`${f.path}\nOpen a terminal or start a session here`)}">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.6l2 2h7.4a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>
-          <span class="sname">${esc(name)}</span></button>`;
-        })
-        .join("")}</div></div>`
-          : ""
-      }
       <div class="section-head side-section">Workspaces</div>`;
 
     $("empty-hint").hidden = groups.length > 0 || Boolean(filter);
@@ -1412,8 +1386,9 @@
         // Changed here or in another window.
         state.favorites = msg.favorites ?? [];
         renderSidebar();
-      } else if (msg.type === "places") {
-        void loadFolders();
+      } else if (msg.type === "envs") {
+        // Environments changed here or in another window: public/envs.js reloads them.
+        window.dispatchEvent(new Event("companion-envs"));
       } else if (msg.type === "session-colors") {
         state.colors = msg.colors ?? {};
         renderSidebar();
@@ -1443,6 +1418,5 @@
   loadWorkspaces();
   loadFavorites();
   loadSessionColors();
-  loadFolders();
   connect();
 })();

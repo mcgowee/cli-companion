@@ -51,6 +51,18 @@
       </div>
       <nav id="session-list" class="session-list" aria-label="Workspaces and sessions"></nav>
       <p class="hint" id="empty-hint" hidden>No sessions yet. Start Pi, Claude Code or Codex in a terminal; they show up here within a few seconds.</p>
+
+      <div class="env-bar" id="env-bar">
+        <p class="env-msg" id="env-msg" role="status"></p>
+        <div class="env-row">
+          <button class="env-pick" id="env-pick" type="button" aria-haspopup="dialog">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8 20h8M12 16.5V20"/></svg>
+            <span class="env-name">This computer</span><span class="env-kind">Local</span>
+            <svg class="env-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>
+          </button>
+          <button class="btn primary small env-new" id="env-new-session" type="button">New session</button>
+        </div>
+      </div>
     </aside>
 
     <div class="panel-resize side-resize" id="side-resize" role="separator" aria-orientation="vertical"
@@ -178,7 +190,7 @@
   <script src="workbench.js"></script>
   <script src="terminal.js"></script>
   <script src="launch.js"></script>
-  <script src="places.js"></script>
+  <script src="envs.js"></script>
   <script src="dashboards.js"></script>
   <script src="settings.js"></script>
   <script src="search.js"></script>

@@ -20,7 +20,7 @@ import { groupByWorkspace, workspaceKey } from "./session-index.mjs";
 import { lastExchange, localModels, ollamaUrl, SuggestError, suggestionCache, suggestReplies } from "./suggest.mjs";
 import { addFavorite, FavoriteError, loadFavorites, removeFavorite } from "./favorites.mjs";
 import { ColorError, loadColors, setColor } from "./colors.mjs";
-import { addFolder, addHost, checkQuery, loadPlaces, localRoots, parseRemoteList, PlaceError, REMOTE_ACTIONS, REMOTE_ROOT, remoteListScript, remoteSearchScript, removePlace, searchLocal, sshArgs, sshCopyLine } from "./places.mjs";
+import { addEnv, EnvError, loadEnvs, pickEnv, removeEnv, sshPiCommand } from "./envs.mjs";
 import { APP_FILE_HEADERS, APP_MIME, exchangeText, fileKind, findApps, resolveAppFile, urlName } from "./apps.mjs";
 import { createReadStream, existsSync as fileExists } from "node:fs";
 import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard, setDashboardStart } from "./dashboards.mjs";
@@ -33,7 +33,7 @@ import { PLACES, setShortcut, shortcutStatus } from "./shortcut.mjs";
 import { frequentPrompts, loadPrompts, PromptError, savePrompts, validatePrompts } from "./prompts.mjs";
 import { classifyRequest, loadRemote, remoteAllowed, saveRemote, serveOff, serveOn, serving, tailscaleSelf } from "./remote.mjs";
 import { loadSettings, readSettingsStrict, saveSettings, SettingsError, settingsStamp, sourceEnv, validateSettings } from "./settings.mjs";
-import { execFile, execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { isProcessAlive } from "./fsutil.mjs";
 import { createSources, describeSources, nativeId, sourceForId } from "./sources/index.mjs";
 import { APP_ID, accessKey, companionPort, ensureServer, isPortUp, migrateStateFile, removeRuntimeFile, shutdownPlan, stateDir, writeRuntimeFile } from "./start.mjs";
@@ -103,7 +103,7 @@ migrateStateFile("dashboards.json");
 const DASHBOARDS_FILE = join(stateDir(), "dashboards.json");
 const FAVORITES_FILE = join(stateDir(), "favorites.json");
 const COLORS_FILE = join(stateDir(), "session-colors.json");
-const PLACES_FILE = join(stateDir(), "places.json");
+const ENVS_FILE = join(stateDir(), "environments.json");
 const PROMPTS_FILE = join(stateDir(), "prompts.json");
 // Token use per session, read from the CLIs' session files (cached in token-usage.json).
 const tokenUsage = createTokenTracker({ cacheFile: join(stateDir(), "token-usage.json") });
@@ -518,12 +518,6 @@ async function launchTarget(kind, id) {
     if (!cwd) throw new LaunchError("Unknown workspace.");
     return { kind, cwd: await existingDir(cwd) };
   }
-  if (kind === "folder") {
-    // A folder added from the Workspaces menu (places.json): same menu as a workspace.
-    const folder = (await loadPlaces(PLACES_FILE)).folders.find((f) => f.id === id);
-    if (!folder) throw new LaunchError("That folder isn't in the list any more.");
-    return { kind, cwd: await existingDir(folder.path) };
-  }
   throw new LaunchError("Unknown kind.");
 }
 
@@ -645,7 +639,7 @@ async function openTerminal(cwd, command, { typed = false } = {}) {
   );
 }
 
-/* ── SSH folders (the Workspaces menu): list ~/projects on a host, open one in tmux ── */
+/* ── environments: where New session starts Pi (server/envs.mjs) ── */
 
 /** Windows' own OpenSSH (it can use the Windows ssh-agent; Git Bash's ssh can't). */
 function sshExe() {
@@ -654,43 +648,15 @@ function sshExe() {
   return fileExists(own) ? own : "ssh";
 }
 
-/** The folders under ~/projects on `host`, and which have a tmux session. Never prompts (BatchMode). */
-function remoteFolders(host, script = remoteListScript()) {
-  return new Promise((resolveList, reject) => {
-    execFile(
-      sshExe(),
-      ["-o", "BatchMode=yes", "-o", "ConnectTimeout=8", host, script],
-      { encoding: "utf8", timeout: 15000, windowsHide: true, maxBuffer: 1024 * 1024 },
-      (error, stdout, stderr) => {
-        if (error) {
-          const why = String(stderr || error.message).trim().split("\n").pop();
-          reject(new PlaceError(`Couldn't reach ${host} over SSH${why ? `: ${why}` : ""}. Check that \`ssh ${host}\` works in a terminal without asking for a password.`));
-          return;
-        }
-        resolveList(parseRemoteList(stdout));
-      },
-    );
-  });
-}
-
-/** Open a terminal on this computer running ssh into folder `name` on `host`, in its tmux session. */
-async function openSsh(host, name, action) {
-  const args = sshArgs(host, name, action);
-  if (process.platform === "win32") {
-    // Started directly (an argument list, no shell): every word is plain, see places.mjs.
-    const title = `${host} ${name}`;
-    if (settings.terminal !== "console") {
-      try {
-        await spawnDetached("wt.exe", ["-w", "new", "--title", title, sshExe(), ...args], { cwd: homedir() });
-        return;
-      } catch (error) {
-        if (settings.terminal === "wt") throw new LaunchError(`Couldn't start Windows Terminal (${error.code ?? "error"}). Use Copy.`);
-      }
-    }
-    await spawnDetached(sshExe(), args, { cwd: homedir() });
-    return;
+/** What New session runs in a terminal for an environment, and the line to copy. */
+function envCommand(env) {
+  if (env.kind === "ssh") {
+    const line = sshPiCommand(env.host, env.path);
+    // On Windows: PowerShell, sent encoded, calling Windows' own ssh.exe.
+    const run = process.platform === "win32" ? `& '${sshExe()}'${line.slice(3)}` : line;
+    return { cwd: homedir(), run, typed: true, copy: line };
   }
-  await openTerminal(homedir(), sshCopyLine(host, name, action));
+  return { cwd: env.path, run: "pi", typed: false, copy: copyLine(env.path, "pi") };
 }
 
 async function workspaceTree() {
@@ -975,7 +941,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (req.method !== "GET" && !["/api/dashboards", "/api/dashboards/start", "/api/favorites", "/api/session-colors", "/api/places", "/api/ssh/open", "/api/folder", "/api/handoff", "/api/launch", "/api/prompts", "/api/remote", "/api/settings", "/api/shortcut", "/api/upload", "/api/run", "/api/run/stop", "/api/run/open"].includes(url.pathname)) {
+    if (req.method !== "GET" && !["/api/dashboards", "/api/dashboards/start", "/api/favorites", "/api/session-colors", "/api/envs", "/api/envs/current", "/api/envs/start", "/api/folder", "/api/handoff", "/api/launch", "/api/prompts", "/api/remote", "/api/settings", "/api/shortcut", "/api/upload", "/api/run", "/api/run/stop", "/api/run/open"].includes(url.pathname)) {
       res.writeHead(405).end();
       return;
     }
@@ -1629,107 +1595,57 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (url.pathname === "/api/places") {
-      // The Workspaces menu's own list: folders you added and SSH computers. GET lists; POST
-      // { kind: "folder", path } or { kind: "host", host } adds; DELETE ?kind=&id= removes.
+    if (url.pathname === "/api/envs" || url.pathname === "/api/envs/current" || url.pathname === "/api/envs/start") {
+      // Environments for the picker at the bottom of the sidebar. GET /api/envs lists them (with
+      // the line New session runs); POST adds one; DELETE ?id= removes one; PUT /current { id }
+      // picks one; POST /start { id } opens a terminal starting Pi there. Changes need the page
+      // header; every window hears them. Never from the phone (remote.mjs).
       try {
-        if (req.method !== "GET") {
-          if (req.headers["x-pi-companion-page"] !== "1") {
-            res.writeHead(403).end();
-            return;
-          }
-          let places;
-          if (req.method === "POST") {
-            const body = JSON.parse(await readBody(req));
-            if (body?.kind === "folder") places = await addFolder(PLACES_FILE, body.path);
-            else if (body?.kind === "host") places = await addHost(PLACES_FILE, body.host);
-            else throw new PlaceError("Unknown kind.");
-          } else if (req.method === "DELETE") {
-            places = await removePlace(PLACES_FILE, url.searchParams.get("kind") ?? "", url.searchParams.get("id") ?? "");
-          } else {
+        if (req.method !== "GET" && req.headers["x-pi-companion-page"] !== "1") {
+          res.writeHead(403).end();
+          return;
+        }
+        const home = homedir();
+        let state;
+        if (url.pathname === "/api/envs/start") {
+          if (req.method !== "POST") {
             res.writeHead(405).end();
             return;
           }
-          broadcast({ type: "places" });
-          sendJson(res, 200, { ...places, root: REMOTE_ROOT, actions: REMOTE_ACTIONS });
+          const id = String(JSON.parse(await readBody(req))?.id ?? "");
+          const env = (await loadEnvs(ENVS_FILE, home)).envs.find((e) => e.id === id);
+          if (!env) throw new EnvError("That environment is gone.");
+          if (isHeadless()) throw new LaunchError(headlessNote(settings.sshHost || defaultSshHost(), { custom: Boolean(settings.sshHost) }));
+          const cmd = envCommand(env);
+          if (env.kind === "local") await existingDir(env.path);
+          await openTerminal(cmd.cwd, cmd.run, { typed: cmd.typed });
+          sendJson(res, 200, { ok: true });
           return;
         }
-        sendJson(res, 200, { ...(await loadPlaces(PLACES_FILE)), root: REMOTE_ROOT, actions: REMOTE_ACTIONS });
-      } catch (error) {
-        sendJson(res, error instanceof PlaceError || error instanceof SyntaxError ? 400 : 500, { error: error.message });
-      }
-      return;
-    }
-
-    if (url.pathname === "/api/ssh/search") {
-      // The Workspaces menu's search box: folders whose name contains q, on this computer (your
-      // home folder and the top folders of known workspaces) and on every saved SSH computer
-      // (under ~/projects), all at once. Page header: it runs ssh.
-      if (req.headers["x-pi-companion-page"] !== "1") {
-        res.writeHead(403).end();
-        return;
-      }
-      try {
-        const q = checkQuery(url.searchParams.get("q"));
-        await refreshSaved();
-        const places = await loadPlaces(PLACES_FILE);
-        const added = new Set(places.folders.map((f) => f.path.toLowerCase()));
-        const roots = localRoots(homedir(), [...savedById.values()].map((m) => m.cwd));
-        const [local, ...remotes] = await Promise.all([
-          searchLocal(roots, q),
-          ...places.hosts.map((h) =>
-            remoteFolders(h.host, remoteSearchScript(q)).then(
-              (folders) => ({
-                id: h.id,
-                host: h.host,
-                folders: folders.map((f) => ({ ...f, copy: Object.fromEntries(REMOTE_ACTIONS.map((a) => [a.action, sshCopyLine(h.host, f.name, a.action)])) })),
-              }),
-              (error) => ({ id: h.id, host: h.host, error: error.message }),
-            ),
-          ),
-        ]);
-        sendJson(res, 200, {
-          q,
-          canOpen: !isHeadless(),
-          local: { roots, partial: local.partial, folders: local.folders.map((f) => ({ ...f, added: added.has(f.path.toLowerCase()) })) },
-          remotes,
-        });
-      } catch (error) {
-        sendJson(res, error instanceof PlaceError ? 400 : 500, { error: error.message });
-      }
-      return;
-    }
-
-    if (url.pathname === "/api/ssh/folders" || url.pathname === "/api/ssh/open") {
-      // A saved SSH computer's ~/projects folders (GET ?host=<id>), and opening one in a terminal
-      // on this computer (POST { host: <id>, folder, action }). Page header on both: GET runs ssh.
-      if (req.headers["x-pi-companion-page"] !== "1") {
-        res.writeHead(403).end();
-        return;
-      }
-      try {
-        const params = req.method === "POST" ? JSON.parse(await readBody(req)) : Object.fromEntries(url.searchParams);
-        const saved = (await loadPlaces(PLACES_FILE)).hosts.find((h) => h.id === String(params.host ?? ""));
-        if (!saved) throw new PlaceError("That computer isn't in the list any more.");
-        if (url.pathname === "/api/ssh/folders") {
-          const folders = await remoteFolders(saved.host);
-          sendJson(res, 200, {
-            host: saved.host,
-            root: REMOTE_ROOT,
-            canOpen: !isHeadless(),
-            folders: folders.map((f) => ({ ...f, copy: Object.fromEntries(REMOTE_ACTIONS.map((a) => [a.action, sshCopyLine(saved.host, f.name, a.action)])) })),
-          });
-          return;
-        }
-        if (req.method !== "POST") {
+        if (url.pathname === "/api/envs/current") {
+          if (req.method !== "PUT") {
+            res.writeHead(405).end();
+            return;
+          }
+          state = await pickEnv(ENVS_FILE, home, String(JSON.parse(await readBody(req))?.id ?? ""));
+        } else if (req.method === "POST") {
+          state = await addEnv(ENVS_FILE, home, JSON.parse(await readBody(req)));
+        } else if (req.method === "DELETE") {
+          state = await removeEnv(ENVS_FILE, home, url.searchParams.get("id") ?? "");
+        } else if (req.method === "GET") {
+          state = await loadEnvs(ENVS_FILE, home);
+        } else {
           res.writeHead(405).end();
           return;
         }
-        if (isHeadless()) throw new LaunchError("This computer has no graphical terminal, so Open can't work here. Use Copy.");
-        await openSsh(saved.host, String(params.folder ?? ""), String(params.action ?? ""));
-        sendJson(res, 200, { ok: true });
+        if (req.method !== "GET") broadcast({ type: "envs" });
+        sendJson(res, 200, {
+          current: state.current,
+          canOpen: !isHeadless(),
+          envs: state.envs.map((e) => ({ ...e, copy: envCommand(e).copy })),
+        });
       } catch (error) {
-        sendJson(res, error instanceof PlaceError || error instanceof LaunchError || error instanceof SyntaxError ? 400 : 500, { error: error.message });
+        sendJson(res, error instanceof EnvError || error instanceof LaunchError || error instanceof SyntaxError ? 400 : 500, { error: error.message });
       }
       return;
     }
