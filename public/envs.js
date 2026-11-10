@@ -12,6 +12,7 @@
   const bar = document.getElementById("env-bar");
   const pickBtn = document.getElementById("env-pick");
   const newBtn = document.getElementById("env-new-session");
+  const copyBtn = document.getElementById("env-copy");
   const msgEl = document.getElementById("env-msg");
   const topBtn = document.querySelector('.nav-item[data-view="workspaces"]');
   if (!bar || !pickBtn || !newBtn) return;
@@ -40,6 +41,10 @@
     pickBtn.title = e ? `${e.name}: ${sub(e)}\nClick to pick another environment` : "Pick an environment";
     newBtn.title = e ? `Start Pi in ${e.name} (${sub(e)})${e.kind === "ssh" ? ", in a tmux session there" : ""}` : "Start Pi";
     newBtn.disabled = st.data?.canOpen === false;
+    if (copyBtn) {
+      copyBtn.title = e?.copy ? `Copy the command that starts Pi in ${e.name}, to paste into a terminal yourself:\n${e.copy}` : "Copy the command";
+      copyBtn.disabled = !e?.copy;
+    }
   }
 
   async function load() {
@@ -72,6 +77,19 @@
       say(error.message, "error");
     } finally {
       newBtn.disabled = st.data?.canOpen === false;
+    }
+  });
+
+  // Copy: the same command New session runs (cd to the folder and pi; for SSH, ssh -t into its
+  // tmux session), for pasting into a terminal you already have open.
+  copyBtn?.addEventListener("click", async () => {
+    const e = current();
+    if (!e?.copy) return;
+    try {
+      await navigator.clipboard.writeText(e.copy);
+      say(`Copied. Paste it into a terminal to start Pi in ${e.name}.`, "ok");
+    } catch {
+      say(e.copy); // couldn't reach the clipboard: show it to copy by hand
     }
   });
 
