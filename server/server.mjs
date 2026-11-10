@@ -163,6 +163,7 @@ function applyBatch(batch, via) {
     if (file && (session.remoteFile !== file || (typeof batch.name === "string" && batch.name !== remembered.get(id)?.name))) {
       session.remoteFile = file;
       if (typeof batch.name === "string") session.name = batch.name;
+      if (typeof batch.cwd === "string") session.cwd = batch.cwd; // remembered with its folder
       remember(session);
     } else if (file) session.remoteFile = file;
   } else if (PI.owns(batch.sessionFile)) session.sessionFile = batch.sessionFile;
