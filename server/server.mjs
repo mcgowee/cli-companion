@@ -20,7 +20,7 @@ import { groupByWorkspace, workspaceKey } from "./session-index.mjs";
 import { lastExchange, localModels, ollamaUrl, SuggestError, suggestionCache, suggestReplies } from "./suggest.mjs";
 import { addFavorite, FavoriteError, loadFavorites, removeFavorite } from "./favorites.mjs";
 import { ColorError, loadColors, setColor } from "./colors.mjs";
-import { addFolder, addHost, loadPlaces, parseRemoteList, PlaceError, REMOTE_ACTIONS, REMOTE_ROOT, remoteListScript, removePlace, sshArgs, sshCopyLine } from "./places.mjs";
+import { addFolder, addHost, checkQuery, loadPlaces, localRoots, parseRemoteList, PlaceError, REMOTE_ACTIONS, REMOTE_ROOT, remoteListScript, remoteSearchScript, removePlace, searchLocal, sshArgs, sshCopyLine } from "./places.mjs";
 import { APP_FILE_HEADERS, APP_MIME, exchangeText, fileKind, findApps, resolveAppFile, urlName } from "./apps.mjs";
 import { createReadStream, existsSync as fileExists } from "node:fs";
 import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard, setDashboardStart } from "./dashboards.mjs";
@@ -655,11 +655,11 @@ function sshExe() {
 }
 
 /** The folders under ~/projects on `host`, and which have a tmux session. Never prompts (BatchMode). */
-function remoteFolders(host) {
+function remoteFolders(host, script = remoteListScript()) {
   return new Promise((resolveList, reject) => {
     execFile(
       sshExe(),
-      ["-o", "BatchMode=yes", "-o", "ConnectTimeout=8", host, remoteListScript()],
+      ["-o", "BatchMode=yes", "-o", "ConnectTimeout=8", host, script],
       { encoding: "utf8", timeout: 15000, windowsHide: true, maxBuffer: 1024 * 1024 },
       (error, stdout, stderr) => {
         if (error) {
@@ -1657,6 +1657,45 @@ const server = createServer(async (req, res) => {
         sendJson(res, 200, { ...(await loadPlaces(PLACES_FILE)), root: REMOTE_ROOT, actions: REMOTE_ACTIONS });
       } catch (error) {
         sendJson(res, error instanceof PlaceError || error instanceof SyntaxError ? 400 : 500, { error: error.message });
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/ssh/search") {
+      // The Workspaces menu's search box: folders whose name contains q, on this computer (your
+      // home folder and the top folders of known workspaces) and on every saved SSH computer
+      // (under ~/projects), all at once. Page header: it runs ssh.
+      if (req.headers["x-pi-companion-page"] !== "1") {
+        res.writeHead(403).end();
+        return;
+      }
+      try {
+        const q = checkQuery(url.searchParams.get("q"));
+        await refreshSaved();
+        const places = await loadPlaces(PLACES_FILE);
+        const added = new Set(places.folders.map((f) => f.path.toLowerCase()));
+        const roots = localRoots(homedir(), [...savedById.values()].map((m) => m.cwd));
+        const [local, ...remotes] = await Promise.all([
+          searchLocal(roots, q),
+          ...places.hosts.map((h) =>
+            remoteFolders(h.host, remoteSearchScript(q)).then(
+              (folders) => ({
+                id: h.id,
+                host: h.host,
+                folders: folders.map((f) => ({ ...f, copy: Object.fromEntries(REMOTE_ACTIONS.map((a) => [a.action, sshCopyLine(h.host, f.name, a.action)])) })),
+              }),
+              (error) => ({ id: h.id, host: h.host, error: error.message }),
+            ),
+          ),
+        ]);
+        sendJson(res, 200, {
+          q,
+          canOpen: !isHeadless(),
+          local: { roots, partial: local.partial, folders: local.folders.map((f) => ({ ...f, added: added.has(f.path.toLowerCase()) })) },
+          remotes,
+        });
+      } catch (error) {
+        sendJson(res, error instanceof PlaceError ? 400 : 500, { error: error.message });
       }
       return;
     }

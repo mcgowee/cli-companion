@@ -46,7 +46,10 @@ next to it:
   To give a session a colour (to match the tab colour you gave its terminal, say), click the **⋯**
   beside it in Active or Favorites, or right-click any session row: pick a swatch, Custom…, or No
   colour. The row gets a coloured stripe everywhere it's listed. Kept in `~/.cli-companion/session-colors.json`.
-  Click the **Workspaces** box at the top of the sidebar for its menu: **Add a folder…** keeps a
+  Click the **Workspaces** box at the top of the sidebar for its menu. Its search box finds folders
+  by name, at once on this computer (your home folder and the top folder of each workspace, like
+  `C:\AI`, 4 levels down; **Add** puts one under Folders) and on each SSH computer (3 levels down in
+  `~/projects`, with **Terminal / Pi / Copy**). Below it: **Add a folder by path…** keeps a
   folder in the sidebar (under **Folders**) even before it has a session, with the usual terminal
   menu (Terminal here, or start Pi / Claude Code / Codex there). **Add an SSH computer…** takes
   the name you type after `ssh` (it must log in without a password prompt); click it to list the

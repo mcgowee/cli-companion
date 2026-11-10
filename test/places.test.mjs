@@ -55,3 +55,37 @@ test("places: folders must exist, no duplicates, hosts added and removed, surviv
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("folder search: query words only; nested remote names; local roots and search", async () => {
+  const { checkQuery, localRoots, remoteSearchScript, searchLocal } = await import("../server/places.mjs");
+  const { mkdir } = await import("node:fs/promises");
+  assert.equal(checkQuery(" charl "), "charl");
+  for (const bad of ["", "a b", "a'b", "*", "$(x)", "x".repeat(61)]) assert.throws(() => checkQuery(bad), PlaceError, bad);
+  assert.ok(remoteSearchScript("charl").includes("'*charl*'"));
+
+  assert.deepEqual(parseRemoteList("Fpi/charloop\nFcharloop-old\nFpi/../x\nScharloop\n"), [
+    { name: "charloop-old", tmux: "charloop-old", running: false },
+    { name: "pi/charloop", tmux: "charloop", running: true },
+  ]);
+  assert.deepEqual(sshArgs("aegis", "pi/charloop", "pi").slice(5), ["-s", "charloop", "-c", "~/projects/pi/charloop", "bash", "-lc", "pi"]);
+  assert.throws(() => sshArgs("aegis", "pi/../x", "shell"), PlaceError);
+  assert.throws(() => sshArgs("aegis", "/etc", "shell"), PlaceError);
+
+  if (process.platform === "win32") {
+    assert.deepEqual(
+      localRoots("C:\\Users\\me", ["C:\\AI\\pi\\app", "C:\\AI\\other", "C:\\Users\\me\\code\\x", "D:\\work\\y", "C:\\WINDOWS\\system32", "\\home\\me\\projects", "C:\\Program Files\\x"]),
+      ["C:\\Users\\me", "C:\\AI", "D:\\work"],
+    );
+  }
+
+  const dir = await mkdtemp(join(tmpdir(), "cc-search-"));
+  try {
+    for (const p of ["a/charloop", "b/c/CharLoop2", "node_modules/charloop-pkg", ".hidden/charloop", "a/other"]) await mkdir(join(dir, p), { recursive: true });
+    const r = await searchLocal([dir], "charl");
+    assert.deepEqual(r.folders.map((f) => f.name).sort(), ["CharLoop2", "charloop"]);
+    assert.equal(r.partial, false);
+    assert.equal((await searchLocal([dir], "charl", { maxDepth: 2 })).folders.length, 1);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

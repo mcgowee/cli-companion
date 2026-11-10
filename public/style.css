@@ -585,6 +585,12 @@ body.resizing { cursor: col-resize; user-select: none; }
 /* The Workspaces menu (public/places.js): under the terminal menu it opens, so that one shows on top. */
 .nav-item[data-view="workspaces"].open { background: var(--accent-soft); }
 .places-menu { z-index: 49; width: min(430px, calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow: auto; }
+.places-search { padding: 4px 6px 6px; }
+.places-search input { box-sizing: border-box; width: 100%; font: inherit; padding: 6px 9px; border: 1px solid var(--line); border-radius: 7px;
+  background: var(--bg); color: var(--text); }
+.places-search input:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 0; }
+.places-results { border-bottom: 1px solid var(--line); padding-bottom: 4px; margin-bottom: 4px; max-height: 55vh; overflow: auto; }
+.places-more > summary { cursor: pointer; padding: 6px 8px; color: var(--muted); font-size: 12px; }
 .places-add { display: flex; gap: 6px; padding: 4px 8px 6px; }
 .places-add input { flex: 1; min-width: 0; font: inherit; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
 .places-host-btn { all: unset; cursor: pointer; flex: 1; font-weight: 650; padding: 2px 0; }
