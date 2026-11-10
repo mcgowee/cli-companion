@@ -82,7 +82,10 @@ export async function addEnv(file, home, input) {
   if (input?.kind === "ssh") {
     env = { id: randomUUID(), name, kind: "ssh", host: checkHost(input.host), path: checkRemotePath(input.path) };
   } else if (input?.kind === "local") {
-    const path = String(input.path ?? "").trim().replace(/^["']|["']$/g, "").replace(/[\\/]+$/, "");
+    // The folder is optional: none means your home folder.
+    const raw = String(input.path ?? "").trim().replace(/^["']|["']$/g, "");
+    // Trailing slashes off, but a drive or filesystem root (C:\, /) stays as it is.
+    const path = (/^([A-Za-z]:)?[\\/]$/.test(raw) ? raw : raw.replace(/[\\/]+$/, "")) || home;
     if (!path || !isAbsolute(path)) throw new EnvError("Give the folder's full path.");
     if (!(await stat(path).catch(() => null))?.isDirectory()) throw new EnvError(`There's no folder at ${path}.`);
     env = { id: randomUUID(), name, kind: "local", path };
@@ -211,11 +214,62 @@ export function remoteSearchScript(q) {
   return `cd ~ && find . -mindepth 1 -maxdepth 4 \\( -name node_modules -o -name '.*' -o -name venv -o -name __pycache__ -o -name snap -o -name site-packages \\) -prune -o -type d -iname '*${s}*' -printf '%d ~/%P\\n' 2>/dev/null | sort -n | head -40; true`;
 }
 
+/**
+ * The fixed remote script for the Folder list before you type: the folders in ~/projects, two
+ * levels down (~/projects/app, ~/projects/pi/app), most recently changed first; or in ~ if
+ * there's no ~/projects. Each line is "<mtime> ~/path".
+ */
+export function remoteListScript() {
+  const prune = `\\( -name node_modules -o -name '.*' -o -name venv -o -name __pycache__ \\) -prune -o`;
+  return `cd ~ && if [ -d projects ]; then find projects -mindepth 1 -maxdepth 2 ${prune} -type d -printf '%T@ ~/%p\\n'; else find . -mindepth 1 -maxdepth 1 ${prune} -type d -printf '%T@ ~/%P\\n'; fi 2>/dev/null | sort -rn | head -40; true`;
+}
+
+/**
+ * Folders your sessions ran in, newest first, that still exist (the Folder list before you type).
+ * `metas` are session index rows ({ cwd, lastActivity }).
+ */
+export async function recentFolders(metas, { limit = 12, platform = process.platform } = {}) {
+  const latest = new Map();
+  for (const m of metas) {
+    if (!m?.cwd || !isAbsolute(m.cwd)) continue;
+    if (platform === "win32" && !/^[A-Za-z]:[\\/]/.test(m.cwd)) continue;
+    const key = platform === "win32" ? m.cwd.toLowerCase() : m.cwd;
+    const at = Number(m.lastActivity ?? m.mtimeMs) || 0;
+    if (!latest.has(key) || latest.get(key).at < at) latest.set(key, { path: m.cwd, at });
+  }
+  const out = [];
+  for (const { path } of [...latest.values()].sort((a, b) => b.at - a.at)) {
+    if (out.length >= limit) break;
+    if ((await stat(path).catch(() => null))?.isDirectory()) out.push({ path, name: basename(path) || path });
+  }
+  return out;
+}
+
+/**
+ * The PowerShell script that shows Windows' own "Select folder" window (on top of the browser)
+ * and prints the folder picked, or nothing if cancelled. Needs -STA. `start` is where it opens.
+ */
+export function windowsFolderDialogScript(start) {
+  const q = (s) => `'${String(s).replace(/'/g, "''")}'`;
+  return [
+    "[Console]::OutputEncoding = [Text.Encoding]::UTF8",
+    "Add-Type -AssemblyName System.Windows.Forms",
+    "$owner = New-Object System.Windows.Forms.Form",
+    "$owner.TopMost = $true; $owner.ShowInTaskbar = $false; $owner.Opacity = 0; $owner.StartPosition = 'CenterScreen'",
+    "$owner.Show(); $owner.Activate()",
+    "$d = New-Object System.Windows.Forms.FolderBrowserDialog",
+    "$d.Description = 'Choose the folder Pi works in'; $d.UseDescriptionForTitle = $true; $d.ShowNewFolderButton = $true",
+    `$d.InitialDirectory = ${q(start)}`,
+    "$r = $d.ShowDialog($owner); $owner.Close()",
+    "if ($r -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($d.SelectedPath) }",
+  ].join("\n");
+}
+
 /** Its output → [{ path, name }], shallow first; anything that isn't a plain ~/path left out. */
 export function parseRemoteSearch(text) {
   return String(text ?? "")
     .split(/\r?\n/)
-    .map((line) => line.replace(/^\d+ /, "").trim())
+    .map((line) => line.replace(/^[\d.]+ /, "").trim())
     .filter((path) => path.startsWith("~/") && REMOTE_PATH.test(path))
     .map((path) => ({ path, name: basename(path) }));
 }

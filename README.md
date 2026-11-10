@@ -49,11 +49,13 @@ next to it:
   At the bottom of the sidebar, the **environment** bar (like the Claude Code desktop app's
   environment picker) shows where **New session** starts Pi. Click it, or the **Workspaces** box at
   the top, to pick another: a searchable list grouped **Local** (This computer, your home folder,
-  plus folders you added) and **SSH**, and **+ New environment** (a name, then a folder on this
-  computer, or an SSH computer — what you type after `ssh`, logging in without a password prompt
-  — and a folder there: `~`, `~/projects/app` or `/full/path`; or type part of a folder's name in
-  the Folder box to search: this computer's home folder and workspace top folders, 4 levels down,
-  or the SSH computer's home folder, 4 levels down). New session opens a terminal
+  plus folders you added) and **SSH**, and **+ New environment**: a dialog with **Local** and
+  **SSH** tabs, a name, for SSH the computer (what you type after `ssh`, logging in without a
+  password prompt), and an optional folder (none = home). The folder's **+ Add** opens a list:
+  the folders your sessions ran in, newest first (for SSH, the folders in `~/projects` there,
+  two levels down, most recently changed first); a search box (part of a name searches this
+  computer's home and workspace top folders, or the SSH computer's home, 4 levels down; a full
+  path is used as is); and **Choose…**, this computer's own folder window. New session opens a terminal
   running Pi there; for SSH, inside a tmux session named after the folder (a new Pi window if the
   session is already running), so it survives a dropped connection. Sessions on the other
   computer show in its own companion, not this one. Kept in `~/.cli-companion/environments.json`.

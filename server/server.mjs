@@ -14,13 +14,13 @@ import { commandFromRequest } from "./commands.mjs";
 import { createServer } from "node:http";
 import { homedir } from "node:os";
 import { readFile, stat } from "node:fs/promises";
-import { extname, join, resolve } from "node:path";
+import { extname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { groupByWorkspace, workspaceKey } from "./session-index.mjs";
 import { lastExchange, localModels, ollamaUrl, SuggestError, suggestionCache, suggestReplies } from "./suggest.mjs";
 import { addFavorite, FavoriteError, loadFavorites, removeFavorite } from "./favorites.mjs";
 import { ColorError, loadColors, setColor } from "./colors.mjs";
-import { addEnv, checkHost, checkQuery, EnvError, loadEnvs, localRoots, parseRemoteSearch, pickEnv, remoteSearchScript, removeEnv, searchLocal, sshPiCommand } from "./envs.mjs";
+import { addEnv, checkHost, checkQuery, EnvError, loadEnvs, localRoots, parseRemoteSearch, pickEnv, recentFolders, remoteListScript, remoteSearchScript, removeEnv, searchLocal, sshPiCommand, windowsFolderDialogScript } from "./envs.mjs";
 import { APP_FILE_HEADERS, APP_MIME, exchangeText, fileKind, findApps, resolveAppFile, urlName } from "./apps.mjs";
 import { createReadStream, existsSync as fileExists } from "node:fs";
 import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard, setDashboardStart } from "./dashboards.mjs";
@@ -648,12 +648,15 @@ function sshExe() {
   return fileExists(own) ? own : "ssh";
 }
 
-/** Folders on an SSH computer whose name contains q (the Folder box in + New environment). Never prompts. */
+/**
+ * Folders on an SSH computer for the Folder list in + New environment: those whose name contains
+ * q, or (no q) the ones in ~/projects. Never prompts (BatchMode).
+ */
 function remoteFolderSearch(host, q) {
   return new Promise((resolveList, reject) => {
     execFile(
       sshExe(),
-      ["-o", "BatchMode=yes", "-o", "ConnectTimeout=8", checkHost(host), remoteSearchScript(q)],
+      ["-o", "BatchMode=yes", "-o", "ConnectTimeout=8", checkHost(host), q ? remoteSearchScript(q) : remoteListScript()],
       { encoding: "utf8", timeout: 20000, windowsHide: true, maxBuffer: 1024 * 1024 },
       (error, stdout, stderr) => {
         if (error) {
@@ -664,6 +667,41 @@ function remoteFolderSearch(host, q) {
         resolveList(parseRemoteSearch(stdout));
       },
     );
+  });
+}
+
+let choosing = false;
+/**
+ * This computer's own "Select folder" window, opened from the server (which runs on your desktop):
+ * Windows through PowerShell's FolderBrowserDialog (the Explorer-style one), macOS through
+ * osascript, Linux through zenity. Resolves with the folder, or "" if cancelled.
+ */
+function chooseFolder(start) {
+  if (isHeadless()) return Promise.reject(new EnvError("This computer has no screen to show a folder window on. Type the path instead."));
+  if (choosing) return Promise.reject(new EnvError("A folder window is already open. Look for it behind the browser."));
+  let file;
+  let args;
+  if (process.platform === "win32") {
+    file = preferredShell();
+    args = ["-NoProfile", "-NonInteractive", "-STA", "-Command", windowsFolderDialogScript(start)];
+  } else if (process.platform === "darwin") {
+    file = "osascript";
+    args = ["-e", `POSIX path of (choose folder with prompt "Choose the folder Pi works in" default location (POSIX file ${JSON.stringify(start)}))`];
+  } else {
+    file = "zenity";
+    args = ["--file-selection", "--directory", "--title=Choose the folder Pi works in", `--filename=${start.replace(/\/?$/, "/")}`];
+  }
+  choosing = true;
+  return new Promise((resolvePick, reject) => {
+    execFile(file, args, { encoding: "utf8", timeout: 15 * 60 * 1000, windowsHide: true }, (error, stdout) => {
+      choosing = false;
+      const picked = String(stdout ?? "").trim().replace(/(.)\/$/, "$1");
+      if (picked && isAbsolute(picked)) return resolvePick(picked);
+      // Cancel: PowerShell prints nothing; osascript (-128) and zenity (1) exit non-zero.
+      if (!error || error.code === 1 || /-128|User canceled/i.test(String(error.message))) return resolvePick("");
+      if (error.code === "ENOENT") return reject(new EnvError(process.platform === "linux" ? "Choose… needs zenity (sudo apt install zenity). Type the path instead." : `Couldn't open a folder window (${file} not found).`));
+      reject(new EnvError(`Couldn't open a folder window: ${String(error.message).split("\n")[0]}`));
+    });
   });
 }
 
@@ -960,7 +998,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (req.method !== "GET" && !["/api/dashboards", "/api/dashboards/start", "/api/favorites", "/api/session-colors", "/api/envs", "/api/envs/current", "/api/envs/start", "/api/folder", "/api/handoff", "/api/launch", "/api/prompts", "/api/remote", "/api/settings", "/api/shortcut", "/api/upload", "/api/run", "/api/run/stop", "/api/run/open"].includes(url.pathname)) {
+    if (req.method !== "GET" && !["/api/dashboards", "/api/dashboards/start", "/api/favorites", "/api/session-colors", "/api/envs", "/api/envs/current", "/api/envs/start", "/api/envs/choose-folder", "/api/folder", "/api/handoff", "/api/launch", "/api/prompts", "/api/remote", "/api/settings", "/api/shortcut", "/api/upload", "/api/run", "/api/run/stop", "/api/run/open"].includes(url.pathname)) {
       res.writeHead(405).end();
       return;
     }
@@ -1614,6 +1652,28 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (url.pathname === "/api/envs/choose-folder") {
+      // Choose… in + New environment: this computer's own folder window. The answer comes when you
+      // pick a folder or cancel. Page header; computer only (remote.mjs).
+      if (req.method !== "POST") {
+        res.writeHead(405).end();
+        return;
+      }
+      if (req.headers["x-pi-companion-page"] !== "1") {
+        res.writeHead(403).end();
+        return;
+      }
+      try {
+        const start = String(JSON.parse((await readBody(req)) || "{}")?.start ?? "");
+        const from = start && isAbsolute(start) && (await stat(start).catch(() => null))?.isDirectory() ? start : homedir();
+        const path = await chooseFolder(from);
+        sendJson(res, 200, path ? { path } : { cancelled: true });
+      } catch (error) {
+        sendJson(res, error instanceof EnvError ? 400 : 500, { error: error.message });
+      }
+      return;
+    }
+
     if (url.pathname === "/api/envs/folders") {
       // The Folder box in + New environment: folders whose name contains q, on this computer
       // (kind=local) or on the SSH computer being added (kind=ssh&host=…). Page header: it can run ssh.
@@ -1622,15 +1682,17 @@ const server = createServer(async (req, res) => {
         return;
       }
       try {
-        const q = checkQuery(url.searchParams.get("q"));
+        // No q: the list before you type (recent session folders here; ~/projects over SSH).
+        const q = url.searchParams.get("q") ? checkQuery(url.searchParams.get("q")) : "";
         let folders;
         if (url.searchParams.get("kind") === "ssh") {
           folders = await remoteFolderSearch(url.searchParams.get("host") ?? "", q);
         } else {
           await refreshSaved();
-          folders = await searchLocal(localRoots(homedir(), [...savedById.values()].map((m) => m.cwd)), q);
+          const metas = [...savedById.values()];
+          folders = q ? await searchLocal(localRoots(homedir(), metas.map((m) => m.cwd)), q) : await recentFolders(metas);
         }
-        sendJson(res, 200, { folders });
+        sendJson(res, 200, { folders, canChoose: !isHeadless() && ["win32", "darwin", "linux"].includes(process.platform) });
       } catch (error) {
         sendJson(res, error instanceof EnvError ? 400 : 500, { error: error.message });
       }

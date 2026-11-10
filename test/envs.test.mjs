@@ -53,6 +53,43 @@ test("folder search: plain words only; remote output parsed; local roots and sea
   }
 });
 
+test("folder list before typing: recent session folders; ~/projects over SSH; the Windows folder window", async () => {
+  const { recentFolders, remoteListScript, windowsFolderDialogScript } = await import("../server/envs.mjs");
+  const dir = await mkdtemp(join(tmpdir(), "cc-recent-"));
+  try {
+    const a = join(dir, "a");
+    const b = join(dir, "b");
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(a);
+    await mkdir(b);
+    const metas = [
+      { cwd: a, lastActivity: 10 },
+      { cwd: b, lastActivity: 30 },
+      { cwd: a, lastActivity: 20 },
+      { cwd: join(dir, "gone"), lastActivity: 99 },
+      { cwd: "relative/x", lastActivity: 50 },
+    ];
+    assert.deepEqual((await recentFolders(metas)).map((f) => f.name), ["b", "a"]);
+    assert.equal((await recentFolders(metas, { limit: 1 })).length, 1);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+  assert.match(remoteListScript(), /find projects -mindepth 1 -maxdepth 2/);
+  const ps = windowsFolderDialogScript("C:\\it's here");
+  assert.ok(ps.includes("$d.InitialDirectory = 'C:\\it''s here'"), "start folder quoted for PowerShell");
+  assert.ok(ps.includes("FolderBrowserDialog"));
+});
+
+test("a Local environment's folder is optional (home)", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "cc-envopt-"));
+  try {
+    const s = await addEnv(join(dir, "environments.json"), dir, { name: "Home", kind: "local", path: "" });
+    assert.equal(s.envs[1].path, dir);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("environments: This computer always there, add local/ssh, pick, remove, survive a reload", async () => {
   const dir = await mkdtemp(join(tmpdir(), "cc-envs-"));
   try {

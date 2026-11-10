@@ -619,22 +619,48 @@ body.resizing { cursor: col-resize; user-select: none; }
 .env-add { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 14px; border-top: 1px solid var(--line); cursor: pointer; }
 .env-add:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .env-add svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
-.env-form { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; }
-.env-form-head { font-weight: 650; }
-.env-form label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
-.env-form input:not([type="radio"]) { font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
-.env-kinds { display: flex; gap: 14px; }
-.env-kinds label { flex-direction: row; align-items: center; gap: 5px; color: var(--text); font-size: 13px; cursor: pointer; }
-.env-hint { margin: 0; font-size: 11.5px; color: var(--muted); }
-.env-suggest { display: flex; flex-direction: column; margin-top: -4px; max-height: 220px; overflow: auto; border: 1px solid var(--line);
-  border-radius: 6px; background: var(--bg); }
-.env-suggest[hidden] { display: none; }
-.env-suggest-item { all: unset; box-sizing: border-box; display: flex; flex-direction: column; padding: 5px 9px; cursor: pointer; min-width: 0; }
-.env-suggest-item:hover, .env-suggest-item:focus-visible { background: color-mix(in srgb, var(--accent) 10%, transparent); outline: none; }
-.env-suggest-msg { padding: 6px 9px; font-size: 12px; color: var(--muted); }
+/* + New environment: a centred dialog (Local / SSH tabs, name, computer, folder with + Add). */
+.env-overlay { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgb(0 0 0 / 0.45); }
+.env-overlay[hidden] { display: none; }
+.env-dialog { box-sizing: border-box; width: min(520px, 100%); max-height: calc(100vh - 32px); overflow: auto; padding: 18px 20px 16px;
+  border: 1px solid var(--line); border-radius: 14px; background: var(--panel); box-shadow: 0 18px 50px rgb(0 0 0 / 0.35); font-size: 13.5px; }
+.env-dlg-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.env-dlg-head h2 { margin: 0; font-size: 16px; font-weight: 650; }
+.env-dlg-x { font-size: 15px; }
+.env-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+.env-tabs button { all: unset; cursor: pointer; padding: 7px 12px; border-bottom: 2px solid transparent; margin-bottom: -1px; color: var(--muted); }
+.env-tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--text); font-weight: 600; }
+.env-tabs button:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); border-radius: 4px; }
+.env-dlg-form { display: flex; flex-direction: column; gap: 14px; }
+.env-field { display: flex; flex-direction: column; gap: 6px; }
+.env-field > span { font-weight: 600; }
+.env-field input, .env-drop-search { box-sizing: border-box; width: 100%; font: inherit; padding: 9px 11px; border: 1px solid var(--line);
+  border-radius: 9px; background: var(--bg); color: var(--text); }
+.env-field input:focus, .env-drop-search:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 0; }
+.env-folder { position: relative; display: flex; flex-direction: column; gap: 8px; }
+.env-folder-head { display: flex; align-items: center; justify-content: space-between; }
+.env-opt { color: var(--muted); font-weight: 400; }
+.env-folder-head .btn svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; vertical-align: -2px; }
+.env-folder-box { display: flex; align-items: center; gap: 8px; min-height: 40px; box-sizing: border-box; padding: 8px 12px; border: 1px solid var(--line); border-radius: 9px; }
+.env-folder-box.empty { border-style: dashed; color: var(--muted); }
+.env-folder-box svg, .env-drop-choose svg { width: 16px; height: 16px; flex: none; fill: none; stroke: var(--muted); stroke-width: 1.8; stroke-linejoin: round; }
+.env-folder-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.env-drop { position: absolute; top: 36px; right: 0; z-index: 2; width: min(400px, 100%); border: 1px solid var(--line); border-radius: 11px;
+  background: var(--panel); box-shadow: 0 12px 34px rgb(0 0 0 / 0.35); overflow: hidden; }
+.env-drop .env-drop-search { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 11px 14px; background: transparent; }
+.env-drop .env-drop-search:focus { outline: none; }
+.env-drop-list { display: flex; flex-direction: column; max-height: 280px; overflow: auto; padding: 4px; }
+.env-drop-item { all: unset; box-sizing: border-box; display: flex; flex-direction: column; padding: 6px 10px; border-radius: 7px; cursor: pointer; min-width: 0; }
+.env-drop-item:hover, .env-drop-item:focus-visible { background: color-mix(in srgb, var(--accent) 10%, transparent); outline: none; }
+.env-drop-sep { border-top: 1px solid var(--line); margin: 0 10px; }
+.env-drop-choose { flex-direction: row; align-items: center; gap: 9px; margin: 4px; }
+.env-drop-choose:disabled { cursor: default; color: var(--muted); }
+.env-suggest-msg { padding: 8px 10px; font-size: 12.5px; color: var(--muted); }
 .env-suggest-msg.error { color: var(--bad); }
-.env-form-foot { display: flex; align-items: center; gap: 6px; }
-.env-form-msg { flex: 1; font-size: 12px; color: var(--bad); }
+.env-hint { margin: -4px 0 0; font-size: 12px; color: var(--muted); }
+.env-form-msg { margin: 0; font-size: 12.5px; color: var(--bad); }
+.env-form-msg:empty { display: none; }
+.env-dlg-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 /* The Open / Copy menu */
 .launch-menu { position: fixed; z-index: 50; width: min(380px, calc(100vw - 16px)); padding: 6px; border: 1px solid var(--line);
   border-radius: 10px; background: var(--panel); box-shadow: 0 10px 30px rgb(0 0 0 / 0.28); font-size: 12.5px; }
