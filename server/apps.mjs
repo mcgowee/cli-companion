@@ -2,7 +2,10 @@
 // last message and the CLI's reply to it), not the whole session, to keep noise down. The reply's
 // come first; a path you typed yourself ("look at videos/x/preview.html") shows up too.
 // Found by pattern (no model):
-//   - web addresses on this computer (localhost, 127.0.0.1, [::1]), e.g. a dev server;
+//   - web addresses on this computer (localhost, 127.0.0.1, [::1]), e.g. a dev server, or on your
+//     tailnet (Tailscale's 100.64.0.0/10, *.ts.net) and the SSH computers you added (names and
+//     addresses). Public and other LAN links are left out (docs links are noise). For a
+//     session running on an SSH computer, its localhost links point at that computer;
 //   - files inside the session's own folder that the panel can show: .html pages, images, video,
 //     audio, PDFs and plain text (.txt .md .csv .log). Code files are left out (too noisy).
 
@@ -32,7 +35,19 @@ export function fileKind(path) {
 
 // Characters that end a link or path in prose and markdown.
 const TRAILING = /[.,;:!?'"`)\]}>*_]+$/;
-const LOCAL_URL = /\bhttps?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5})?(?:[/?#][^\s<>"'`|)\]]*)?/gi;
+const ANY_URL = /\bhttps?:\/\/[^\s<>"'`|)\]]+/gi;
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/** True for an address on your tailnet: Tailscale's 100.64.0.0/10 or a *.ts.net name. */
+export function isOwnNetwork(hostname) {
+  const h = String(hostname ?? "").toLowerCase();
+  if (h.endsWith(".ts.net")) return true;
+  const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return false;
+  const [a, b] = [Number(m[1]), Number(m[2])];
+  if (m.slice(1).some((x) => Number(x) > 255)) return false;
+  return a === 100 && b >= 64 && b <= 127;
+}
 const FILE_URL = new RegExp(String.raw`\bfile:\/\/\/?[^\s<>"'` + "`" + String.raw`|)\]]+?\.${EXT}\b`, "gi");
 // In backticks or quotes a path may hold spaces; elsewhere it ends at whitespace.
 const QUOTED_FILE = new RegExp("[`\"']([^`\"'\\n<>|]+?\\." + EXT + ")[`\"']", "gi");
@@ -47,15 +62,24 @@ export function exchangeText(exchange) {
   return [exchange?.reply, exchange?.ask].filter(Boolean).join("\n\n");
 }
 
-export function findApps(text, { exclude = [] } = {}) {
+/**
+ * `hosts`: extra host names to accept (the SSH computers you added and their addresses).
+ * `remoteHost`: the address of the SSH computer the session runs on; its localhost links go there.
+ */
+export function findApps(text, { exclude = [], hosts = [], remoteHost } = {}) {
   const source = String(text ?? "");
+  const known = new Set(hosts.map((h) => String(h).toLowerCase()));
   const urls = [];
   const seenUrls = new Set();
-  for (const match of source.matchAll(LOCAL_URL)) {
+  for (const match of source.matchAll(ANY_URL)) {
     let href = match[0].replace(TRAILING, "");
     try {
       const url = new URL(href);
-      if (exclude.includes(url.origin)) continue;
+      const host = url.hostname.toLowerCase();
+      if (LOOPBACK.has(host)) {
+        if (remoteHost) url.hostname = remoteHost;
+        else if (exclude.includes(url.origin)) continue;
+      } else if (!isOwnNetwork(host) && !known.has(host)) continue;
       href = url.href;
     } catch {
       continue;
@@ -66,7 +90,7 @@ export function findApps(text, { exclude = [] } = {}) {
   }
 
   // Paths: everything that is not part of a web address.
-  const rest = source.replace(LOCAL_URL, " ").replace(/\bhttps?:\/\/\S+/gi, " ");
+  const rest = source.replace(ANY_URL, " ").replace(/\bhttps?:\/\/\S+/gi, " ");
   const files = [];
   const seenFiles = new Set();
   const addFile = (raw) => {

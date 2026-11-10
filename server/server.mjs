@@ -800,6 +800,33 @@ async function tunnelHostFor(hostHeader, headers) {
   return tunnelHosts.get(Number(m[1]));
 }
 
+/**
+ * The address an SSH computer name stands for ("aegis" -> its HostName), from `ssh -G`, which only
+ * reads the ssh config (no connection). Cached; the name itself when ssh can't say.
+ */
+const sshAddresses = new Map();
+function sshAddress(host) {
+  if (sshAddresses.has(host)) return sshAddresses.get(host);
+  let address = host;
+  try {
+    const out = execFileSync(sshExe(), ["-G", checkHost(host)], { encoding: "utf8", timeout: 3000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
+    address = /^hostname (\S+)$/m.exec(out)?.[1] ?? host;
+  } catch {
+    // keep the name
+  }
+  sshAddresses.set(host, address);
+  return address;
+}
+/** The SSH computers you added, as names and addresses (for the Apps tab's links). */
+async function computerHosts() {
+  try {
+    const { computers } = await loadStart(START_FILE, { oldFile: ENVS_FILE, home: homedir() });
+    return computers.flatMap((c) => [c.host, sshAddress(c.host)]);
+  } catch {
+    return [];
+  }
+}
+
 /** Like runRemote, but resolves with the raw bytes (session files), and can send `input` on stdin. */
 function runRemoteBuffer(host, script, input) {
   return new Promise((resolveRun, reject) => {
@@ -1004,8 +1031,10 @@ async function appsFor(id) {
   let found = appsByReply.get(key);
   if (!found) {
     const own = [`http://${HOST}:${PORT}`, `http://localhost:${PORT}`, `http://[::1]:${PORT}`];
-    const { urls, files } = findApps(exchangeText(exchange), { exclude: own });
-    const root = await workspaceRootFor(id).catch(() => null);
+    const via = viaOf(id);
+    const { urls, files } = findApps(exchangeText(exchange), { exclude: own, hosts: await computerHosts(), remoteHost: via ? sshAddress(via) : undefined });
+    // Files in a session on an SSH computer are there, not here (the Files tab shows them).
+    const root = via ? null : await workspaceRootFor(id).catch(() => null);
     const resolved = root ? await Promise.all(files.map((f) => resolveAppFile(root, f))) : [];
     const seen = new Set();
     found = [

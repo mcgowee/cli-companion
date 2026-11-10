@@ -63,3 +63,20 @@ test("exchangeText: a path in your own message is found too, after the reply's",
   assert.deepEqual(findApps(exchangeText(exchange)).files, ["out/chart.png", "C:/work/site/videos/x/riff-preview.html"]);
   assert.equal(exchangeText({ reply: "only a reply", ask: "" }), "only a reply");
 });
+
+test("findApps: tailnet addresses and your SSH computers count; other hosts don't", () => {
+  const text = `Open http://100.72.12.1:8090/?run=fanout_kael_20261110_021759 or http://box.tail1234.ts.net:3000/.
+Also http://mini:8080/ and http://192.168.50.227:9000/ and http://100.200.1.1/ and https://example.com/.`;
+  assert.deepEqual(findApps(text).urls, ["http://100.72.12.1:8090/?run=fanout_kael_20261110_021759", "http://box.tail1234.ts.net:3000/"]);
+  assert.deepEqual(findApps(text, { hosts: ["mini", "192.168.50.227"] }).urls, [
+    "http://100.72.12.1:8090/?run=fanout_kael_20261110_021759",
+    "http://box.tail1234.ts.net:3000/",
+    "http://mini:8080/",
+    "http://192.168.50.227:9000/",
+  ]);
+});
+
+test("findApps: a session on an SSH computer: its localhost links point there", () => {
+  const text = "Dashboard at http://localhost:8090/?run=x and http://127.0.0.1:5000";
+  assert.deepEqual(findApps(text, { remoteHost: "100.72.12.1" }).urls, ["http://100.72.12.1:8090/?run=x", "http://100.72.12.1:5000/"]);
+});
