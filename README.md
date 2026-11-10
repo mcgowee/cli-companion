@@ -42,7 +42,7 @@ next to it:
   title. Sessions waiting for you come first, the one that finished most recently on top, then the
   ones still working. The browser tab title counts the ones waiting with something you haven't seen
   yet, like "(2) CLI Companion". Under it, **Recent**: the sessions you started from here with **Start Pi**
-  (or its copied command), newest first, 20 at a time (**Show more**), each with its terminal icon
+  (or its copied command), running or not (a running one is in Active too), newest first, 20 at a time (**Show more**), each with its terminal icon
   (resume it). On this computer a Pi session counts when it begins in the folder Start Pi used, a few
   minutes after (up to an hour for a copied command); sessions on an SSH computer through Start Pi's
   tunnel always count, and are remembered, so they stay listed after the connection closes (their
