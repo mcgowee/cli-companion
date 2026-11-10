@@ -266,7 +266,8 @@ have the `cli-companion` command on your PATH, install it once:
 ```bash
 npm install -g git+https://github.com/mcgowee/cli-companion.git
 cli-companion              # start (if needed) and open the window
-cli-companion --no-open    # start the server only; prints the address to open
+cli-companion --no-open    # start the server only (no window; the key stays out of the output)
+cli-companion --print-url  # start the server only; print the address to open, with your access key
 cli-companion --foreground # run the server in this terminal; Ctrl+C stops it
 cli-companion --restart    # stop the running server, start a fresh one, open the window
 cli-companion --stop       # stop the running server
@@ -276,8 +277,9 @@ cli-companion --help
 
 The server keeps running in the background after the command exits (closing the window
 doesn't stop it; use `--stop`, or **Restart server** on the About page). To open it in another
-browser, run `cli-companion --no-open` and open the address it prints: it carries your access
-key (see [Privacy](#privacy)); plain <http://127.0.0.1:30143> only shows how to get in.
+browser, run `cli-companion --print-url` and open the address it prints: it carries your access
+key (see [Privacy](#privacy)), so it's printed only when you ask; plain <http://127.0.0.1:30143>
+only shows how to get in.
 
 **A shortcut to click:** Settings → **Shortcut** → **Add** (or `cli-companion --shortcut`) puts
 a **CLI Companion** shortcut, with its own icon, in the Start menu, or on the desktop. It starts

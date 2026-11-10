@@ -10,7 +10,9 @@ const HELP = `CLI Companion: a live side window for coding-agent CLIs (Pi, Claud
 Usage: cli-companion [options]
 
   (no options)      Start the server if needed and open the window
-  --no-open         Start the server only; print the address to open (it carries your access key)
+  --no-open         Start the server only (the key stays out of the output)
+  --print-url       Start the server only, and print the address to open it with (it carries
+                    your access key, so it lands in this terminal's scrollback)
   --restart         Stop the running server, start a fresh one, open the window
   --stop            Stop the running server
   --foreground      Run the server in this terminal (Ctrl+C stops it)
@@ -46,6 +48,10 @@ for (let i = 0; i < args.length; i++) {
     console.log(pkg.version);
     process.exit(0);
   } else if (arg === "--no-open") opts.open = false;
+  else if (arg === "--print-url") {
+    opts.open = false;
+    opts.printUrl = true;
+  }
   else if (arg === "--foreground") opts.foreground = true;
   else if (arg === "--restart") opts.restart = true;
   else if (arg === "--stop") opts.stop = true;
@@ -92,5 +98,7 @@ if (opts.foreground) {
   }
   console.log(`${result.started ? "Started" : "Already running:"} ${url}`);
   if (opts.open) await open(port);
-  else console.log(`Open: ${companionOpenUrl(port)}`);
+  // The key only when asked: printed, it stays in the terminal's scrollback (and any log of it).
+  else if (opts.printUrl) console.log(`Open: ${companionOpenUrl(port)}`);
+  else console.log("To open the window: cli-companion (or --print-url for the address with your access key).");
 }

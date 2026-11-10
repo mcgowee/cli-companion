@@ -70,6 +70,6 @@ export function lockedPage() {
   <p>This window doesn't have your access key, so the companion won't show your sessions here.</p>
   <p>Open it with the CLI Companion shortcut, or run <code>cli-companion</code> in a terminal
   (or <code>/companion</code> in Pi). To open it in another browser, run
-  <code>cli-companion --no-open</code> and open the address it prints.</p>
+  <code>cli-companion --print-url</code> and open the address it prints.</p>
 </main></body></html>`;
 }
