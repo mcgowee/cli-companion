@@ -20,7 +20,7 @@ import { groupByWorkspace, workspaceKey } from "./session-index.mjs";
 import { lastExchange, localModels, ollamaUrl, SuggestError, suggestionCache, suggestReplies } from "./suggest.mjs";
 import { addFavorite, FavoriteError, loadFavorites, removeFavorite } from "./favorites.mjs";
 import { ColorError, loadColors, setColor } from "./colors.mjs";
-import { addEnv, checkHost, checkQuery, checkRemoteSessionFile, EnvError, keyPushScript, loadEnvs, localRoots, parseRemoteDir, remoteReadScript, tunnelPort, parseRemoteSearch, pickEnv, recentFolders, remoteDirScript, remoteListScript, remoteSearchScript, removeEnv, searchLocal, sshPiCommand, tildePath, windowsFolderDialogScript } from "./envs.mjs";
+import { addComputer, addRecent, checkFolder, checkHost, checkQuery, checkRemoteSessionFile, EnvError, keyPushScript, loadStart, LOCAL_ID, localRoots, parseRemoteDir, parseRemoteRecent, parseRemoteSearch, pickComputer, recentFolders, recentFor, remoteDirScript, remoteListScript, remoteReadScript, remoteRecentScript, remoteSearchScript, remoteTestScript, removeComputer, searchLocal, setPin, sshPiCommand, testResults, tildePath, tunnelPort, updateStart, windowsFolderDialogScript } from "./envs.mjs";
 import { APP_FILE_HEADERS, APP_MIME, exchangeText, fileKind, findApps, resolveAppFile, urlName } from "./apps.mjs";
 import { createReadStream, existsSync as fileExists } from "node:fs";
 import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard, setDashboardStart } from "./dashboards.mjs";
@@ -105,7 +105,8 @@ migrateStateFile("dashboards.json");
 const DASHBOARDS_FILE = join(stateDir(), "dashboards.json");
 const FAVORITES_FILE = join(stateDir(), "favorites.json");
 const COLORS_FILE = join(stateDir(), "session-colors.json");
-const ENVS_FILE = join(stateDir(), "environments.json");
+const ENVS_FILE = join(stateDir(), "environments.json"); // the old format: read once into computers.json
+const START_FILE = join(stateDir(), "computers.json");
 const PROMPTS_FILE = join(stateDir(), "prompts.json");
 // Token use per session, read from the CLIs' session files (cached in token-usage.json).
 const tokenUsage = createTokenTracker({ cacheFile: join(stateDir(), "token-usage.json") });
@@ -750,8 +751,8 @@ async function tunnelHostFor(hostHeader, headers) {
   if (now() - tunnelsReadAt > 5000) {
     tunnelsReadAt = now();
     try {
-      const { envs } = await loadEnvs(ENVS_FILE, homedir());
-      tunnelHosts = new Map(envs.filter((e) => e.kind === "ssh").map((e) => [tunnelPort(e.host), e.host]));
+      const { computers } = await loadStart(START_FILE, { oldFile: ENVS_FILE, home: homedir() });
+      tunnelHosts = new Map(computers.map((c) => [tunnelPort(c.host), c.host]));
     } catch {
       // keep the last list
     }
@@ -841,15 +842,30 @@ function chooseFolder(start) {
   });
 }
 
-/** What New session runs in a terminal for an environment, and the line to copy. */
-function envCommand(env) {
-  if (env.kind === "ssh") {
-    const line = sshPiCommand(env.host, env.path, { port: PORT });
+/** What Start Pi runs in a terminal for a computer + folder, and the line to copy. */
+function startCommand({ computer, path }) {
+  if (computer !== LOCAL_ID) {
+    const line = sshPiCommand(computer, path, { port: PORT });
     // On Windows: PowerShell, sent encoded, calling Windows' own ssh.exe.
     const run = process.platform === "win32" ? `& '${sshExe()}'${line.slice(3)}` : line;
     return { cwd: homedir(), run, typed: true, copy: line };
   }
-  return { cwd: env.path, run: "pi", typed: false, copy: copyLine(env.path, "pi") };
+  return { cwd: path, run: "pi", typed: false, copy: copyLine(path, "pi") };
+}
+
+/** The bar's data: the computers (This computer first) and the picked one. */
+function startView(state) {
+  return {
+    current: state.current,
+    canOpen: !isHeadless(),
+    computers: [{ id: LOCAL_ID, name: "This computer" }, ...state.computers.map((c) => ({ id: c.host, name: c.host.split("@").pop() }))],
+  };
+}
+
+/** Folders on this computer whose name has q (home and workspace top folders, 4 levels down). */
+async function searchLocalHere(q) {
+  await refreshSaved();
+  return searchLocal(localRoots(homedir(), [...savedById.values()].map((m) => m.cwd)), q);
 }
 
 async function workspaceTree() {
@@ -1148,7 +1164,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (req.method !== "GET" && !["/api/dashboards", "/api/dashboards/start", "/api/favorites", "/api/session-colors", "/api/envs", "/api/envs/current", "/api/envs/start", "/api/envs/prepare", "/api/envs/choose-folder", "/api/folder", "/api/handoff", "/api/launch", "/api/prompts", "/api/remote", "/api/settings", "/api/shortcut", "/api/upload", "/api/run", "/api/run/stop", "/api/run/open"].includes(url.pathname)) {
+    if (req.method !== "GET" && !["/api/dashboards", "/api/dashboards/start", "/api/favorites", "/api/session-colors", "/api/start/computer", "/api/start/test", "/api/start/pin", "/api/start/run", "/api/start/copy", "/api/start/choose-folder", "/api/folder", "/api/handoff", "/api/launch", "/api/prompts", "/api/remote", "/api/settings", "/api/shortcut", "/api/upload", "/api/run", "/api/run/stop", "/api/run/open"].includes(url.pathname)) {
       res.writeHead(405).end();
       return;
     }
@@ -1815,133 +1831,117 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (url.pathname === "/api/envs/choose-folder") {
-      // Choose… in + New environment: this computer's own folder window. The answer comes when you
-      // pick a folder or cancel. Page header; computer only (remote.mjs).
-      if (req.method !== "POST") {
-        res.writeHead(405).end();
-        return;
-      }
+    if (url.pathname === "/api/start" || url.pathname.startsWith("/api/start/")) {
+      // Start Pi (the bar at the bottom of the sidebar): the computers, the folders to pick from,
+      // starting Pi, Copy. The page names a computer and a folder, never a command. Page header on
+      // everything (some calls run ssh or open a window); every window hears changes. Computer
+      // only (remote.mjs).
       if (req.headers["x-pi-companion-page"] !== "1") {
         res.writeHead(403).end();
         return;
       }
       try {
-        const start = String(JSON.parse((await readBody(req)) || "{}")?.start ?? "");
-        const from = start && isAbsolute(start) && (await stat(start).catch(() => null))?.isDirectory() ? start : homedir();
-        const path = await chooseFolder(from);
-        sendJson(res, 200, path ? { path } : { cancelled: true });
-      } catch (error) {
-        sendJson(res, error instanceof EnvError ? 400 : 500, { error: error.message });
-      }
-      return;
-    }
+        const p = url.pathname;
+        const m = req.method;
+        const opts = { oldFile: ENVS_FILE, home: homedir() };
+        const body = m === "GET" ? {} : JSON.parse((await readBody(req)) || "{}");
+        const change = async (fn) => {
+          const state = await updateStart(START_FILE, opts, fn);
+          broadcast({ type: "envs" });
+          return state;
+        };
+        /** { computer, path } from the request, both checked (a local folder must exist). */
+        const place = async () => {
+          const state = await loadStart(START_FILE, opts);
+          const computer = String(body.computer ?? "");
+          if (computer !== LOCAL_ID && !state.computers.some((c) => c.host === computer)) throw new EnvError("That computer isn't in the list.");
+          return { computer, path: await checkFolder(computer, body.path || (computer === LOCAL_ID ? homedir() : "~")) };
+        };
 
-    if (url.pathname === "/api/envs/remote-dir") {
-      // Select remote folder: one folder's subfolders on the SSH computer being added
-      // (?host=&path=, path ~ by default). Page header: it runs ssh. Computer only (remote.mjs).
-      if (req.headers["x-pi-companion-page"] !== "1") {
-        res.writeHead(403).end();
-        return;
-      }
-      try {
-        const out = parseRemoteDir(await runRemote(url.searchParams.get("host") ?? "", remoteDirScript(url.searchParams.get("path") || "~")));
-        sendJson(res, out.error ? 404 : 200, { ...out, tilde: out.path ? tildePath(out.path, out.home) : "" });
-      } catch (error) {
-        sendJson(res, error instanceof EnvError ? 400 : 500, { error: error.message });
-      }
-      return;
-    }
-
-    if (url.pathname === "/api/envs/folders") {
-      // The Folder box in + New environment: folders whose name contains q, on this computer
-      // (kind=local) or on the SSH computer being added (kind=ssh&host=…). Page header: it can run ssh.
-      if (req.headers["x-pi-companion-page"] !== "1") {
-        res.writeHead(403).end();
-        return;
-      }
-      try {
-        // No q: the list before you type (recent session folders here; ~/projects over SSH).
-        const q = url.searchParams.get("q") ? checkQuery(url.searchParams.get("q")) : "";
-        let folders;
-        if (url.searchParams.get("kind") === "ssh") {
-          folders = await remoteFolderSearch(url.searchParams.get("host") ?? "", q);
-        } else {
-          await refreshSaved();
-          const metas = [...savedById.values()];
-          folders = q ? await searchLocal(localRoots(homedir(), metas.map((m) => m.cwd)), q) : await recentFolders(metas);
-        }
-        sendJson(res, 200, { folders, canChoose: !isHeadless() && ["win32", "darwin", "linux"].includes(process.platform) });
-      } catch (error) {
-        sendJson(res, error instanceof EnvError ? 400 : 500, { error: error.message });
-      }
-      return;
-    }
-
-    if (url.pathname === "/api/envs" || url.pathname === "/api/envs/current" || url.pathname === "/api/envs/start" || url.pathname === "/api/envs/prepare") {
-      // Environments for the picker at the bottom of the sidebar. GET /api/envs lists them (with
-      // the line New session runs); POST adds one; DELETE ?id= removes one; PUT /current { id }
-      // picks one; POST /start { id } opens a terminal starting Pi there. Changes need the page
-      // header; every window hears them. Never from the phone (remote.mjs).
-      try {
-        if (req.method !== "GET" && req.headers["x-pi-companion-page"] !== "1") {
-          res.writeHead(403).end();
-          return;
-        }
-        const home = homedir();
-        let state;
-        if (url.pathname === "/api/envs/start") {
-          if (req.method !== "POST") {
-            res.writeHead(405).end();
+        if (p === "/api/start" && m === "GET") {
+          sendJson(res, 200, startView(await loadStart(START_FILE, opts)));
+        } else if (p === "/api/start/computer" && m === "PUT") {
+          sendJson(res, 200, startView(await change((s) => pickComputer(s, String(body.computer ?? "")))));
+        } else if (p === "/api/start/computer" && m === "POST") {
+          sendJson(res, 200, startView(await change((s) => addComputer(s, body.host))));
+        } else if (p === "/api/start/computer" && m === "DELETE") {
+          sendJson(res, 200, startView(await change((s) => removeComputer(s, url.searchParams.get("host") ?? ""))));
+        } else if (p === "/api/start/test" && m === "POST") {
+          // Add computer → Test: one ssh call running a fixed script; a checklist back.
+          const host = checkHost(body.host);
+          let out = "";
+          let error = "";
+          try {
+            out = await runRemote(host, remoteTestScript(host));
+          } catch (e) {
+            error = String(e.message).match(/\(([^)]*)\)/)?.[1] ?? "couldn't connect";
+          }
+          const tunnelOpen = [...sessions.values()].some((s) => s.via === host);
+          sendJson(res, 200, { host, checks: testResults(host, out, error, { tunnelOpen }) });
+        } else if (p === "/api/start/folders" && m === "GET") {
+          // The popover's list for a computer: pinned folders, then recent ones (where you started
+          // Pi from here, and where its Pi sessions ran); with ?q=, folders whose name has q.
+          const state = await loadStart(START_FILE, opts);
+          const computer = url.searchParams.get("computer") ?? LOCAL_ID;
+          const remote = computer !== LOCAL_ID;
+          if (remote && !state.computers.some((c) => c.host === computer)) throw new EnvError("That computer isn't in the list.");
+          const canChoose = !remote && !isHeadless() && ["win32", "darwin", "linux"].includes(process.platform);
+          const q = url.searchParams.get("q") ? checkQuery(url.searchParams.get("q")) : "";
+          if (q) {
+            const found = remote ? await remoteFolderSearch(computer, q) : await searchLocalHere(q);
+            sendJson(res, 200, { results: found.map((f) => ({ path: f.path, name: f.name })), canChoose });
             return;
           }
-          const id = String(JSON.parse(await readBody(req))?.id ?? "");
-          const env = (await loadEnvs(ENVS_FILE, home)).envs.find((e) => e.id === id);
-          if (!env) throw new EnvError("That environment is gone.");
+          let found = [];
+          let error = "";
+          try {
+            if (remote) found = parseRemoteRecent(await runRemote(computer, remoteRecentScript()));
+            else {
+              await refreshSaved();
+              found = await recentFolders([...savedById.values()], { limit: 20 });
+            }
+          } catch (e) {
+            error = e.message;
+          }
+          const named = (path) => ({ path, name: path === "~" ? "Home (~)" : path.split(/[\\/]/).filter(Boolean).pop() || path });
+          sendJson(res, 200, {
+            pinned: state.pins.filter((x) => x.computer === computer).map((x) => named(x.path)),
+            recent: recentFor(state, computer, found).map((x) => ({ ...named(x.path), at: x.at })),
+            home: remote ? "~" : homedir(),
+            canChoose,
+            error,
+          });
+        } else if (p === "/api/start/pin" && m === "POST") {
+          const where = await place();
+          sendJson(res, 200, startView(await change((s) => setPin(s, where, body.pinned !== false))));
+        } else if (p === "/api/start/run" && m === "POST") {
+          // Start Pi in a folder: a terminal window (for SSH: ssh + tmux + the tunnel).
+          const where = await place();
           if (isHeadless()) throw new LaunchError(headlessNote(settings.sshHost || defaultSshHost(), { custom: Boolean(settings.sshHost) }));
-          const cmd = envCommand(env);
-          if (env.kind === "local") await existingDir(env.path);
-          else await pushTunnelKey(env.host); // so Pi there can show here, through the tunnel
+          const cmd = startCommand(where);
+          if (where.computer !== LOCAL_ID) await pushTunnelKey(where.computer); // so Pi there can show here
           await openTerminal(cmd.cwd, cmd.run, { typed: cmd.typed });
+          await change((s) => addRecent(s, where));
           sendJson(res, 200, { ok: true });
-          return;
-        }
-        if (url.pathname === "/api/envs/prepare") {
-          // Copy: the line to paste into a terminal yourself. For SSH, first puts this computer's
-          // key there, as New session does, so the session shows here through the tunnel.
-          if (req.method !== "POST") {
-            res.writeHead(405).end();
-            return;
-          }
-          const id = String(JSON.parse(await readBody(req))?.id ?? "");
-          const env = (await loadEnvs(ENVS_FILE, home)).envs.find((e) => e.id === id);
-          if (!env) throw new EnvError("That environment is gone.");
-          if (env.kind === "ssh") await pushTunnelKey(env.host);
-          sendJson(res, 200, { copy: envCommand(env).copy });
-          return;
-        }
-        if (url.pathname === "/api/envs/current") {
-          if (req.method !== "PUT") {
-            res.writeHead(405).end();
-            return;
-          }
-          state = await pickEnv(ENVS_FILE, home, String(JSON.parse(await readBody(req))?.id ?? ""));
-        } else if (req.method === "POST") {
-          state = await addEnv(ENVS_FILE, home, JSON.parse(await readBody(req)));
-        } else if (req.method === "DELETE") {
-          state = await removeEnv(ENVS_FILE, home, url.searchParams.get("id") ?? "");
-        } else if (req.method === "GET") {
-          state = await loadEnvs(ENVS_FILE, home);
+        } else if (p === "/api/start/copy" && m === "POST") {
+          // Copy: the same line, to paste into a terminal yourself (for SSH the key goes there first).
+          const where = await place();
+          if (where.computer !== LOCAL_ID) await pushTunnelKey(where.computer);
+          await change((s) => addRecent(s, where));
+          sendJson(res, 200, { copy: startCommand(where).copy });
+        } else if (p === "/api/start/choose-folder" && m === "POST") {
+          // Browse… on this computer: its own folder window; answers when you pick or cancel.
+          const start = String(body.start ?? "");
+          const from = start && isAbsolute(start) && (await stat(start).catch(() => null))?.isDirectory() ? start : homedir();
+          const path = await chooseFolder(from);
+          sendJson(res, 200, path ? { path } : { cancelled: true });
+        } else if (p === "/api/start/remote-dir" && m === "GET") {
+          // Browse… on an SSH computer: one folder's subfolders there (?host=&path=, ~ by default).
+          const out = parseRemoteDir(await runRemote(url.searchParams.get("host") ?? "", remoteDirScript(url.searchParams.get("path") || "~")));
+          sendJson(res, out.error ? 404 : 200, { ...out, tilde: out.path ? tildePath(out.path, out.home) : "" });
         } else {
-          res.writeHead(405).end();
-          return;
+          res.writeHead(m === "GET" || m === "POST" || m === "PUT" || m === "DELETE" ? 404 : 405).end();
         }
-        if (req.method !== "GET") broadcast({ type: "envs" });
-        sendJson(res, 200, {
-          current: state.current,
-          canOpen: !isHeadless(),
-          envs: state.envs.map((e) => ({ ...e, copy: envCommand(e).copy })),
-        });
       } catch (error) {
         sendJson(res, error instanceof EnvError || error instanceof LaunchError || error instanceof SyntaxError ? 400 : 500, { error: error.message });
       }

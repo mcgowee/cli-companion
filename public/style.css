@@ -170,7 +170,7 @@ a.dash-card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--li
 .phone-card .set-status:empty { display: none; }
 .phone-card .set-status { margin-top: 8px; }
 /* Open on the phone (Tailscale): hide what only works on the computer; the server refuses it anyway. */
-.remote-view .row-term, .remote-view .row-fav, .remote-view .row-more, .remote-view .env-bar, .remote-view .env-menu, .remote-view #about-restart, .remote-view .hm-item[data-do="continue"],
+.remote-view .row-term, .remote-view .row-fav, .remote-view .row-more, .remote-view .env-bar, .remote-view .sp-pop, .remote-view #about-restart, .remote-view .hm-item[data-do="continue"],
 .remote-view .ft-add, .remote-view .ft-newbtn, .remote-view .app-pin, .remote-view #dash-add, .remote-view [data-remove], .remote-view #dash-run, .remote-view #dash-start-form,
 .remote-view:not(.remote-reply) #composer { display: none !important; }
 .sc-list { display: grid; gap: 6px; margin-top: 10px; max-width: 460px; }
@@ -583,44 +583,66 @@ body.resizing { cursor: col-resize; user-select: none; }
 .color-custom input { width: 34px; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 5px; background: none; cursor: pointer; }
 .color-clear:disabled { color: var(--muted); cursor: default; }
 /* Environments (public/envs.js): the bar at the bottom of the sidebar, and its picker. */
-.nav-item[data-view="workspaces"].open { background: var(--accent-soft); }
 .env-bar { position: sticky; bottom: -14px; margin: 10px -10px -14px; padding: 8px 10px 10px; background: var(--sidebar);
   border-top: 1px solid var(--line); z-index: 2; }
-.env-row { display: flex; align-items: center; gap: 6px; }
-.env-pick { all: unset; box-sizing: border-box; flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; padding: 6px 8px;
-  border-radius: 7px; cursor: pointer; font-size: 13px; }
-.env-pick:hover, .env-pick.open { background: color-mix(in srgb, var(--accent) 8%, transparent); }
-.env-pick:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); }
-.env-pick svg { width: 15px; height: 15px; flex: none; fill: none; stroke: var(--muted); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.env-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.env-kind { color: var(--muted); font-size: 11px; flex: none; }
-.env-caret { margin-left: auto; }
-.env-new { flex: none; }
-.env-copy { flex: none; }
-.env-copy svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+/* Start Pi (public/start.js): the button, its popover, Add computer. */
+.start-pi { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 9px; cursor: pointer;
+  background: var(--accent); color: #fff; font-size: 13px; font-weight: 600; }
+.start-pi:hover, .start-pi.open { filter: brightness(1.08); }
+.start-pi:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 2px; }
+.start-pi:disabled { opacity: 0.5; cursor: default; }
+.start-pi svg { width: 14px; height: 14px; flex: none; }
+.start-play { fill: currentColor; }
+.start-caret { margin-left: auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.start-where { font-weight: 400; opacity: 0.85; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.start-where::before { content: "on "; }
+.sp-pop { width: min(420px, calc(100vw - 16px)); padding: 0; overflow: hidden; display: flex; flex-direction: column; font-size: 13px; }
+.sp-head { display: flex; align-items: center; gap: 8px; padding: 10px 10px 8px; border-bottom: 1px solid var(--line); }
+.sp-title { color: var(--muted); flex: none; }
+.sp-chips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
+.sp-chip { all: unset; cursor: pointer; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--text); font-size: 12.5px; }
+.sp-chip:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.sp-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.sp-chip:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); }
+.sp-add { padding: 3px 9px; color: var(--muted); }
+.sp-manage svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.sp-search { box-sizing: border-box; width: 100%; font: inherit; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--text); }
+.sp-search:focus { outline: none; }
+.sp-list { display: flex; flex-direction: column; max-height: min(360px, 55vh); overflow: auto; padding: 4px; }
+.sp-group { padding: 8px 8px 3px; font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.sp-busy { font-weight: 400; }
+.sp-row { display: flex; align-items: center; border-radius: 7px; }
+.sp-row:hover, .sp-row:focus-within { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.sp-go { all: unset; box-sizing: border-box; flex: 1; min-width: 0; display: flex; align-items: center; gap: 9px; padding: 6px 8px; cursor: pointer; border-radius: 7px; }
+.sp-go:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); }
+.sp-go > svg { width: 16px; height: 16px; flex: none; fill: none; stroke: var(--muted); stroke-width: 1.8; stroke-linejoin: round; }
+.sp-text { display: flex; flex-direction: column; min-width: 0; }
+.sp-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-path { color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-act { flex: none; opacity: 0; }
+.sp-row:hover .sp-act, .sp-row:focus-within .sp-act, .sp-pin.on { opacity: 1; }
+.sp-act svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+.sp-pin.on svg { fill: var(--accent); stroke: var(--accent); }
+.sp-msg { padding: 10px; color: var(--muted); font-size: 12.5px; }
+.sp-msg.error { color: var(--bad); }
+.sp-sep { border-top: 1px solid var(--line); margin: 4px 8px; }
+.sp-foot { border-top: 1px solid var(--line); padding: 4px; }
+.sp-browse { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: 7px; cursor: pointer; }
+.sp-browse:hover, .sp-browse:focus-visible { background: color-mix(in srgb, var(--accent) 9%, transparent); outline: none; }
+.sp-browse svg { width: 16px; height: 16px; fill: none; stroke: var(--muted); stroke-width: 1.8; stroke-linejoin: round; }
+.sp-test-row { display: flex; align-items: center; gap: 10px; }
+.sp-checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.sp-checks li { display: flex; gap: 8px; align-items: flex-start; }
+.sp-mark { flex: none; width: 16px; font-weight: 700; }
+.sp-checks li.ok .sp-mark { color: var(--good, #16c60c); }
+.sp-checks li.bad .sp-mark { color: var(--bad); }
+.sp-fix { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.sp-grow { flex: 1; }
+.btn.danger { color: var(--bad); }
 .env-msg { margin: 0 0 6px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 .env-msg:empty { display: none; }
 .env-msg.ok { color: var(--ok); }
 .env-msg.error { color: var(--bad); }
-.env-menu { width: min(380px, calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow: auto; padding: 0; font-size: 13px; }
-.env-search { box-sizing: border-box; width: 100%; font: inherit; padding: 11px 14px; border: 0; border-bottom: 1px solid var(--line);
-  background: transparent; color: var(--text); outline: none; }
-.env-list { padding: 4px 6px; max-height: 50vh; overflow: auto; }
-.env-group { padding: 8px 8px 3px; color: var(--muted); font-size: 11.5px; font-weight: 650; }
-.env-list .env-group:not(:first-child) { border-top: 1px solid var(--line); margin-top: 4px; }
-.env-item { display: flex; align-items: center; gap: 2px; border-radius: 7px; }
-.env-item:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
-.env-choose { all: unset; box-sizing: border-box; flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 6px 8px; cursor: pointer; border-radius: 7px; }
-.env-choose:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); }
-.env-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
-.env-iname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.env-sub { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.env-check { width: 16px; height: 16px; flex: none; fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-.env-remove { visibility: hidden; margin-right: 4px; }
-.env-item:hover .env-remove, .env-remove:focus-visible { visibility: visible; }
-.env-add { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 14px; border-top: 1px solid var(--line); cursor: pointer; }
-.env-add:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
-.env-add svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 /* + New environment: a centred dialog (Local / SSH tabs, name, computer, folder with + Add). */
 .env-overlay { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgb(0 0 0 / 0.45); }
 .env-overlay[hidden] { display: none; }
@@ -629,34 +651,15 @@ body.resizing { cursor: col-resize; user-select: none; }
 .env-dlg-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .env-dlg-head h2 { margin: 0; font-size: 16px; font-weight: 650; }
 .env-dlg-x { font-size: 15px; }
-.env-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
-.env-tabs button { all: unset; cursor: pointer; padding: 7px 12px; border-bottom: 2px solid transparent; margin-bottom: -1px; color: var(--muted); }
-.env-tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--text); font-weight: 600; }
-.env-tabs button:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); border-radius: 4px; }
 .env-dlg-form { display: flex; flex-direction: column; gap: 14px; }
 .env-field { display: flex; flex-direction: column; gap: 6px; }
 .env-field > span { font-weight: 600; }
 .env-field input, .env-field select, .env-drop-search { box-sizing: border-box; width: 100%; font: inherit; padding: 9px 11px; border: 1px solid var(--line);
   border-radius: 9px; background: var(--bg); color: var(--text); }
 .env-field input:focus, .env-field select:focus, .env-drop-search:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 0; }
-.env-folder { position: relative; display: flex; flex-direction: column; gap: 8px; }
-.env-folder-head { display: flex; align-items: center; justify-content: space-between; }
-.env-opt { color: var(--muted); font-weight: 400; }
-.env-folder-head .btn svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; vertical-align: -2px; }
-.env-folder-box { display: flex; align-items: center; gap: 8px; min-height: 40px; box-sizing: border-box; padding: 8px 12px; border: 1px solid var(--line); border-radius: 9px; }
-.env-folder-box.empty { border-style: dashed; color: var(--muted); }
-.env-folder-box svg, .env-drop-choose svg { width: 16px; height: 16px; flex: none; fill: none; stroke: var(--muted); stroke-width: 1.8; stroke-linejoin: round; }
-.env-folder-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.env-drop { position: absolute; top: 36px; right: 0; z-index: 2; width: min(400px, 100%); border: 1px solid var(--line); border-radius: 11px;
-  background: var(--panel); box-shadow: 0 12px 34px rgb(0 0 0 / 0.35); overflow: hidden; }
-.env-drop .env-drop-search { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 11px 14px; background: transparent; }
-.env-drop .env-drop-search:focus { outline: none; }
 .env-drop-list { display: flex; flex-direction: column; max-height: 280px; overflow: auto; padding: 4px; }
 .env-drop-item { all: unset; box-sizing: border-box; display: flex; flex-direction: column; padding: 6px 10px; border-radius: 7px; cursor: pointer; min-width: 0; }
 .env-drop-item:hover, .env-drop-item:focus-visible { background: color-mix(in srgb, var(--accent) 10%, transparent); outline: none; }
-.env-drop-sep { border-top: 1px solid var(--line); margin: 0 10px; }
-.env-drop-choose { flex-direction: row; align-items: center; gap: 9px; margin: 4px; }
-.env-drop-choose:disabled { cursor: default; color: var(--muted); }
 .env-suggest-msg { padding: 8px 10px; font-size: 12.5px; color: var(--muted); }
 .env-suggest-msg.error { color: var(--bad); }
 .env-hint { margin: -4px 0 0; font-size: 12px; color: var(--muted); }

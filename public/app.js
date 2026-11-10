@@ -1388,7 +1388,7 @@
         state.favorites = msg.favorites ?? [];
         renderSidebar();
       } else if (msg.type === "envs") {
-        // Environments changed here or in another window: public/envs.js reloads them.
+        // Start Pi's computers or folders changed here or in another window: public/start.js reloads them.
         window.dispatchEvent(new Event("companion-envs"));
       } else if (msg.type === "session-colors") {
         state.colors = msg.colors ?? {};

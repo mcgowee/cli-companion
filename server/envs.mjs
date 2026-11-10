@@ -1,19 +1,22 @@
-// Environments: where "New session" starts Pi, picked at the bottom of the sidebar (like the
-// environment picker in the Claude Code desktop app). Kept in ~/.cli-companion/environments.json:
-//   { "current": "<id>", "envs": [{ "id", "name", "kind": "local", "path" }
-//                                 | { "id", "name", "kind": "ssh", "host", "path" }] }
-// "This computer" (your home folder, id "local") is always there and isn't stored.
+// Start Pi (the bar at the bottom of the sidebar): which computer, and which folder there.
+//
+// Computers: "This computer" (id "local", always there) plus SSH computers you added (the name
+// you type after `ssh`). Folders aren't set up ahead: you pick one each time from pinned ones,
+// recent ones (where Pi ran), a search, or Browse…. Kept in ~/.cli-companion/computers.json:
+//   { "current": "local" | "<host>", "computers": [{ "host" }],
+//     "pins": [{ "computer", "path" }], "recent": [{ "computer", "path", "at" }] }
+// The first time, the old environments.json (computer + folder pairs) is read once: its SSH
+// computers are added and its folders pinned; that file is then left as it was.
 //
 // Local: a terminal in the folder running `pi`. SSH: a terminal running `ssh -t <host>` into a tmux
 // session named after the folder: a new Pi window in it if the session is already there, else
 // the session is created running Pi; either way you're attached, and it survives a dropped
 // connection.
 //
-// Hard rules: the page names an environment id, never a command. Host names and remote paths are
-// checked against tight patterns (plain words: no spaces, quotes or a leading "-"), so the remote
-// line is built from fixed text and those words only.
+// Hard rules: the page names a computer and a folder, never a command. Host names and remote
+// paths are checked against tight patterns (plain words: no spaces, quotes or a leading "-"), so
+// the remote line is built from fixed text and those words only. Local folders must exist.
 
-import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, parse } from "node:path";
 import { tmuxName } from "./launch.mjs";
@@ -21,7 +24,9 @@ import { tmuxName } from "./launch.mjs";
 export class EnvError extends Error {}
 
 export const LOCAL_ID = "local";
-const MAX = 100;
+const MAX_COMPUTERS = 20;
+const MAX_PINS = 50;
+const MAX_RECENT = 40;
 const HOST = /^[A-Za-z0-9_][\w.@-]{0,99}$/;
 /** A remote folder: ~, ~/a/b, or /a/b, each part a plain name. */
 const REMOTE_PATH = /^(~|~(\/[\w][\w.-]{0,99}){1,8}|(\/[\w][\w.-]{0,99}){1,8})$/;
@@ -40,81 +45,145 @@ export function checkRemotePath(path) {
   return p;
 }
 
-function checkName(name) {
-  const n = String(name ?? "").replace(/\s+/g, " ").trim();
-  if (!n || n.length > 60 || /[\u0000-\u001f]/.test(n)) throw new EnvError("Give it a name (up to 60 characters).");
-  return n;
+/** A folder on this computer, as typed or picked: absolute, trailing slashes off (a root stays). */
+export function cleanLocalPath(path) {
+  const raw = String(path ?? "").trim().replace(/^["']|["']$/g, "");
+  const p = /^([A-Za-z]:)?[\\/]$/.test(raw) ? raw : raw.replace(/[\\/]+$/, "");
+  if (!p || !isAbsolute(p)) throw new EnvError("Give the folder's full path.");
+  return p;
 }
 
-function clean(e) {
-  if (typeof e?.id !== "string" || e.id === LOCAL_ID || typeof e?.name !== "string") return null;
-  if (e.kind === "local" && typeof e.path === "string" && isAbsolute(e.path)) return { id: e.id, name: e.name, kind: "local", path: e.path };
-  if (e.kind === "ssh" && typeof e.host === "string" && HOST.test(e.host) && typeof e.path === "string" && REMOTE_PATH.test(e.path)) {
-    return { id: e.id, name: e.name, kind: "ssh", host: e.host, path: e.path };
+/** A folder on a computer: checked for that kind of computer (local ones must exist). */
+export async function checkFolder(computer, path) {
+  if (computer === LOCAL_ID) {
+    const p = cleanLocalPath(path);
+    if (!(await stat(p).catch(() => null))?.isDirectory()) throw new EnvError(`There's no folder at ${p}.`);
+    return p;
   }
-  return null;
+  return checkRemotePath(path);
 }
 
-/** The built-in "This computer" plus the saved ones, and which is picked. */
-export async function loadEnvs(file, home) {
-  let data = {};
+const samePlace = (a, b) => a.computer === b.computer && (a.computer === LOCAL_ID && process.platform === "win32" ? a.path.toLowerCase() === b.path.toLowerCase() : a.path === b.path);
+
+function validPlace(p, hosts) {
+  if (typeof p?.computer !== "string" || typeof p?.path !== "string") return false;
+  if (p.computer === LOCAL_ID) return isAbsolute(p.path);
+  return hosts.has(p.computer) && REMOTE_PATH.test(p.path);
+}
+
+/** Read the old environments.json (computer + folder pairs) into computers and pins. */
+async function fromEnvironments(oldFile, home) {
+  let data;
+  try {
+    data = JSON.parse(await readFile(oldFile, "utf8"));
+  } catch {
+    return null;
+  }
+  const computers = [];
+  const pins = [];
+  for (const e of Array.isArray(data?.envs) ? data.envs : []) {
+    if (e?.kind === "ssh" && HOST.test(e.host ?? "") && REMOTE_PATH.test(e.path ?? "")) {
+      if (!computers.some((c) => c.host === e.host)) computers.push({ host: e.host });
+      if (e.path !== "~") pins.push({ computer: e.host, path: e.path });
+    } else if (e?.kind === "local" && typeof e.path === "string" && isAbsolute(e.path) && e.path !== home) {
+      pins.push({ computer: LOCAL_ID, path: e.path });
+    }
+  }
+  const old = Array.isArray(data?.envs) ? data.envs.find((e) => e?.id === data.current) : undefined;
+  return { current: old?.kind === "ssh" ? old.host : LOCAL_ID, computers, pins, recent: [] };
+}
+
+/**
+ * Computers, pinned and recent folders, and the picked computer. `oldFile` is environments.json,
+ * read once when computers.json isn't there yet.
+ */
+export async function loadStart(file, { oldFile, home } = {}) {
+  let data;
   try {
     data = JSON.parse(await readFile(file, "utf8"));
   } catch {
-    // none yet
+    data = (oldFile && (await fromEnvironments(oldFile, home))) || {};
   }
-  const envs = [{ id: LOCAL_ID, name: "This computer", kind: "local", path: home }, ...(Array.isArray(data.envs) ? data.envs.map(clean).filter(Boolean).slice(0, MAX) : [])];
-  const current = envs.some((e) => e.id === data.current) ? data.current : LOCAL_ID;
-  return { envs, current };
+  const computers = [];
+  for (const c of Array.isArray(data.computers) ? data.computers : []) {
+    if (HOST.test(c?.host ?? "") && !computers.some((x) => x.host === c.host) && computers.length < MAX_COMPUTERS) computers.push({ host: c.host });
+  }
+  const hosts = new Set(computers.map((c) => c.host));
+  const pins = [];
+  for (const p of Array.isArray(data.pins) ? data.pins : []) {
+    if (validPlace(p, hosts) && !pins.some((x) => samePlace(x, p)) && pins.length < MAX_PINS) pins.push({ computer: p.computer, path: p.path });
+  }
+  const recent = (Array.isArray(data.recent) ? data.recent : [])
+    .filter((p) => validPlace(p, hosts) && Number.isFinite(p.at))
+    .map((p) => ({ computer: p.computer, path: p.path, at: p.at }))
+    .slice(0, MAX_RECENT);
+  const current = data.current === LOCAL_ID || hosts.has(data.current) ? data.current : LOCAL_ID;
+  return { current, computers, pins, recent };
 }
 
-async function save(file, { envs, current }) {
+async function saveStart(file, state) {
   await mkdir(dirname(file), { recursive: true });
   const tmp = `${file}.tmp`;
-  await writeFile(tmp, `${JSON.stringify({ current, envs: envs.filter((e) => e.id !== LOCAL_ID) }, null, 2)}\n`);
+  await writeFile(tmp, `${JSON.stringify(state, null, 2)}\n`);
   await rename(tmp, file);
 }
 
-/** Add one ({ name, kind, path, host }); it becomes the picked one. Returns the new state. */
-export async function addEnv(file, home, input) {
-  const name = checkName(input?.name);
-  let env;
-  if (input?.kind === "ssh") {
-    env = { id: randomUUID(), name, kind: "ssh", host: checkHost(input.host), path: checkRemotePath(input.path) };
-  } else if (input?.kind === "local") {
-    // The folder is optional: none means your home folder.
-    const raw = String(input.path ?? "").trim().replace(/^["']|["']$/g, "");
-    // Trailing slashes off, but a drive or filesystem root (C:\, /) stays as it is.
-    const path = (/^([A-Za-z]:)?[\\/]$/.test(raw) ? raw : raw.replace(/[\\/]+$/, "")) || home;
-    if (!path || !isAbsolute(path)) throw new EnvError("Give the folder's full path.");
-    if (!(await stat(path).catch(() => null))?.isDirectory()) throw new EnvError(`There's no folder at ${path}.`);
-    env = { id: randomUUID(), name, kind: "local", path };
-  } else {
-    throw new EnvError("Pick Local or SSH.");
+/** Change it: `fn(state)` edits the state in place; it's saved and returned. */
+export async function updateStart(file, opts, fn) {
+  const state = await loadStart(file, opts);
+  await fn(state);
+  await saveStart(file, state);
+  return state;
+}
+
+export function pickComputer(state, computer) {
+  if (computer !== LOCAL_ID && !state.computers.some((c) => c.host === computer)) throw new EnvError("That computer isn't in the list.");
+  state.current = computer;
+}
+
+export function addComputer(state, host) {
+  const h = checkHost(host);
+  if (!state.computers.some((c) => c.host === h)) {
+    if (state.computers.length >= MAX_COMPUTERS) throw new EnvError(`At most ${MAX_COMPUTERS} computers.`);
+    state.computers.push({ host: h });
   }
-  const state = await loadEnvs(file, home);
-  if (state.envs.length > MAX) throw new EnvError(`At most ${MAX} environments.`);
-  state.envs.push(env);
-  state.current = env.id;
-  await save(file, state);
-  return state;
+  state.current = h;
 }
 
-export async function removeEnv(file, home, id) {
-  if (id === LOCAL_ID) throw new EnvError("This computer can't be removed.");
-  const state = await loadEnvs(file, home);
-  state.envs = state.envs.filter((e) => e.id !== id);
-  if (state.current === id) state.current = LOCAL_ID;
-  await save(file, state);
-  return state;
+export function removeComputer(state, host) {
+  state.computers = state.computers.filter((c) => c.host !== host);
+  state.pins = state.pins.filter((p) => p.computer !== host);
+  state.recent = state.recent.filter((p) => p.computer !== host);
+  if (state.current === host) state.current = LOCAL_ID;
 }
 
-export async function pickEnv(file, home, id) {
-  const state = await loadEnvs(file, home);
-  if (!state.envs.some((e) => e.id === id)) throw new EnvError("That environment is gone.");
-  state.current = id;
-  await save(file, state);
-  return state;
+export function setPin(state, place, pinned) {
+  state.pins = state.pins.filter((p) => !samePlace(p, place));
+  if (pinned) {
+    if (state.pins.length >= MAX_PINS) throw new EnvError(`At most ${MAX_PINS} pinned folders.`);
+    state.pins.unshift({ computer: place.computer, path: place.path });
+  }
+}
+
+/** Pi was started in a folder: it goes to the top of that computer's recent ones. */
+export function addRecent(state, place, at = Date.now()) {
+  state.recent = [{ computer: place.computer, path: place.path, at }, ...state.recent.filter((p) => !samePlace(p, place))].slice(0, MAX_RECENT);
+}
+
+/**
+ * Recent folders for a computer, newest first: ones you started Pi in here, merged with where its
+ * sessions ran (`found`: [{ path, at }]), pinned ones left out (they're listed above).
+ */
+export function recentFor(state, computer, found = [], { limit = 12 } = {}) {
+  const out = [];
+  const seen = (path) => out.some((p) => samePlace({ computer, path: p.path }, { computer, path }));
+  const all = [...state.recent.filter((p) => p.computer === computer), ...found.map((f) => ({ computer, path: f.path, at: f.at }))].sort((a, b) => b.at - a.at);
+  for (const p of all) {
+    if (state.pins.some((pin) => samePlace(pin, { computer, path: p.path })) || seen(p.path)) continue;
+    out.push({ path: p.path, at: p.at });
+    if (out.length >= limit) break;
+  }
+  return out;
 }
 
 /** The tmux session for a remote folder: its last part, or the host's name for ~. */
@@ -282,9 +351,9 @@ export async function recentFolders(metas, { limit = 12, platform = process.plat
     if (!latest.has(key) || latest.get(key).at < at) latest.set(key, { path: m.cwd, at });
   }
   const out = [];
-  for (const { path } of [...latest.values()].sort((a, b) => b.at - a.at)) {
+  for (const { path, at } of [...latest.values()].sort((a, b) => b.at - a.at)) {
     if (out.length >= limit) break;
-    if ((await stat(path).catch(() => null))?.isDirectory()) out.push({ path, name: basename(path) || path });
+    if ((await stat(path).catch(() => null))?.isDirectory()) out.push({ path, name: basename(path) || path, at });
   }
   return out;
 }
@@ -363,4 +432,63 @@ export function sshPiCommand(host, path, { port = 0 } = {}) {
   if (!p) return `ssh -t ${checkHost(host)} '${remotePiLine(host, path)}'`;
   const t = tunnelPort(host);
   return `ssh -t -R ${t}:127.0.0.1:${p} ${checkHost(host)} '${remotePiLine(host, path, { tunnel: t })}'`;
+}
+
+/* ── Recent folders on an SSH computer, and its connection test ── */
+
+/**
+ * The fixed remote script that lists where Pi ran there: "H<home>", then "<mtime> <cwd>" per Pi
+ * session folder (from the newest session file's first line), newest first.
+ */
+export function remoteRecentScript(limit = 20) {
+  return `printf 'H%s\n' "$HOME"; for d in "$HOME"/.pi/agent/sessions/*/; do f=$(ls -t "$d" 2>/dev/null | grep '\.jsonl$' | head -1); [ -n "$f" ] || continue; c=$(head -c 4000 "$d$f" | head -1 | grep -o '"cwd":"[^"]*"' | head -1 | cut -d'"' -f4); [ -n "$c" ] && echo "$(stat -c %Y "$d$f") $c"; done | sort -rn | head -${Math.floor(limit)}`;
+}
+
+/** Its output → [{ path, at }] with ~ for the home folder; folders that aren't plain names left out. */
+export function parseRemoteRecent(text) {
+  const lines = String(text ?? "").split(/\r?\n/);
+  const home = lines.find((l) => l.startsWith("H"))?.slice(1) ?? "";
+  const out = [];
+  for (const line of lines) {
+    const m = /^(\d+) (\/.*)$/.exec(line);
+    if (!m) continue;
+    const path = tildePath(m[2].replace(/(.)\/+$/, "$1"), home);
+    if (REMOTE_PATH.test(path) && !path.split("/").includes("..") && !out.some((o) => o.path === path)) out.push({ path, at: Number(m[1]) * 1000 });
+  }
+  return out;
+}
+
+/**
+ * The fixed remote script for "Test": prints one word per check that passes. Login is whether it
+ * ran at all; then tmux, pi (in a login shell, as New session runs it), the companion as a Pi
+ * package there, and whether the tunnel's port is free.
+ */
+export function remoteTestScript(host) {
+  return `echo login; command -v tmux >/dev/null 2>&1 && echo tmux; bash -lc 'command -v pi' >/dev/null 2>&1 && echo pi; grep -q 'cli-companion' "$HOME/.pi/agent/settings.json" 2>/dev/null && echo extension; if command -v ss >/dev/null 2>&1; then ss -ltn 2>/dev/null | grep -q ':${tunnelPort(host)} ' && echo port-busy || echo port-free; fi`;
+}
+
+/** Its output (or the ssh error) → the checklist the page shows. */
+export function testResults(host, out, error, { tunnelOpen = false } = {}) {
+  const has = (w) => new RegExp(`^${w}$`, "m").test(out ?? "");
+  const port = tunnelPort(host);
+  if (error || !has("login")) {
+    const e = String(error ?? "");
+    const fix = /resolve hostname|not known|Name or service/i.test(e)
+      ? `Couldn't find a computer called ${host}: check the name (it's what you type after ssh, or a Host in your ~/.ssh/config).`
+      : /timed out|refused|unreachable|No route/i.test(e)
+        ? `Couldn't reach ${host}: is it on, and on your network (or Tailscale)?`
+        : `Set up an SSH key so \`ssh ${host}\` doesn't ask for a password.`;
+    return [{ ok: false, label: "Logs in without a password", fix: e ? `${fix} (${e})` : fix }];
+  }
+  return [
+    { ok: true, label: "Logs in without a password" },
+    { ok: has("tmux"), label: "tmux is installed", fix: "Install tmux there (sudo apt install tmux)." },
+    { ok: has("pi"), label: "Pi is installed", fix: "Install Pi there, so `pi` runs in a login shell." },
+    { ok: has("extension"), label: "The companion is a Pi package there", fix: "Without it Pi still starts, but its session won't show here. In Pi there: pi install git:github.com/mcgowee/cli-companion" },
+    !has("port-busy")
+      ? { ok: true, label: `Port ${port} there is free (for the tunnel)` }
+      : tunnelOpen
+        ? { ok: true, label: `Port ${port} there is in use by a session started from here (that's fine)` }
+        : { ok: false, label: `Port ${port} there is free (for the tunnel)`, fix: "Something there already uses it, so sessions started from here may not show here. If a terminal from an earlier Start Pi is still open, that's it, and that's fine." },
+  ];
 }

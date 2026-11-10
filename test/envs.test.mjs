@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { addEnv, checkHost, checkRemotePath, EnvError, loadEnvs, LOCAL_ID, pickEnv, remotePiLine, remoteSessionName, removeEnv, sshPiCommand } from "../server/envs.mjs";
+import { addComputer, addRecent, checkFolder, checkHost, checkRemotePath, EnvError, loadStart, LOCAL_ID, pickComputer, recentFor, remotePiLine, remoteSessionName, removeComputer, setPin, sshPiCommand, updateStart } from "../server/envs.mjs";
 
 const HOME = process.platform === "win32" ? "C:\\Users\\me" : "/home/me";
 
@@ -80,42 +80,84 @@ test("folder list before typing: recent session folders; ~/projects over SSH; th
   assert.ok(ps.includes("FolderBrowserDialog"));
 });
 
-test("a Local environment's folder is optional (home)", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "cc-envopt-"));
+test("Start Pi: computers, pinned and recent folders, survive a reload", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "cc-start-"));
   try {
-    const s = await addEnv(join(dir, "environments.json"), dir, { name: "Home", kind: "local", path: "" });
-    assert.equal(s.envs[1].path, dir);
+    const file = join(dir, "computers.json");
+    const opts = { home: HOME };
+    let s = await loadStart(file, opts);
+    assert.deepEqual(s, { current: LOCAL_ID, computers: [], pins: [], recent: [] });
+    s = await updateStart(file, opts, (x) => addComputer(x, " aegis "));
+    assert.deepEqual(s.computers, [{ host: "aegis" }]);
+    assert.equal(s.current, "aegis", "a computer you add is picked");
+    await assert.rejects(updateStart(file, opts, (x) => addComputer(x, "a b")), EnvError);
+    await assert.rejects(updateStart(file, opts, (x) => pickComputer(x, "nope")), EnvError);
+    s = await updateStart(file, opts, (x) => {
+      setPin(x, { computer: "aegis", path: "~/projects/pi/charloop" }, true);
+      addRecent(x, { computer: "aegis", path: "~/projects/pi/loralab" }, 100);
+      addRecent(x, { computer: "aegis", path: "~/projects/pi/charloop" }, 200);
+      addRecent(x, { computer: LOCAL_ID, path: dir }, 150);
+    });
+    // Pinned ones aren't repeated under Recent; found folders merge in by time.
+    const found = [{ path: "~/projects/cli-companion", at: 300 }, { path: "~/projects/pi/loralab", at: 50 }];
+    assert.deepEqual(recentFor(s, "aegis", found).map((x) => x.path), ["~/projects/cli-companion", "~/projects/pi/loralab"]);
+    assert.deepEqual(recentFor(s, LOCAL_ID).map((x) => x.path), [dir]);
+    s = await updateStart(file, opts, (x) => setPin(x, { computer: "aegis", path: "~/projects/pi/charloop" }, false));
+    assert.equal(s.pins.length, 0);
+    s = await loadStart(file, opts);
+    assert.equal(s.recent.length, 3);
+    s = await updateStart(file, opts, (x) => removeComputer(x, "aegis"));
+    assert.deepEqual([s.current, s.computers.length, s.recent.map((x) => x.computer)], [LOCAL_ID, 0, [LOCAL_ID]], "its folders go with it");
+    await assert.rejects(checkFolder(LOCAL_ID, join(dir, "missing")), EnvError);
+    assert.equal(await checkFolder(LOCAL_ID, `${dir}${process.platform === "win32" ? "\\" : "/"}`), dir);
+    assert.equal(await checkFolder("aegis", "~/x/"), "~/x");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });
 
-test("environments: This computer always there, add local/ssh, pick, remove, survive a reload", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "cc-envs-"));
+test("Start Pi: the old environments.json becomes computers and pinned folders, once", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "cc-start-old-"));
   try {
-    const file = join(dir, "environments.json");
-    let s = await loadEnvs(file, HOME);
-    assert.deepEqual(s, { envs: [{ id: LOCAL_ID, name: "This computer", kind: "local", path: HOME }], current: LOCAL_ID });
-    s = await addEnv(file, HOME, { name: " Aegis   SSH ", kind: "ssh", host: "aegis", path: "" });
-    const aegis = s.envs[1];
-    assert.deepEqual({ ...aegis, id: "x" }, { id: "x", name: "Aegis SSH", kind: "ssh", host: "aegis", path: "~" });
-    assert.equal(s.current, aegis.id, "a new one is picked");
-    s = await addEnv(file, HOME, { name: "Scratch", kind: "local", path: dir });
-    await assert.rejects(addEnv(file, HOME, { name: "Nope", kind: "local", path: join(dir, "missing") }), EnvError);
-    await assert.rejects(addEnv(file, HOME, { name: "Bad", kind: "ssh", host: "a b", path: "~" }), EnvError);
-    await assert.rejects(addEnv(file, HOME, { name: "", kind: "ssh", host: "aegis", path: "~" }), EnvError);
-    s = await pickEnv(file, HOME, aegis.id);
-    s = await loadEnvs(file, HOME);
-    assert.equal(s.envs.length, 3);
-    assert.equal(s.current, aegis.id);
-    await assert.rejects(removeEnv(file, HOME, LOCAL_ID), EnvError);
-    await assert.rejects(pickEnv(file, HOME, "gone"), EnvError);
-    s = await removeEnv(file, HOME, aegis.id);
-    assert.equal(s.current, LOCAL_ID, "removing the picked one falls back to This computer");
-    assert.equal(s.envs.length, 2);
+    const oldFile = join(dir, "environments.json");
+    await writeFile(
+      oldFile,
+      JSON.stringify({
+        current: "e2",
+        envs: [
+          { id: "e1", name: "Aegis SSH", kind: "ssh", host: "aegis", path: "~" },
+          { id: "e2", name: "Aegis charloop", kind: "ssh", host: "aegis", path: "~/projects/pi/charloop" },
+          { id: "e3", name: "Mine", kind: "local", path: dir },
+          { id: "e4", name: "Bad", kind: "ssh", host: "a b", path: "~" },
+        ],
+      }),
+    );
+    const s = await loadStart(join(dir, "computers.json"), { oldFile, home: HOME });
+    assert.deepEqual(s.computers, [{ host: "aegis" }]);
+    assert.deepEqual(s.pins, [{ computer: "aegis", path: "~/projects/pi/charloop" }, { computer: LOCAL_ID, path: dir }]);
+    assert.equal(s.current, "aegis");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("Start Pi on an SSH computer: where Pi ran there, and Test's checklist", async () => {
+  const { remoteRecentScript, parseRemoteRecent, remoteTestScript, testResults, tunnelPort } = await import("../server/envs.mjs");
+  assert.match(remoteRecentScript(), /\.pi\/agent\/sessions/);
+  const out = "H/home/me\n1700000300 /home/me/projects/pi/charloop\n1700000200 /home/me\n1700000100 /srv/a b\n1700000050 /home/me/projects/pi/charloop\n";
+  assert.deepEqual(parseRemoteRecent(out), [
+    { path: "~/projects/pi/charloop", at: 1700000300000 },
+    { path: "~", at: 1700000200000 },
+  ]);
+  assert.match(remoteTestScript("aegis"), new RegExp(`:${tunnelPort("aegis")} `));
+  const all = testResults("aegis", "login\ntmux\npi\nextension\nport-free\n", "");
+  assert.ok(all.every((c) => c.ok));
+  const some = testResults("aegis", "login\npi\nport-busy\n", "");
+  assert.deepEqual(some.map((c) => c.ok), [true, false, true, false, false]);
+  const none = testResults("aegis", "", "Permission denied (publickey)");
+  assert.equal(none.length, 1);
+  assert.equal(none[0].ok, false);
+  assert.match(none[0].fix, /SSH key/);
 });
 
 test("Select remote folder: plain paths only, a fixed script, its output parsed", async () => {
