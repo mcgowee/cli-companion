@@ -218,6 +218,23 @@
   let busy = false;
   const drop = { open: false, q: "", items: null, loading: false, error: "", canChoose: true, seq: 0, timer: 0 };
 
+  /** The SSH computers already used by saved environments, in the order first saved. */
+  const savedHosts = () => [...new Set((st.data?.envs ?? []).filter((e) => e.kind === "ssh").map((e) => e.host))];
+  let newHost = false; // "New computer…" picked: type one in
+
+  function hostHtml() {
+    const hosts = savedHosts();
+    const typing = newHost || !hosts.length;
+    const select = hosts.length
+      ? `<select name="hostpick" aria-label="Computer">
+          ${hosts.map((h) => `<option value="${esc(h)}"${!typing && h === f.host ? " selected" : ""}>${esc(h)}</option>`).join("")}
+          <option value=""${typing ? " selected" : ""}>New computer…</option>
+        </select>`
+      : "";
+    const input = typing ? `<input name="host" value="${esc(f.host)}" placeholder="What you type after ssh, e.g. aegis">` : "";
+    return `<label class="env-field"><span>Computer</span>${select}${input}</label>`;
+  }
+
   function folderBoxHtml() {
     if (!f.path) {
       return `<div class="env-folder-box empty">${f.kind === "ssh" ? "Optional: the folder there Pi works in. None = your home folder (~)." : "Optional: the folder Pi works in. None = your home folder."}</div>`;
@@ -261,7 +278,7 @@
         <label class="env-field"><span>Name</span><input name="name" maxlength="60" value="${esc(f.name)}" placeholder="${f.kind === "ssh" ? "Aegis SSH charloop" : "My app"}"></label>
         ${
           f.kind === "ssh"
-            ? `<label class="env-field"><span>Computer</span><input name="host" value="${esc(f.host)}" placeholder="What you type after ssh, e.g. aegis"></label>`
+            ? hostHtml()
             : ""
         }
         <div class="env-folder">
@@ -303,6 +320,7 @@
 
   function openDialog() {
     f = { kind: "local", name: "", host: "", path: "" };
+    newHost = false;
     error = "";
     busy = false;
     Object.assign(drop, { open: false, q: "", items: null, loading: false, error: "" });
@@ -385,6 +403,14 @@
       }
     }
     if (event.target.name === "name") f.name = event.target.value;
+    if (event.target.name === "hostpick") {
+      readFields();
+      newHost = !event.target.value;
+      f.host = event.target.value;
+      f.path = ""; // a folder from the other computer doesn't apply
+      renderDialog();
+      overlay.querySelector(newHost ? '[name="host"]' : '[name="hostpick"]')?.focus();
+    }
   });
 
   overlay.addEventListener("keydown", (event) => {
@@ -423,11 +449,12 @@
     if (tab && tab.dataset.tab !== f.kind) {
       readFields();
       f.kind = tab.dataset.tab;
+      if (f.kind === "ssh" && !f.host && !newHost) f.host = savedHosts()[0] ?? "";
       f.path = "";
       error = "";
       Object.assign(drop, { open: false, q: "", items: null, error: "" });
       renderDialog();
-      overlay.querySelector(f.kind === "ssh" ? '[name="host"]' : '[name="name"]')?.focus();
+      overlay.querySelector(f.kind === "ssh" ? '[name="host"], [name="hostpick"]' : '[name="name"]')?.focus();
       return;
     }
     if (t.closest("[data-add-folder]") && f.kind === "ssh") {
@@ -437,7 +464,7 @@
       if (!f.host.trim()) {
         error = "Fill in Computer first; the folders come from there.";
         rerender();
-        overlay.querySelector('[name="host"]')?.focus();
+        overlay.querySelector('[name="host"], [name="hostpick"]')?.focus();
         return;
       }
       error = "";

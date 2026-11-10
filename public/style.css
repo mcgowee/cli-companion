@@ -634,9 +634,9 @@ body.resizing { cursor: col-resize; user-select: none; }
 .env-dlg-form { display: flex; flex-direction: column; gap: 14px; }
 .env-field { display: flex; flex-direction: column; gap: 6px; }
 .env-field > span { font-weight: 600; }
-.env-field input, .env-drop-search { box-sizing: border-box; width: 100%; font: inherit; padding: 9px 11px; border: 1px solid var(--line);
+.env-field input, .env-field select, .env-drop-search { box-sizing: border-box; width: 100%; font: inherit; padding: 9px 11px; border: 1px solid var(--line);
   border-radius: 9px; background: var(--bg); color: var(--text); }
-.env-field input:focus, .env-drop-search:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 0; }
+.env-field input:focus, .env-field select:focus, .env-drop-search:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 0; }
 .env-folder { position: relative; display: flex; flex-direction: column; gap: 8px; }
 .env-folder-head { display: flex; align-items: center; justify-content: space-between; }
 .env-opt { color: var(--muted); font-weight: 400; }
