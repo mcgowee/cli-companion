@@ -20,7 +20,7 @@ import { groupByWorkspace, workspaceKey } from "./session-index.mjs";
 import { lastExchange, localModels, ollamaUrl, SuggestError, suggestionCache, suggestReplies } from "./suggest.mjs";
 import { addFavorite, FavoriteError, loadFavorites, removeFavorite } from "./favorites.mjs";
 import { ColorError, loadColors, setColor } from "./colors.mjs";
-import { addComputer, addRecent, rememberRemoteSession, checkFolder, checkHost, checkQuery, checkRemoteSessionFile, EnvError, keyPushScript, loadStart, LOCAL_ID, localRoots, parseRemoteDir, parseRemoteRecent, parseRemoteSearch, pickComputer, recentFolders, recentFor, remoteDirScript, remoteListScript, remoteReadScript, remoteRecentScript, remoteSearchScript, remoteTestScript, removeComputer, searchLocal, setPin, sshPiCommand, testResults, tildePath, tunnelPort, updateStart, windowsFolderDialogScript } from "./envs.mjs";
+import { addComputer, addRecent, markStarted, rememberRemoteSession, startedHere, checkFolder, checkHost, checkQuery, checkRemoteSessionFile, EnvError, keyPushScript, loadStart, LOCAL_ID, localRoots, parseRemoteDir, parseRemoteRecent, parseRemoteSearch, pickComputer, recentFolders, recentFor, remoteDirScript, remoteListScript, remoteReadScript, remoteRecentScript, remoteSearchScript, remoteTestScript, removeComputer, searchLocal, setPin, sshPiCommand, testResults, tildePath, tunnelPort, updateStart, windowsFolderDialogScript } from "./envs.mjs";
 import { APP_FILE_HEADERS, APP_MIME, exchangeText, fileKind, findApps, resolveAppFile, urlName } from "./apps.mjs";
 import { createReadStream, existsSync as fileExists } from "node:fs";
 import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard, setDashboardStart } from "./dashboards.mjs";
@@ -142,6 +142,7 @@ function newSession(id) {
     turnStartedAt: undefined,
     historyVersion: 0,
     lastEventAt: now(),
+    firstSeenAt: now(),
     ended: false,
   };
 }
@@ -944,6 +945,29 @@ async function workspaceTree() {
   for (const past of remembered.values()) {
     if (rows.has(past.id)) continue;
     rows.set(past.id, { id: past.id, source: "pi", cwd: past.cwd, name: past.name, preview: "", created: undefined, lastActivity: past.at, via: past.via });
+  }
+  // Which ones were started from here (Start Pi): the sidebar's Recent lists only those. Sessions
+  // through the tunnel always were; on this computer, a Pi session in a folder Start Pi started,
+  // beginning a few minutes after. Found ones are kept, so a later start there doesn't lose them.
+  try {
+    const opts = { oldFile: ENVS_FILE, home: homedir() };
+    const st = await loadStart(START_FILE, opts);
+    const known = new Set(st.started);
+    const found = [];
+    for (const row of rows.values()) {
+      if (row.via || known.has(row.id)) {
+        row.started = true;
+        continue;
+      }
+      const createdAt = Date.parse(row.created ?? "") || sessions.get(row.id)?.firstSeenAt;
+      if (startedHere(st.starts, { source: row.source, cwd: row.cwd, createdAt })) {
+        row.started = true;
+        found.push(row.id);
+      }
+    }
+    if (found.length) await updateStart(START_FILE, opts, (s) => markStarted(s, found));
+  } catch {
+    // The list still shows; Recent fills in next time.
   }
   return groupByWorkspace([...rows.values()]).map(({ key, ...group }) => ({ id: key, ...group }));
 }
@@ -1972,7 +1996,7 @@ const server = createServer(async (req, res) => {
           // Copy: the same line, to paste into a terminal yourself (for SSH the key goes there first).
           const where = await place();
           if (where.computer !== LOCAL_ID) await pushTunnelKey(where.computer);
-          await change((s) => addRecent(s, where));
+          await change((s) => addRecent(s, where, Date.now(), { copy: true }));
           sendJson(res, 200, { copy: startCommand(where).copy });
         } else if (p === "/api/start/choose-folder" && m === "POST") {
           // Browse… on this computer: its own folder window; answers when you pick or cancel.

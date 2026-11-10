@@ -41,11 +41,13 @@ next to it:
   computer), then **Active**, a flat list of every running session with its folder name under the
   title. Sessions waiting for you come first, the one that finished most recently on top, then the
   ones still working. The browser tab title counts the ones waiting with something you haven't seen
-  yet, like "(2) CLI Companion". Under it, **Recent**: the sessions that ran, from every CLI, newest
-  first, 20 at a time (**Show more**), each with its terminal icon (resume it). Nothing to add by
-  hand: they come from each CLI's own session files, plus sessions that ran on an SSH computer
-  through Start Pi's tunnel (remembered, so they stay listed after the connection closes; their
-  history is read over ssh). The window follows the most recently active session unless you pick one.
+  yet, like "(2) CLI Companion". Under it, **Recent**: the sessions you started from here with **Start Pi**
+  (or its copied command), newest first, 20 at a time (**Show more**), each with its terminal icon
+  (resume it). On this computer a Pi session counts when it begins in the folder Start Pi used, a few
+  minutes after (up to an hour for a copied command); sessions on an SSH computer through Start Pi's
+  tunnel always count, and are remembered, so they stay listed after the connection closes (their
+  history is read over ssh). Other sessions (Claude Code, Codex, Pi started on its own) show under
+  Active while they run. The window follows the most recently active session unless you pick one.
   To give a session a colour (to match the tab colour you gave its terminal, say), click the **⋯**
   beside it, or right-click any session row: pick a swatch, Custom…, or No
   colour. The row gets a coloured stripe everywhere it's listed. Kept in `~/.cli-companion/session-colors.json`.

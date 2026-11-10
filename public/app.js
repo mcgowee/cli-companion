@@ -489,8 +489,9 @@
     // on top (its last write is when it finished); sessions still working go below them, so the
     // top is always what to do next.
     const activeRows = found.filter(({ s }) => isActive(s)).sort((a, b) => isWorking(a.s) - isWorking(b.s) || activityOf(b.s) - activityOf(a.s));
-    // Recent: the rest, newest first, RECENT_SHOWN at a time (Show more adds more).
-    const recentAll = found.filter(({ s }) => !isActive(s)).sort((a, b) => activityOf(b.s) - activityOf(a.s));
+    // Recent: sessions started from here (Start Pi) that aren't running, newest first,
+    // RECENT_SHOWN at a time (Show more adds more). Others show only while they run.
+    const recentAll = found.filter(({ s }) => s.started && !isActive(s)).sort((a, b) => activityOf(b.s) - activityOf(a.s));
     const recentRows = recentAll.slice(0, state.recentShown);
     const picked = recentAll.find(({ s }) => s.id === state.selectedId);
     if (picked && !recentRows.includes(picked)) recentRows.push(picked); // keep the open one listed
@@ -508,7 +509,7 @@
       }</div>
       <div class="section-head side-section">Recent</div>
       <div class="recent-list">${
-        recentRows.length ? recentRows.map(row).join("") : `<p class="hint">${filter ? "No sessions match." : "Sessions that ran show here, newest first."}</p>`
+        recentRows.length ? recentRows.map(row).join("") : `<p class="hint">${filter ? "No sessions match." : "Sessions you start with Start Pi show here, newest first."}</p>`
       }${hidden > 0 ? `<button class="ws-more recent-more" data-recent-more>Show ${Math.min(hidden, RECENT_SHOWN)} more</button>` : ""}</div>`;
 
     $("empty-hint").hidden = groups.length > 0 || Boolean(filter);

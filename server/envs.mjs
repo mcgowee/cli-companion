@@ -119,7 +119,15 @@ export async function loadStart(file, { oldFile, home } = {}) {
     .slice(0, MAX_RECENT);
   const current = data.current === LOCAL_ID || hosts.has(data.current) ? data.current : LOCAL_ID;
   const sessions = (Array.isArray(data.sessions) ? data.sessions : []).map(cleanRemoteSession).filter((x) => x && hosts.has(x.via)).slice(0, MAX_REMOTE_SESSIONS);
-  return { current, computers, pins, recent, sessions };
+  // Every start (not one per folder, unlike recent), to find the session each one made; and the
+  // ids found, so the sidebar's Recent lists only sessions started from here.
+  // (Before the log existed, the recent folders are the starts we know of.)
+  const starts = (Array.isArray(data.starts) ? data.starts : Array.isArray(data.recent) ? data.recent : [])
+    .filter((p) => validPlace(p, hosts) && Number.isFinite(p.at))
+    .map((p) => ({ computer: p.computer, path: p.path, at: p.at, copy: p.copy === true || undefined }))
+    .slice(0, MAX_STARTS);
+  const started = (Array.isArray(data.started) ? data.started : []).filter((id) => typeof id === "string" && /^[\w-]{1,100}$/.test(id)).slice(0, MAX_STARTED);
+  return { current, computers, pins, recent, sessions, starts, started };
 }
 
 async function saveStart(file, state) {
@@ -195,9 +203,35 @@ export function rememberRemoteSession(state, session) {
   state.sessions = [{ ...had, ...clean, name: clean.name ?? had?.name }, ...state.sessions.filter((x) => x.id !== clean.id)].slice(0, MAX_REMOTE_SESSIONS);
 }
 
-/** Pi was started in a folder: it goes to the top of that computer's recent ones. */
-export function addRecent(state, place, at = Date.now()) {
+/** Pi was started in a folder (or its command copied): top of that computer's recent ones, and logged. */
+export function addRecent(state, place, at = Date.now(), { copy = false } = {}) {
   state.recent = [{ computer: place.computer, path: place.path, at }, ...state.recent.filter((p) => !samePlace(p, place))].slice(0, MAX_RECENT);
+  state.starts = [{ computer: place.computer, path: place.path, at, copy: copy || undefined }, ...(state.starts ?? [])].slice(0, MAX_STARTS);
+}
+
+const MAX_STARTS = 100;
+const MAX_STARTED = 500;
+/** How long after a start its session may appear: a few minutes, longer for a copied command. */
+const START_WINDOW_MS = 3 * 60 * 1000;
+const COPY_WINDOW_MS = 60 * 60 * 1000;
+
+/**
+ * Was this session started from here? Pi on this computer, in a folder Start Pi started (or
+ * copied the command for), beginning within a few minutes after. `session`: { source, cwd,
+ * createdAt (ms) }.
+ */
+export function startedHere(starts, session, platform = process.platform) {
+  if ((session.source ?? "pi") !== "pi" || !session.cwd || !Number.isFinite(session.createdAt)) return false;
+  const same = (a, b) => (platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b);
+  return starts.some(
+    (s) => s.computer === LOCAL_ID && same(s.path, session.cwd) && session.createdAt >= s.at - 10_000 && session.createdAt <= s.at + (s.copy ? COPY_WINDOW_MS : START_WINDOW_MS),
+  );
+}
+
+/** Keep these session ids as started from here. */
+export function markStarted(state, ids) {
+  const add = ids.filter((id) => /^[\w-]{1,100}$/.test(id) && !state.started.includes(id));
+  state.started = [...add, ...state.started].slice(0, MAX_STARTED);
 }
 
 /**

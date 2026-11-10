@@ -86,7 +86,7 @@ test("Start Pi: computers, pinned and recent folders, survive a reload", async (
     const file = join(dir, "computers.json");
     const opts = { home: HOME };
     let s = await loadStart(file, opts);
-    assert.deepEqual(s, { current: LOCAL_ID, computers: [], pins: [], recent: [], sessions: [] });
+    assert.deepEqual(s, { current: LOCAL_ID, computers: [], pins: [], recent: [], sessions: [], starts: [], started: [] });
     s = await updateStart(file, opts, (x) => addComputer(x, " aegis "));
     assert.deepEqual(s.computers, [{ host: "aegis" }]);
     assert.equal(s.current, "aegis", "a computer you add is picked");
@@ -214,4 +214,24 @@ test("sessions that ran over the tunnel are remembered, checked, newest first, a
   }
   removeComputer(state, "aegis");
   assert.equal(state.sessions.length, 0);
+});
+
+test("Recent lists sessions started from here: Pi in the started folder, a few minutes after", async () => {
+  const { startedHere, markStarted } = await import("../server/envs.mjs");
+  const starts = [
+    { computer: LOCAL_ID, path: "C:\work\app", at: 1_000_000 },
+    { computer: LOCAL_ID, path: "C:\work\copied", at: 1_000_000, copy: true },
+    { computer: "aegis", path: "~/x", at: 1_000_000 },
+  ];
+  const pi = (cwd, createdAt, source = "pi") => ({ source, cwd, createdAt });
+  assert.equal(startedHere(starts, pi("c:\WORK\app", 1_005_000), "win32"), true, "case-insensitive on Windows");
+  assert.equal(startedHere(starts, pi("C:\work\app", 1_000_000 + 4 * 60_000), "win32"), false, "too late");
+  assert.equal(startedHere(starts, pi("C:\work\app", 1_000_000 - 60_000), "win32"), false, "before the start");
+  assert.equal(startedHere(starts, pi("C:\work\copied", 1_000_000 + 20 * 60_000), "win32"), true, "a copied command can be pasted later");
+  assert.equal(startedHere(starts, pi("C:\work\app", 1_005_000, "claude"), "win32"), false, "Pi only");
+  assert.equal(startedHere(starts, pi("C:\work\other", 1_005_000), "win32"), false);
+  assert.equal(startedHere(starts, pi("C:\work\app", Number.NaN), "win32"), false);
+  const state = { started: ["a"] };
+  markStarted(state, ["b", "a", "bad id"]);
+  assert.deepEqual(state.started, ["b", "a"]);
 });
