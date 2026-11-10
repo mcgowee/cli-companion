@@ -126,7 +126,7 @@ export async function loadStart(file, { oldFile, home } = {}) {
     .filter((p) => validPlace(p, hosts) && Number.isFinite(p.at))
     .map((p) => ({ computer: p.computer, path: p.path, at: p.at, copy: p.copy === true || undefined }))
     .slice(0, MAX_STARTS);
-  const started = (Array.isArray(data.started) ? data.started : []).filter((id) => typeof id === "string" && /^[\w-]{1,100}$/.test(id)).slice(0, MAX_STARTED);
+  const started = (Array.isArray(data.started) ? data.started : []).filter((id) => typeof id === "string" && /^[\w:-]{1,120}$/.test(id)).slice(0, MAX_STARTED);
   return { current, computers, pins, recent, sessions, starts, started };
 }
 
@@ -230,7 +230,8 @@ export function startedHere(starts, session, platform = process.platform) {
 
 /** Keep these session ids as started from here. */
 export function markStarted(state, ids) {
-  const add = ids.filter((id) => /^[\w-]{1,100}$/.test(id) && !state.started.includes(id));
+  // Ids as the sidebar knows them: Pi's own, or "claude:…" / "codex:…".
+  const add = ids.filter((id) => /^[\w:-]{1,120}$/.test(id) && !state.started.includes(id));
   state.started = [...add, ...state.started].slice(0, MAX_STARTED);
 }
 
