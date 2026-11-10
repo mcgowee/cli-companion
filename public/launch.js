@@ -60,7 +60,7 @@
         </div>`,
         )
         .join("")}
-      ${kind === "workspace" ? `<button class="launch-path" type="button" data-copy-path>Copy folder path</button>` : ""}
+      ${kind === "workspace" || kind === "folder" ? `<button class="launch-path" type="button" data-copy-path>Copy folder path</button>` : ""}
       <div class="launch-msg" role="status"></div>`;
   }
 

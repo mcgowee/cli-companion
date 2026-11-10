@@ -170,7 +170,7 @@ a.dash-card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--li
 .phone-card .set-status:empty { display: none; }
 .phone-card .set-status { margin-top: 8px; }
 /* Open on the phone (Tailscale): hide what only works on the computer; the server refuses it anyway. */
-.remote-view .row-term, .remote-view .row-fav, .remote-view .row-more, .remote-view #about-restart, .remote-view .hm-item[data-do="continue"],
+.remote-view .row-term, .remote-view .row-fav, .remote-view .row-more, .remote-view .places-menu, .remote-view .folders-section, .remote-view #about-restart, .remote-view .hm-item[data-do="continue"],
 .remote-view .ft-add, .remote-view .ft-newbtn, .remote-view .app-pin, .remote-view #dash-add, .remote-view [data-remove], .remote-view #dash-run, .remote-view #dash-start-form,
 .remote-view:not(.remote-reply) #composer { display: none !important; }
 .sc-list { display: grid; gap: 6px; margin-top: 10px; max-width: 460px; }
@@ -582,6 +582,24 @@ body.resizing { cursor: col-resize; user-select: none; }
 .color-custom { justify-content: space-between; cursor: pointer; }
 .color-custom input { width: 34px; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 5px; background: none; cursor: pointer; }
 .color-clear:disabled { color: var(--muted); cursor: default; }
+/* The Workspaces menu (public/places.js): under the terminal menu it opens, so that one shows on top. */
+.nav-item[data-view="workspaces"].open { background: var(--accent-soft); }
+.places-menu { z-index: 49; width: min(430px, calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow: auto; }
+.places-add { display: flex; gap: 6px; padding: 4px 8px 6px; }
+.places-add input { flex: 1; min-width: 0; font: inherit; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
+.places-host-btn { all: unset; cursor: pointer; flex: 1; font-weight: 650; padding: 2px 0; }
+.places-host-btn:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); }
+.places-remote { display: flex; flex-direction: column; padding-left: 12px; max-height: 50vh; overflow: auto; }
+.places-rf { padding: 3px 8px; }
+.places-live { color: var(--ok); font-size: 10px; }
+.places-note { font-size: 11px; }
+/* Folders you added, in the sidebar: a row that opens the terminal menu. */
+.folder-row { all: unset; box-sizing: border-box; display: flex; gap: 8px; align-items: center; width: 100%; padding: 5px 8px;
+  border-radius: 7px; cursor: pointer; font-size: 13px; }
+.folder-row:hover, .folder-row.open { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.folder-row svg { width: 15px; height: 15px; flex: none; fill: none; stroke: var(--muted); stroke-width: 1.8; stroke-linejoin: round; }
+.folder-row:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); }
+.folders-list { display: flex; flex-direction: column; gap: 1px; margin-bottom: 8px; }
 /* The Open / Copy menu */
 .launch-menu { position: fixed; z-index: 50; width: min(380px, calc(100vw - 16px)); padding: 6px; border: 1px solid var(--line);
   border-radius: 10px; background: var(--panel); box-shadow: 0 10px 30px rgb(0 0 0 / 0.28); font-size: 12.5px; }

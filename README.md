@@ -46,6 +46,14 @@ next to it:
   To give a session a colour (to match the tab colour you gave its terminal, say), click the **⋯**
   beside it in Active or Favorites, or right-click any session row: pick a swatch, Custom…, or No
   colour. The row gets a coloured stripe everywhere it's listed. Kept in `~/.cli-companion/session-colors.json`.
+  Click the **Workspaces** box at the top of the sidebar for its menu: **Add a folder…** keeps a
+  folder in the sidebar (under **Folders**) even before it has a session, with the usual terminal
+  menu (Terminal here, or start Pi / Claude Code / Codex there). **Add an SSH computer…** takes
+  the name you type after `ssh` (it must log in without a password prompt); click it to list the
+  folders in `~/projects` there, then **Terminal** or **Pi** opens a terminal here, ssh'd into
+  that folder's tmux session (`tmux new-session -A`: it rejoins the session if it's running, ● in
+  the list). **Copy** gives the line (Shift+click for the Pi one). Sessions on the other computer
+  show in its own companion, not this one. Kept in `~/.cli-companion/places.json`.
   Below that, **Workspaces**, grouped by CLI first: Pi, Claude Code, Codex, each with a caret
   that opens its workspaces (project folders), newest first and collapsed, with that CLI's
   sessions underneath (running ones keep their live dot there too), including past sessions you
@@ -324,6 +332,7 @@ What the companion writes (all in `~/.cli-companion`, or `CLI_COMPANION_HOME`, u
 | `settings.json` | The Settings page |
 | `access-key` | The access key (made on first start) |
 | `favorites.json`, `session-colors.json`, `dashboards.json`, `prompts.json` | Starred items, session colours (ids and colours only), custom dashboards (with their start commands), saved prompts |
+| `places.json` | Folders you added from the Workspaces menu (paths) and SSH computer names |
 | `token-usage.json` | Token counts per session file (a cache; safe to delete) |
 | `handoffs/` | Handoff briefs you made (newest 20 kept) |
 | `remote.json` | Phone access on/off and your Tailscale name |
