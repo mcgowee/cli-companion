@@ -364,6 +364,7 @@
     const row = `<button class="session${active}${colorAttr ? " has-color" : ""}"${colorAttr} data-id="${esc(s.id)}" data-src="${esc(src.id)}" title="${esc(tip)}">
       <span class="sdot ${dot}"></span>
       ${src.tag ? `<span class="src-tag" aria-label="${esc(src.label)}">${esc(src.tag)}</span>` : ""}
+      ${s.via ? `<span class="via-tag" title="${esc(`Running on ${s.via}, shown here through New session's SSH tunnel`)}">${esc(s.via)}</span>` : ""}
       ${
         wsName
           ? `<span class="stext"><span class="sname">${esc(rowTitle(s))}</span><span class="sws">${esc(wsName)}${

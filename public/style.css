@@ -721,6 +721,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 /* Asking you something in its terminal (an approval or a question). */
 .sdot.file-waiting { background: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 30%, transparent); }
 .pill.file.waiting { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--text); }
+.via-tag { flex: none; font: 600 9.5px/1 var(--mono); padding: 2px 4px; border-radius: 4px; color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); }
 .src-tag { flex: none; font: 600 9.5px/1 var(--mono); letter-spacing: 0.04em; padding: 2px 4px; border-radius: 4px;
   color: var(--src); background: color-mix(in srgb, var(--src) 14%, transparent); }
 .pill.file { color: var(--src); background: color-mix(in srgb, var(--src) 14%, transparent); }

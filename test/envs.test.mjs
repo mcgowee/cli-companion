@@ -136,3 +136,23 @@ test("Select remote folder: plain paths only, a fixed script, its output parsed"
   assert.equal(tildePath("/home/meow", "/home/me"), "/home/meow");
   assert.equal(tildePath("/srv", "/home/me"), "/srv");
 });
+
+test("the tunnel: a fixed port per computer, the ssh line, the key and session-file scripts", async () => {
+  const { tunnelPort, keyPushScript, checkRemoteSessionFile, remoteReadScript } = await import("../server/envs.mjs");
+  const t = tunnelPort("aegis");
+  assert.equal(t, tunnelPort("AEGIS"));
+  assert.ok(t >= 31000 && t < 31900);
+  const line = sshPiCommand("aegis", "~/projects/pi/charloop", { port: 30143 });
+  assert.ok(line.startsWith(`ssh -t -R ${t}:127.0.0.1:30143 aegis '`));
+  assert.ok(line.includes(`tmux new-window -e CLI_COMPANION_PORT=${t} -e CLI_COMPANION_HOME=$HOME/.cli-companion-tunnel -t =charloop:`));
+  assert.match(line, /tmux new-session -e CLI_COMPANION_PORT=\d+ -e CLI_COMPANION_HOME=\S+ -A -s charloop/);
+  assert.equal(line.split("'").length, 3, "one quoted remote line");
+  assert.match(keyPushScript(), /umask 077/);
+  const f = "/home/me/.pi/agent/sessions/--home-me-projects--/2026-11-09T18-00-00_abc.jsonl";
+  assert.equal(checkRemoteSessionFile(f), f);
+  for (const bad of ["relative/sessions/x.jsonl", "/home/me/sessions/../x.jsonl", "/home/me/x.jsonl", "/home/me/sessions/a b.jsonl", "/home/me/sessions/x.jsonl;rm", "/home/me/sessions/$(x).jsonl"]) {
+    assert.equal(checkRemoteSessionFile(bad), undefined, bad);
+  }
+  assert.match(remoteReadScript(f, 100), /tail -c \+101 /);
+  assert.throws(() => remoteReadScript("/etc/passwd"), EnvError);
+});

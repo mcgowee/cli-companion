@@ -20,7 +20,7 @@ import { groupByWorkspace, workspaceKey } from "./session-index.mjs";
 import { lastExchange, localModels, ollamaUrl, SuggestError, suggestionCache, suggestReplies } from "./suggest.mjs";
 import { addFavorite, FavoriteError, loadFavorites, removeFavorite } from "./favorites.mjs";
 import { ColorError, loadColors, setColor } from "./colors.mjs";
-import { addEnv, checkHost, checkQuery, EnvError, loadEnvs, localRoots, parseRemoteDir, parseRemoteSearch, pickEnv, recentFolders, remoteDirScript, remoteListScript, remoteSearchScript, removeEnv, searchLocal, sshPiCommand, tildePath, windowsFolderDialogScript } from "./envs.mjs";
+import { addEnv, checkHost, checkQuery, checkRemoteSessionFile, EnvError, keyPushScript, loadEnvs, localRoots, parseRemoteDir, remoteReadScript, tunnelPort, parseRemoteSearch, pickEnv, recentFolders, remoteDirScript, remoteListScript, remoteSearchScript, removeEnv, searchLocal, sshPiCommand, tildePath, windowsFolderDialogScript } from "./envs.mjs";
 import { APP_FILE_HEADERS, APP_MIME, exchangeText, fileKind, findApps, resolveAppFile, urlName } from "./apps.mjs";
 import { createReadStream, existsSync as fileExists } from "node:fs";
 import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard, setDashboardStart } from "./dashboards.mjs";
@@ -34,6 +34,7 @@ import { frequentPrompts, loadPrompts, PromptError, savePrompts, validatePrompts
 import { classifyRequest, loadRemote, remoteAllowed, saveRemote, serveOff, serveOn, serving, tailscaleSelf } from "./remote.mjs";
 import { loadSettings, readSettingsStrict, saveSettings, SettingsError, settingsStamp, sourceEnv, validateSettings } from "./settings.mjs";
 import { execFile, execFileSync, spawn } from "node:child_process";
+import { parseEntries } from "./session-file.mjs";
 import { isProcessAlive } from "./fsutil.mjs";
 import { createSources, describeSources, nativeId, sourceForId } from "./sources/index.mjs";
 import { APP_ID, accessKey, companionPort, ensureServer, isPortUp, migrateStateFile, removeRuntimeFile, shutdownPlan, stateDir, writeRuntimeFile } from "./start.mjs";
@@ -144,7 +145,7 @@ function newSession(id) {
 }
 
 /** Apply one batch from the bridge extension. Returns true when history changed on disk. */
-function applyBatch(batch) {
+function applyBatch(batch, via) {
   const id = typeof batch.sessionId === "string" ? batch.sessionId : undefined;
   if (!id) return false;
   let session = sessions.get(id);
@@ -153,7 +154,12 @@ function applyBatch(batch) {
     sessions.set(id, session);
   }
   session.pid = Number.isInteger(batch.pid) ? batch.pid : session.pid;
-  if (PI.owns(batch.sessionFile)) session.sessionFile = batch.sessionFile;
+  if (via) {
+    // Pi on an SSH computer, through New session's tunnel: its file is there, read over ssh.
+    session.via = via;
+    const file = checkRemoteSessionFile(batch.sessionFile);
+    if (file) session.remoteFile = file;
+  } else if (PI.owns(batch.sessionFile)) session.sessionFile = batch.sessionFile;
   if (typeof batch.cwd === "string") session.cwd = batch.cwd;
   if (typeof batch.name === "string") session.name = batch.name;
   if (typeof batch.model === "string") session.model = batch.model;
@@ -280,7 +286,8 @@ function publicSession(session) {
     historyVersion: session.historyVersion,
     lastEventAt: session.lastEventAt,
     ended: session.ended,
-    hasHistory: Boolean(session.sessionFile),
+    hasHistory: Boolean(session.sessionFile || session.remoteFile),
+    via: session.via,
     mode: session.mode,
     // The bridge polls for commands while the session is open; this says whether it is listening now.
     listening: (inboxes.get(session.id)?.waiters.length ?? 0) > 0 || now() - (inboxes.get(session.id)?.lastPollAt ?? 0) < 35_000,
@@ -351,7 +358,12 @@ function scheduleSessionBroadcast(session) {
 // Drop sessions whose Pi process has exited.
 setInterval(() => {
   for (const [id, session] of sessions) {
-    if (session.pid && !isProcessAlive(session.pid)) {
+    // A session over a tunnel: its process is on the other computer, so it goes when it falls
+    // silent (the extension sends a heartbeat every 15 s and long-polls the inbox).
+    const gone = session.via
+      ? now() - Math.max(session.lastEventAt, inboxes.get(id)?.lastPollAt ?? 0) > 60_000
+      : session.pid && !isProcessAlive(session.pid);
+    if (gone) {
       sessions.delete(id);
       inboxes.delete(id);
       broadcast({ type: "removed", id });
@@ -434,9 +446,59 @@ async function refreshSaved() {
 function locate(id) {
   const live = sessions.get(id);
   if (live?.sessionFile) return { file: live.sessionFile, leafId: live.leafId, historyVersion: live.historyVersion, source: PI };
+  if (live?.via && live.remoteFile) return { file: live.remoteFile, leafId: live.leafId, historyVersion: live.historyVersion, source: remotePi(live.via), remote: live.via };
   const saved = savedById.get(id);
   if (saved) return { file: saved.file, leafId: undefined, historyVersion: 0, source: sourceById(saved.source) };
   return undefined;
+}
+
+/*
+ * Pi sessions on an SSH computer (through New session's tunnel): the same Pi source, but the
+ * session file is read over ssh, in pieces as it grows, and kept in memory only (a few files).
+ */
+const REMOTE_READ_MAX = 64 * 1024 * 1024;
+const remoteFiles = new Map(); // "host file" -> { size, text, entries }
+const remoteReads = new Map(); // "host file" -> the read in flight
+function remotePi(host) {
+  return { ...PI, readEntries: (file) => readRemoteEntries(host, file) };
+}
+async function readRemoteEntries(host, file) {
+  const key = `${host} ${file}`;
+  if (remoteReads.has(key)) return remoteReads.get(key);
+  const read = (async () => {
+    try {
+      const had = remoteFiles.get(key);
+      let from = had?.size ?? 0;
+      let out = await runRemoteBuffer(host, remoteReadScript(file, from, REMOTE_READ_MAX));
+      let nl = out.indexOf(10);
+      let size = Number(out.subarray(0, nl).toString());
+      if (had && size < had.size) {
+        // Smaller than before: rewritten, so read it again from the start.
+        from = 0;
+        out = await runRemoteBuffer(host, remoteReadScript(file, 0, REMOTE_READ_MAX));
+        nl = out.indexOf(10);
+        size = Number(out.subarray(0, nl).toString());
+      }
+      if (size > REMOTE_READ_MAX) return undefined; // too big to pull over ssh
+      if (had && from && size <= had.size) return had.entries;
+      // Keep whole lines only (a line still being written is read next time), so no character is split.
+      const body = out.subarray(nl + 1);
+      const end = body.lastIndexOf(10) + 1;
+      if (from && !end) return had.entries;
+      const text = (from ? had.text : "") + body.subarray(0, end).toString("utf8");
+      const entries = parseEntries(text);
+      remoteFiles.delete(key);
+      remoteFiles.set(key, { size: from + end, text, entries });
+      while (remoteFiles.size > 4) remoteFiles.delete(remoteFiles.keys().next().value);
+      return entries;
+    } catch {
+      return undefined;
+    } finally {
+      remoteReads.delete(key);
+    }
+  })();
+  remoteReads.set(key, read);
+  return read;
 }
 
 /** The workspace folder of a session (live or saved). Only these folders are ever browsed. */
@@ -656,6 +718,52 @@ function remoteFolderSearch(host, q) {
   return runRemote(host, q ? remoteSearchScript(q) : remoteListScript()).then(parseRemoteSearch);
 }
 
+/** port -> SSH computer, for the environments' tunnels (re-read from environments.json every few seconds). */
+let tunnelHosts = new Map();
+let tunnelsReadAt = 0;
+async function tunnelHostFor(hostHeader, headers) {
+  const m = /^(?:127\.0\.0\.1|localhost):(\d+)$/.exec(String(hostHeader ?? "").toLowerCase());
+  if (!m || Number(m[1]) === PORT || headers["x-forwarded-for"] || headers["tailscale-user-login"]) return undefined;
+  if (now() - tunnelsReadAt > 5000) {
+    tunnelsReadAt = now();
+    try {
+      const { envs } = await loadEnvs(ENVS_FILE, homedir());
+      tunnelHosts = new Map(envs.filter((e) => e.kind === "ssh").map((e) => [tunnelPort(e.host), e.host]));
+    } catch {
+      // keep the last list
+    }
+  }
+  return tunnelHosts.get(Number(m[1]));
+}
+
+/** Like runRemote, but resolves with the raw bytes (session files), and can send `input` on stdin. */
+function runRemoteBuffer(host, script, input) {
+  return new Promise((resolveRun, reject) => {
+    const child = execFile(
+      sshExe(),
+      ["-o", "BatchMode=yes", "-o", "ConnectTimeout=8", checkHost(host), script],
+      { encoding: "buffer", timeout: 60000, windowsHide: true, maxBuffer: REMOTE_READ_MAX + 1024 * 1024 },
+      (error, stdout, stderr) => {
+        if (error) {
+          const why = String(stderr || error.message).trim().split("\n").pop();
+          reject(new EnvError(`Couldn't reach ${host} over SSH${why ? ` (${why})` : ""}. Check that \`ssh ${host}\` works in a terminal without asking for a password.`));
+          return;
+        }
+        resolveRun(stdout);
+      },
+    );
+    child.stdin?.end(input ?? "");
+  });
+}
+
+/**
+ * Before Pi starts there through the tunnel: put this computer's access key on that computer
+ * (in TUNNEL_HOME, readable only by you), so its companion extension may post here.
+ */
+function pushTunnelKey(host) {
+  return runRemoteBuffer(host, keyPushScript(), `${ACCESS_KEY}\n`);
+}
+
 /** Run one of envs.mjs's fixed scripts on an SSH computer; resolves with what it printed. Never prompts. */
 function runRemote(host, script) {
   return new Promise((resolveRun, reject) => {
@@ -713,7 +821,7 @@ function chooseFolder(start) {
 /** What New session runs in a terminal for an environment, and the line to copy. */
 function envCommand(env) {
   if (env.kind === "ssh") {
-    const line = sshPiCommand(env.host, env.path);
+    const line = sshPiCommand(env.host, env.path, { port: PORT });
     // On Windows: PowerShell, sent encoded, calling Windows' own ssh.exe.
     const run = process.platform === "win32" ? `& '${sshExe()}'${line.slice(3)}` : line;
     return { cwd: homedir(), run, typed: true, copy: line };
@@ -749,6 +857,7 @@ async function workspaceTree() {
       lastActivity: 0,
     };
     row.live = live.status;
+    if (live.via) row.via = live.via; // running on that SSH computer, through New session's tunnel
     if (live.name && !["New thread", "New session"].includes(live.name)) row.name = live.name;
     row.lastActivity = Math.max(row.lastActivity ?? 0, live.lastEventAt ?? 0);
     rows.set(live.id, row);
@@ -866,7 +975,20 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${HOST}:${PORT}`);
   // DNS-rebinding guard: only answer requests addressed to this machine by its loopback name, or,
   // with phone access on, to its Tailscale name from your own Tailscale account (server/remote.mjs).
-  const who = classifyRequest({ host: req.headers.host, headers: req.headers }, { port: PORT, remote });
+  // Pi on an SSH computer, through New session's tunnel (Host is 127.0.0.1:<that computer's
+  // tunnel port>): only the bridge (/ingest, /bridge/*), and only with this computer's key.
+  const via = await tunnelHostFor(req.headers.host, req.headers);
+  if (via) {
+    if (!(url.pathname === "/ingest" || url.pathname.startsWith("/bridge/"))) {
+      res.writeHead(403).end();
+      return;
+    }
+    if (!hasKey(req.headers, { port: PORT, key: ACCESS_KEY })) {
+      res.writeHead(401).end();
+      return;
+    }
+  }
+  const who = via ? { ok: true, remote: false } : classifyRequest({ host: req.headers.host, headers: req.headers }, { port: PORT, remote });
   if (!who.ok) {
     res.writeHead(who.status, { "content-type": "text/plain" }).end(who.reason);
     return;
@@ -980,7 +1102,7 @@ const server = createServer(async (req, res) => {
         return;
       }
       const batch = JSON.parse(await readBody(req));
-      const session = applyBatch(batch);
+      const session = applyBatch(batch, via);
       if (session) scheduleSessionBroadcast(session);
       res.writeHead(204).end();
       return;
@@ -1003,7 +1125,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (req.method !== "GET" && !["/api/dashboards", "/api/dashboards/start", "/api/favorites", "/api/session-colors", "/api/envs", "/api/envs/current", "/api/envs/start", "/api/envs/choose-folder", "/api/folder", "/api/handoff", "/api/launch", "/api/prompts", "/api/remote", "/api/settings", "/api/shortcut", "/api/upload", "/api/run", "/api/run/stop", "/api/run/open"].includes(url.pathname)) {
+    if (req.method !== "GET" && !["/api/dashboards", "/api/dashboards/start", "/api/favorites", "/api/session-colors", "/api/envs", "/api/envs/current", "/api/envs/start", "/api/envs/prepare", "/api/envs/choose-folder", "/api/folder", "/api/handoff", "/api/launch", "/api/prompts", "/api/remote", "/api/settings", "/api/shortcut", "/api/upload", "/api/run", "/api/run/stop", "/api/run/open"].includes(url.pathname)) {
       res.writeHead(405).end();
       return;
     }
@@ -1046,7 +1168,7 @@ const server = createServer(async (req, res) => {
       const transcript = where.source.transcript(entries, { leafId: where.leafId });
       let usage;
       try {
-        usage = await tokenUsage.forSession({ id, source: where.source.id, file: where.file });
+        if (!where.remote) usage = await tokenUsage.forSession({ id, source: where.source.id, file: where.file });
       } catch {
         // Token use is extra: the transcript still shows without it.
       }
@@ -1071,6 +1193,11 @@ const server = createServer(async (req, res) => {
       const where = locate(id);
       if (!where) {
         sendJson(res, 404, { error: "unknown session" });
+        return;
+      }
+      if (where.remote) {
+        const live = sessions.get(id);
+        sendJson(res, 200, { size: live.historyVersion, mtimeMs: live.lastEventAt, active: live.status !== "idle" });
         return;
       }
       try {
@@ -1720,7 +1847,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (url.pathname === "/api/envs" || url.pathname === "/api/envs/current" || url.pathname === "/api/envs/start") {
+    if (url.pathname === "/api/envs" || url.pathname === "/api/envs/current" || url.pathname === "/api/envs/start" || url.pathname === "/api/envs/prepare") {
       // Environments for the picker at the bottom of the sidebar. GET /api/envs lists them (with
       // the line New session runs); POST adds one; DELETE ?id= removes one; PUT /current { id }
       // picks one; POST /start { id } opens a terminal starting Pi there. Changes need the page
@@ -1743,8 +1870,23 @@ const server = createServer(async (req, res) => {
           if (isHeadless()) throw new LaunchError(headlessNote(settings.sshHost || defaultSshHost(), { custom: Boolean(settings.sshHost) }));
           const cmd = envCommand(env);
           if (env.kind === "local") await existingDir(env.path);
+          else await pushTunnelKey(env.host); // so Pi there can show here, through the tunnel
           await openTerminal(cmd.cwd, cmd.run, { typed: cmd.typed });
           sendJson(res, 200, { ok: true });
+          return;
+        }
+        if (url.pathname === "/api/envs/prepare") {
+          // Copy: the line to paste into a terminal yourself. For SSH, first puts this computer's
+          // key there, as New session does, so the session shows here through the tunnel.
+          if (req.method !== "POST") {
+            res.writeHead(405).end();
+            return;
+          }
+          const id = String(JSON.parse(await readBody(req))?.id ?? "");
+          const env = (await loadEnvs(ENVS_FILE, home)).envs.find((e) => e.id === id);
+          if (!env) throw new EnvError("That environment is gone.");
+          if (env.kind === "ssh") await pushTunnelKey(env.host);
+          sendJson(res, 200, { copy: envCommand(env).copy });
           return;
         }
         if (url.pathname === "/api/envs/current") {

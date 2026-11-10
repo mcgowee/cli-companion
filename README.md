@@ -59,8 +59,15 @@ next to it:
   window (a path box with Go, a breadcrumb, Filter folders, and the folders there one level at a
   time, listed over the same no-password ssh). New session opens a terminal
   running Pi there; for SSH, inside a tmux session named after the folder (a new Pi window if the
-  session is already running), so it survives a dropped connection. Sessions on the other
-  computer show in its own companion, not this one. Kept in `~/.cli-companion/environments.json`.
+  session is already running), so it survives a dropped connection. The ssh line also opens a
+  reverse tunnel (`-R <port>:127.0.0.1:<this companion's port>`, the port fixed per computer,
+  31000–31899) and starts Pi with `CLI_COMPANION_PORT` set to it, so Pi's companion extension
+  there reports here: the session shows in **Active** with the computer's name, live, and you can
+  send to it; its history is read over ssh (kept in memory). It shows while the ssh connection is
+  open (it goes 60 s after Pi falls silent). Through the tunnel only the bridge (`/ingest`,
+  `/bridge/*`) answers, with this computer's key, which New session and the Copy button (beside
+  New session: the same line, to paste into a terminal yourself) put on that computer first.
+  That computer needs the companion as a Pi package too. Kept in `~/.cli-companion/environments.json`.
   Below that, **Workspaces**, grouped by CLI first: Pi, Claude Code, Codex, each with a caret
   that opens its workspaces (project folders), newest first and collapsed, with that CLI's
   sessions underneath (running ones keep their live dot there too), including past sessions you
@@ -340,6 +347,7 @@ What the companion writes (all in `~/.cli-companion`, or `CLI_COMPANION_HOME`, u
 | `access-key` | The access key (made on first start) |
 | `favorites.json`, `session-colors.json`, `dashboards.json`, `prompts.json` | Starred items, session colours (ids and colours only), custom dashboards (with their start commands), saved prompts |
 | `environments.json` | Environments you added (names, folder paths, SSH computer names) and which one is picked |
+| An SSH computer's `~/.cli-companion-tunnel/access-key` | This computer's access key (readable only by you there), put there by New session or Copy on an SSH environment, so Pi there can report through the tunnel |
 | `token-usage.json` | Token counts per session file (a cache; safe to delete) |
 | `handoffs/` | Handoff briefs you made (newest 20 kept) |
 | `remote.json` | Phone access on/off and your Tailscale name |

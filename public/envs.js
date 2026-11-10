@@ -85,11 +85,22 @@
   copyBtn?.addEventListener("click", async () => {
     const e = current();
     if (!e?.copy) return;
+    let line = e.copy;
     try {
-      await navigator.clipboard.writeText(e.copy);
+      // For SSH this also puts this computer's key there, so the session shows here (the tunnel).
+      if (e.kind === "ssh") {
+        say(`Getting ${e.host} ready…`);
+        line = (await send("/api/envs/prepare", "POST", { id: e.id })).copy;
+      }
+    } catch (error) {
+      say(error.message, "error");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(line);
       say(`Copied. Paste it into a terminal to start Pi in ${e.name}.`, "ok");
     } catch {
-      say(e.copy); // couldn't reach the clipboard: show it to copy by hand
+      say(line); // couldn't reach the clipboard: show it to copy by hand
     }
   });
 

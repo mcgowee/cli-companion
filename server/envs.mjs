@@ -128,11 +128,55 @@ export function remoteSessionName(host, path) {
  * so ~/.local/bin is on PATH. Plain words only (see the checks above); the ~ is left for the
  * remote shell to expand.
  */
-export function remotePiLine(host, path) {
+export function remotePiLine(host, path, { tunnel = 0 } = {}) {
   const h = checkHost(host);
   const p = checkRemotePath(path);
   const s = remoteSessionName(h, p);
-  return `tmux has-session -t =${s} 2>/dev/null && tmux new-window -t =${s}: -c ${p} bash -lc pi; tmux new-session -A -s ${s} -c ${p} bash -lc pi`;
+  // With a tunnel: Pi's companion extension there reports to the tunnel's port, with this
+  // computer's key (kept apart from that computer's own companion, in TUNNEL_HOME).
+  const e = tunnel ? ` -e CLI_COMPANION_PORT=${Number(tunnel)} -e CLI_COMPANION_HOME=${TUNNEL_HOME}` : "";
+  return `tmux has-session -t =${s} 2>/dev/null && tmux new-window${e} -t =${s}: -c ${p} bash -lc pi; tmux new-session${e} -A -s ${s} -c ${p} bash -lc pi`;
+}
+
+/* ── Live SSH sessions in this companion: a reverse tunnel ── */
+//
+// New session (and Copy) add `-R <tunnel port>:127.0.0.1:<this server's port>` to the ssh line, and
+// start Pi there with CLI_COMPANION_PORT=<tunnel port>. Pi's companion extension on that computer
+// then posts to this server through the tunnel, with Host 127.0.0.1:<tunnel port>, which is how the
+// server knows the session runs on that computer. Its history is read over ssh.
+
+/** Where, on the SSH computer, this computer's access key is kept for the tunnel ($HOME expanded there). */
+export const TUNNEL_HOME = "$HOME/.cli-companion-tunnel";
+
+/** The port the tunnel listens on, on that computer: fixed per computer name, 31000–31899. */
+export function tunnelPort(host) {
+  let h = 2166136261;
+  for (const ch of checkHost(host).toLowerCase()) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+  return 31000 + (h % 900);
+}
+
+/** The fixed remote script that stores this computer's key (sent on stdin, never on the command line). */
+export function keyPushScript() {
+  return `umask 077; mkdir -p "${TUNNEL_HOME}" && cat > "${TUNNEL_HOME}/access-key.tmp" && mv -f "${TUNNEL_HOME}/access-key.tmp" "${TUNNEL_HOME}/access-key"`;
+}
+
+/** A Pi session file there, as the extension reports it: an absolute .jsonl path of plain names under a sessions folder. */
+const REMOTE_SESSION_FILE = /^(\/[\w.-]{1,200}){2,20}\.jsonl$/;
+export function checkRemoteSessionFile(file) {
+  const f = String(file ?? "");
+  if (!REMOTE_SESSION_FILE.test(f) || !f.includes("/sessions/") || f.split("/").some((p) => p === "." || p === "..")) return undefined;
+  return f;
+}
+
+/**
+ * The fixed remote script that prints a session file's size, a newline, then its bytes from
+ * `offset` on (at most `max`), so a growing file is read in pieces.
+ */
+export function remoteReadScript(file, offset = 0, max = 64 * 1024 * 1024) {
+  const f = checkRemoteSessionFile(file);
+  if (!f) throw new EnvError("Not a Pi session file.");
+  const off = Math.max(0, Math.floor(Number(offset) || 0));
+  return `s=$(stat -c %s ${f}) || exit 3; echo "$s"; tail -c +${off + 1} ${f} | head -c ${Math.floor(max)}`;
 }
 
 /* ── folder search for + New environment ── */
@@ -314,6 +358,9 @@ export function parseRemoteSearch(text) {
 }
 
 /** The line to paste (PowerShell or a POSIX shell) for an SSH environment's New session. */
-export function sshPiCommand(host, path) {
-  return `ssh -t ${checkHost(host)} '${remotePiLine(host, path)}'`;
+export function sshPiCommand(host, path, { port = 0 } = {}) {
+  const p = Number(port);
+  if (!p) return `ssh -t ${checkHost(host)} '${remotePiLine(host, path)}'`;
+  const t = tunnelPort(host);
+  return `ssh -t -R ${t}:127.0.0.1:${p} ${checkHost(host)} '${remotePiLine(host, path, { tunnel: t })}'`;
 }
