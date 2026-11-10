@@ -246,4 +246,7 @@ test("terminal menu on an SSH computer: a shell in the folder, and resume with t
   assert.equal(line.split("'").length, 3); // one quoted part: nothing inside breaks it
   assert.throws(() => sshResumeCommand("aegis", "~/x", "a b; rm -rf ~"));
   assert.throws(() => sshShellCommand("aegis", "~/x; rm -rf ~"));
+  const { sshAttachCommand } = await import("../server/envs.mjs");
+  assert.equal(sshAttachCommand("aegis", "/home/me/projects/char.loop"), "ssh -t aegis 'tmux attach -t =char-loop'");
+  assert.throws(() => sshAttachCommand("aegis", "~/x'; rm -rf ~"));
 });

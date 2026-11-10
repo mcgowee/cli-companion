@@ -287,6 +287,15 @@ export function sshShellCommand(host, path) {
   return `ssh -t ${checkHost(host)} 'cd ${checkRemotePath(path)} && exec bash -l'`;
 }
 
+/**
+ * The terminal menu's "Reattach" for a session still running on an SSH computer: back into the
+ * folder's tmux session, where Start Pi put it (survives a closed window or a dropped connection).
+ */
+export function sshAttachCommand(host, path) {
+  const h = checkHost(host);
+  return `ssh -t ${h} 'tmux attach -t =${remoteSessionName(h, checkRemotePath(path))}'`;
+}
+
 /** The terminal menu's "Resume in Pi" for a session that ran on an SSH computer (with the tunnel when `port`). */
 export function sshResumeCommand(host, path, sessionId, { port = 0 } = {}) {
   const p = Number(port);

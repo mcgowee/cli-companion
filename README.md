@@ -80,7 +80,9 @@ next to it:
 - **Open in a terminal**: the small terminal icon beside a session
   opens a menu (for a session on an SSH computer, the lines are ssh commands: **Terminal here**
   opens a shell in its folder there, **Resume in Pi** resumes it in that folder's tmux session
-  with the tunnel, so it shows here live again). For a workspace: **Terminal here**, then start or continue each installed CLI
+  with the tunnel, so it shows here live again; while it runs, **Reattach** goes back into that
+  tmux session, for when its window was closed). A running session's resume line stays visible to
+  copy, with a note that it's running. For a workspace: **Terminal here**, then start or continue each installed CLI
   (**Start Pi**, `pi -c`, **Start Claude Code**, **Start Codex**, `codex resume --last`), and
   **Copy folder path**. For a saved session: resume it in its own CLI (`pi --session <id>`,
   `claude --resume <id>`, `codex resume <id>`). For a running session the menu offers

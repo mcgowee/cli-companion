@@ -20,7 +20,7 @@ import { groupByWorkspace, workspaceKey } from "./session-index.mjs";
 import { lastExchange, localModels, ollamaUrl, SuggestError, suggestionCache, suggestReplies } from "./suggest.mjs";
 import { addFavorite, FavoriteError, loadFavorites, removeFavorite } from "./favorites.mjs";
 import { ColorError, loadColors, setColor } from "./colors.mjs";
-import { addComputer, addRecent, markStarted, sshResumeCommand, sshShellCommand, rememberRemoteSession, startedHere, checkFolder, checkHost, checkQuery, checkRemoteSessionFile, EnvError, keyPushScript, loadStart, LOCAL_ID, localRoots, parseRemoteDir, parseRemoteRecent, parseRemoteSearch, pickComputer, recentFolders, recentFor, remoteDirScript, remoteListScript, remoteReadScript, remoteRecentScript, remoteSearchScript, remoteTestScript, removeComputer, searchLocal, setPin, sshPiCommand, testResults, tildePath, tunnelPort, updateStart, windowsFolderDialogScript } from "./envs.mjs";
+import { addComputer, addRecent, markStarted, sshAttachCommand, sshResumeCommand, sshShellCommand, rememberRemoteSession, startedHere, checkFolder, checkHost, checkQuery, checkRemoteSessionFile, EnvError, keyPushScript, loadStart, LOCAL_ID, localRoots, parseRemoteDir, parseRemoteRecent, parseRemoteSearch, pickComputer, recentFolders, recentFor, remoteDirScript, remoteListScript, remoteReadScript, remoteRecentScript, remoteSearchScript, remoteTestScript, removeComputer, searchLocal, setPin, sshPiCommand, testResults, tildePath, tunnelPort, updateStart, windowsFolderDialogScript } from "./envs.mjs";
 import { APP_FILE_HEADERS, APP_MIME, exchangeText, fileKind, findApps, resolveAppFile, urlName } from "./apps.mjs";
 import { createReadStream, existsSync as fileExists } from "node:fs";
 import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard, setDashboardStart } from "./dashboards.mjs";
@@ -657,10 +657,13 @@ function launchOptions(target) {
       ...(disabled ? { disabled } : {}),
     });
     return [
+      // Still running: it sits in the folder's tmux session there (Start Pi put it in one), so a
+      // closed window or a dropped connection doesn't lose it; this goes back in.
+      ...(target.running ? [remoteOption({ action: "attach", label: `Reattach (tmux on ${name})`, line: sshAttachCommand(host, target.cwd) })] : []),
       remoteOption({ action: "terminal", label: `Terminal here (on ${name})`, line: sshShellCommand(host, target.cwd) }),
       remoteOption(
         { action: "resume", label: `Resume in ${target.source.label}`, line: sshResumeCommand(host, target.cwd, target.sessionId, { port: PORT }) },
-        target.running ? `Already running in a terminal on ${name}. Switch to that window.` : undefined,
+        target.running ? `Already running on ${name}. Switch to that window, or use Reattach above.` : undefined,
       ),
     ];
   }
