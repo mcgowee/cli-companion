@@ -20,7 +20,7 @@ import { groupByWorkspace, workspaceKey } from "./session-index.mjs";
 import { lastExchange, localModels, ollamaUrl, SuggestError, suggestionCache, suggestReplies } from "./suggest.mjs";
 import { addFavorite, FavoriteError, loadFavorites, removeFavorite } from "./favorites.mjs";
 import { ColorError, loadColors, setColor } from "./colors.mjs";
-import { addComputer, addRecent, markStarted, rememberRemoteSession, startedHere, checkFolder, checkHost, checkQuery, checkRemoteSessionFile, EnvError, keyPushScript, loadStart, LOCAL_ID, localRoots, parseRemoteDir, parseRemoteRecent, parseRemoteSearch, pickComputer, recentFolders, recentFor, remoteDirScript, remoteListScript, remoteReadScript, remoteRecentScript, remoteSearchScript, remoteTestScript, removeComputer, searchLocal, setPin, sshPiCommand, testResults, tildePath, tunnelPort, updateStart, windowsFolderDialogScript } from "./envs.mjs";
+import { addComputer, addRecent, markStarted, sshResumeCommand, sshShellCommand, rememberRemoteSession, startedHere, checkFolder, checkHost, checkQuery, checkRemoteSessionFile, EnvError, keyPushScript, loadStart, LOCAL_ID, localRoots, parseRemoteDir, parseRemoteRecent, parseRemoteSearch, pickComputer, recentFolders, recentFor, remoteDirScript, remoteListScript, remoteReadScript, remoteRecentScript, remoteSearchScript, remoteTestScript, removeComputer, searchLocal, setPin, sshPiCommand, testResults, tildePath, tunnelPort, updateStart, windowsFolderDialogScript } from "./envs.mjs";
 import { APP_FILE_HEADERS, APP_MIME, exchangeText, fileKind, findApps, resolveAppFile, urlName } from "./apps.mjs";
 import { createReadStream, existsSync as fileExists } from "node:fs";
 import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard, setDashboardStart } from "./dashboards.mjs";
@@ -597,6 +597,14 @@ function gitFor(root) {
 /** The folder (and session) a menu is for; only folders and sessions from the index. */
 async function launchTarget(kind, id) {
   await refreshSaved();
+  const remote = kind === "session" && !savedById.has(id) ? viaOf(id) : undefined;
+  if (remote) {
+    // A Pi session on an SSH computer (live through the tunnel, or remembered): its folder is there.
+    const live = sessions.get(id);
+    const cwd = live?.cwd ?? remembered.get(id)?.cwd;
+    if (!cwd) throw new LaunchError("Unknown session.");
+    return { kind, remote, cwd, source: sourceById("pi"), sessionId: id, running: Boolean(live && !live.ended) };
+  }
   if (kind === "session") {
     const meta = savedById.get(id);
     if (!meta?.cwd) throw new LaunchError("Unknown session.");
@@ -635,6 +643,27 @@ async function existingDir(dir) {
 }
 
 function launchOptions(target) {
+  if (target.remote) {
+    // On an SSH computer: the lines are ssh commands (paste into PowerShell or a POSIX shell);
+    // Open runs them like Start Pi does (Windows: PowerShell, encoded, Windows' own ssh.exe).
+    const host = target.remote;
+    const name = host.split("@").pop();
+    const remoteOption = ({ action, label, line }, disabled) => ({
+      action,
+      label,
+      command: line,
+      run: process.platform === "win32" ? `& '${sshExe()}'${line.slice(3)}` : line,
+      copy: line,
+      ...(disabled ? { disabled } : {}),
+    });
+    return [
+      remoteOption({ action: "terminal", label: `Terminal here (on ${name})`, line: sshShellCommand(host, target.cwd) }),
+      remoteOption(
+        { action: "resume", label: `Resume in ${target.source.label}`, line: sshResumeCommand(host, target.cwd, target.sessionId, { port: PORT }) },
+        target.running ? `Already running in a terminal on ${name}. Switch to that window.` : undefined,
+      ),
+    ];
+  }
   const make = ({ action, label, command }, disabled) => ({
     action,
     label,
@@ -1780,9 +1809,14 @@ const server = createServer(async (req, res) => {
           // (if it's in one) names the step-2 target, so "Terminal here" attaches to it; otherwise
           // the tmux session is named after the folder.
           const headless = isHeadless();
-          const options = launchOptions(target);
+          const options = launchOptions(target).map(({ run, ...o }) => o);
           const sshHost = settings.sshHost || defaultSshHost();
           let extra = {};
+          if (target.remote) {
+            // Shown as "aegis: ~/projects/x"; the lines already say where to go.
+            sendJson(res, 200, { cwd: `${target.remote.split("@").pop()}: ${target.cwd}`, canOpen: !headless, platform: process.platform, options });
+            return;
+          }
           if (headless) {
             const name = (target.running && tmuxSessionOf(target.pid)) || tmuxName(target.cwd);
             for (const o of options) o.copy = o.disabled ? "" : tmuxRunLine(name, target.cwd, o.command);
@@ -1795,7 +1829,8 @@ const server = createServer(async (req, res) => {
         const option = launchOptions(target).find((o) => o.action === params.action);
         if (!option) throw new LaunchError("That isn't available here.");
         if (option.disabled) throw new LaunchError(option.disabled);
-        await openTerminal(target.cwd, option.command);
+        if (target.remote) await openTerminal(homedir(), option.run, { typed: true });
+        else await openTerminal(target.cwd, option.command);
         sendJson(res, 200, { ok: true, opened: option.label });
       } catch (error) {
         sendJson(res, error instanceof LaunchError ? 400 : 500, { error: error.message });

@@ -235,3 +235,15 @@ test("Recent lists sessions started from here: Pi in the started folder, a few m
   markStarted(state, ["b", "a", "bad id"]);
   assert.deepEqual(state.started, ["b", "a"]);
 });
+
+test("terminal menu on an SSH computer: a shell in the folder, and resume with the tunnel", async () => {
+  const { sshShellCommand, sshResumeCommand, tunnelPort } = await import("../server/envs.mjs");
+  assert.equal(sshShellCommand("aegis", "/home/me/projects/charloop"), "ssh -t aegis 'cd /home/me/projects/charloop && exec bash -l'");
+  const t = tunnelPort("aegis");
+  const line = sshResumeCommand("aegis", "~/projects/charloop", "01a1c314-c715-74b4-a6a9-2af3aefb6c7e", { port: 30143 });
+  assert.ok(line.startsWith(`ssh -t -R ${t}:127.0.0.1:30143 aegis 'tmux has-session -t =charloop`));
+  assert.ok(line.endsWith(String.raw`bash -lc pi\ --session\ 01a1c314-c715-74b4-a6a9-2af3aefb6c7e'`));
+  assert.equal(line.split("'").length, 3); // one quoted part: nothing inside breaks it
+  assert.throws(() => sshResumeCommand("aegis", "~/x", "a b; rm -rf ~"));
+  assert.throws(() => sshShellCommand("aegis", "~/x; rm -rf ~"));
+});

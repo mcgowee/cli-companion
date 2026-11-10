@@ -503,7 +503,7 @@
     void refreshGit();
 
     const row = ({ s, ws }) =>
-      `<div class="row-wrap">${sessionRow(s, ws.name)}${s.via ? "" : termButton("session", s.id, isActive(s) ? `Open a terminal for ${rowTitle(s)}` : `Resume ${rowTitle(s)} in a terminal`)}${moreButton(s)}</div>`;
+      `<div class="row-wrap">${sessionRow(s, ws.name)}${termButton("session", s.id, isActive(s) ? `Open a terminal for ${rowTitle(s)}` : `Resume ${rowTitle(s)} in a terminal`)}${moreButton(s)}</div>`;
     const html = `<div class="section-head side-section">Active${activeRows.length ? ` <span class="ws-count">${activeRows.length}</span>` : ""}</div>
       <div class="active-list">${
         activeRows.length ? activeRows.map(row).join("") : `<p class="hint">${filter ? "No running sessions match." : "No running sessions."}</p>`

@@ -262,14 +262,37 @@ export function remoteSessionName(host, path) {
  * so ~/.local/bin is on PATH. Plain words only (see the checks above); the ~ is left for the
  * remote shell to expand.
  */
-export function remotePiLine(host, path, { tunnel = 0 } = {}) {
+export function remotePiLine(host, path, { tunnel = 0, sessionId } = {}) {
   const h = checkHost(host);
   const p = checkRemotePath(path);
   const s = remoteSessionName(h, p);
   // With a tunnel: Pi's companion extension there reports to the tunnel's port, with this
   // computer's key (kept apart from that computer's own companion, in TUNNEL_HOME).
   const e = tunnel ? ` -e CLI_COMPANION_PORT=${Number(tunnel)} -e CLI_COMPANION_HOME=${TUNNEL_HOME}` : "";
-  return `tmux has-session -t =${s} 2>/dev/null && tmux new-window${e} -t =${s}: -c ${p} bash -lc pi; tmux new-session${e} -A -s ${s} -c ${p} bash -lc pi`;
+  // Resume: `pi --session <id>` as one word for bash -lc, its spaces escaped (no quotes, so the
+  // line stays inside the outer single quotes in PowerShell and POSIX shells alike).
+  const pi = sessionId === undefined ? "pi" : `pi\\ --session\\ ${checkRemoteSessionId(sessionId)}`;
+  return `tmux has-session -t =${s} 2>/dev/null && tmux new-window${e} -t =${s}: -c ${p} bash -lc ${pi}; tmux new-session${e} -A -s ${s} -c ${p} bash -lc ${pi}`;
+}
+
+/** A Pi session id for a resume line on an SSH computer: letters, digits and dashes only. */
+export function checkRemoteSessionId(id) {
+  const s = String(id ?? "");
+  if (!/^[\w-]{1,80}$/.test(s)) throw new EnvError("That isn't a session id.");
+  return s;
+}
+
+/** The terminal menu's "Terminal here" for a folder on an SSH computer: a login shell there. */
+export function sshShellCommand(host, path) {
+  return `ssh -t ${checkHost(host)} 'cd ${checkRemotePath(path)} && exec bash -l'`;
+}
+
+/** The terminal menu's "Resume in Pi" for a session that ran on an SSH computer (with the tunnel when `port`). */
+export function sshResumeCommand(host, path, sessionId, { port = 0 } = {}) {
+  const p = Number(port);
+  if (!p) return `ssh -t ${checkHost(host)} '${remotePiLine(host, path, { sessionId })}'`;
+  const t = tunnelPort(host);
+  return `ssh -t -R ${t}:127.0.0.1:${p} ${checkHost(host)} '${remotePiLine(host, path, { tunnel: t, sessionId })}'`;
 }
 
 /* ── Live SSH sessions in this companion: a reverse tunnel ── */
