@@ -54,9 +54,10 @@
         .map(
           (o, i) => `<div class="launch-item${o.disabled ? " disabled" : ""}" role="none">
           <div class="launch-text"><span class="launch-label">${esc(o.label)}</span>
-            <code class="launch-cmd">${esc(o.disabled || o.copy)}</code></div>
+            ${o.copy ? `<code class="launch-cmd">${esc(o.copy)}</code>` : ""}
+            ${o.disabled ? `<span class="launch-note">${esc(o.disabled)}</span>` : ""}</div>
           ${data.canOpen && !o.disabled ? `<button class="btn primary small" type="button" role="menuitem" data-open="${i}">Open</button>` : ""}
-          ${o.disabled ? "" : `<button class="btn small" type="button" role="menuitem" data-copy-line="${i}">Copy</button>`}
+          ${o.copy ? `<button class="btn small" type="button" role="menuitem" data-copy-line="${i}">Copy</button>` : ""}
         </div>`,
         )
         .join("")}
@@ -126,7 +127,9 @@
     if (copyBtn) {
       const o = current.data.options[Number(copyBtn.dataset.copyLine)];
       const where = current.data.platform === "win32" ? "PowerShell" : "your terminal";
-      say((await copy(o.copy)) ? `Copied ✓ Paste it into ${where}.` : "Copy failed.", "ok");
+      const ok = await copy(o.copy);
+      // Running: resuming it in a second terminal would put it in two places at once.
+      say(ok ? (o.disabled ? `Copied ✓ It's still running, so close that one before you paste it into ${where}.` : `Copied ✓ Paste it into ${where}.`) : "Copy failed.", "ok");
       return;
     }
     if (openBtn) {
