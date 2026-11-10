@@ -46,7 +46,7 @@ export function remoteAllowed(method, pathname, remote = REMOTE_DEFAULTS) {
   // The Terminal tab (running commands, reading their output) is for the computer only.
   if (pathname === "/api/run" || pathname.startsWith("/api/run/") || pathname === "/api/runs") return false;
   // The folder list can run ssh, and Choose… opens a window on the computer: computer only too.
-  if (pathname === "/api/envs/folders" || pathname === "/api/envs/choose-folder") return false;
+  if (pathname === "/api/envs/folders" || pathname === "/api/envs/choose-folder" || pathname === "/api/envs/remote-dir") return false;
   if (method === "GET" || method === "HEAD") return true;
   const needs = REMOTE_WRITES[pathname];
   return Boolean(needs && remote[needs]);

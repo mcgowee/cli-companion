@@ -55,7 +55,9 @@ next to it:
   the folders your sessions ran in, newest first (for SSH, the folders in `~/projects` there,
   two levels down, most recently changed first); a search box (part of a name searches this
   computer's home and workspace top folders, or the SSH computer's home, 4 levels down; a full
-  path is used as is); and **Choose…**, this computer's own folder window. New session opens a terminal
+  path is used as is); and **Choose…**: this computer's own folder window, or for SSH a **Select remote folder**
+  window (a path box with Go, a breadcrumb, Filter folders, and the folders there one level at a
+  time, listed over the same no-password ssh). New session opens a terminal
   running Pi there; for SSH, inside a tmux session named after the folder (a new Pi window if the
   session is already running), so it survives a dropped connection. Sessions on the other
   computer show in its own companion, not this one. Kept in `~/.cli-companion/environments.json`.

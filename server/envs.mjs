@@ -265,6 +265,45 @@ export function windowsFolderDialogScript(start) {
   ].join("\n");
 }
 
+/* ── Select remote folder: browse an SSH computer one folder at a time ── */
+
+/** A folder to browse there: ~, /, or ~/… or /… made of plain names. */
+const BROWSE_PATH = /^(~|\/|~(\/[\w][\w.-]{0,99}){1,30}|(\/[\w][\w.-]{0,99}){1,30})$/;
+const PLAIN_NAME = /^[\w][\w.-]{0,99}$/;
+
+export function checkBrowsePath(path) {
+  const p = String(path ?? "").trim().replace(/(.)\/+$/, "$1") || "~";
+  if (!BROWSE_PATH.test(p) || p.split("/").some((part) => part === "." || part === "..")) {
+    throw new EnvError("Folder names here are letters, digits and . _ - (a path like ~/projects or /srv/app).");
+  }
+  return p;
+}
+
+/**
+ * The fixed remote script that lists one folder's subfolders: prints "H<home>", "P<the folder,
+ * resolved>", then "D<name>" per subfolder (hidden ones left out), or "E" if it can't go there.
+ */
+export function remoteDirScript(path) {
+  const p = checkBrowsePath(path);
+  return `printf 'H%s\\n' "$HOME"; cd ${p} 2>/dev/null || { echo E; exit 0; }; printf 'P%s\\n' "$PWD"; find . -mindepth 1 -maxdepth 1 -type d ! -name '.*' -printf 'D%f\\n' 2>/dev/null | sort -f | head -500`;
+}
+
+/** Its output → { home, path, folders, error? }; names that aren't plain are left out. */
+export function parseRemoteDir(text) {
+  const lines = String(text ?? "").split(/\r?\n/);
+  const home = lines.find((l) => l.startsWith("H"))?.slice(1) ?? "";
+  if (lines.includes("E")) return { home, path: "", folders: [], error: "That folder isn't there (or can't be opened)." };
+  const path = lines.find((l) => l.startsWith("P"))?.slice(1) ?? "";
+  const folders = lines.filter((l) => l.startsWith("D")).map((l) => l.slice(1)).filter((n) => PLAIN_NAME.test(n));
+  return { home, path, folders };
+}
+
+/** An absolute path there, written with ~ when it's under the home folder (how environments keep it). */
+export function tildePath(path, home) {
+  if (home && (path === home || path.startsWith(`${home}/`))) return `~${path.slice(home.length)}`;
+  return path;
+}
+
 /** Its output → [{ path, name }], shallow first; anything that isn't a plain ~/path left out. */
 export function parseRemoteSearch(text) {
   return String(text ?? "")

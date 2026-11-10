@@ -117,3 +117,22 @@ test("environments: This computer always there, add local/ssh, pick, remove, sur
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("Select remote folder: plain paths only, a fixed script, its output parsed", async () => {
+  const { checkBrowsePath, remoteDirScript, parseRemoteDir, tildePath } = await import("../server/envs.mjs");
+  assert.equal(checkBrowsePath(""), "~");
+  assert.equal(checkBrowsePath("/"), "/");
+  assert.equal(checkBrowsePath("/home/me/"), "/home/me");
+  assert.equal(checkBrowsePath("~/projects"), "~/projects");
+  for (const bad of ["projects", "/a/../etc", "~/./x", "/a b", "/a;b", "$(x)", "/a/'b'", "~user"]) assert.throws(() => checkBrowsePath(bad), EnvError, bad);
+  const script = remoteDirScript("/home/me");
+  assert.match(script, /cd \/home\/me 2>\/dev\/null/);
+  assert.match(script, /-maxdepth 1 -type d ! -name '\.\*'/);
+  const out = parseRemoteDir("H/home/me\nP/home/me/projects\nDpi\nDweird name\nDapp\n");
+  assert.deepEqual(out, { home: "/home/me", path: "/home/me/projects", folders: ["pi", "app"] });
+  assert.equal(parseRemoteDir("H/home/me\nE\n").error.length > 0, true);
+  assert.equal(tildePath("/home/me/projects", "/home/me"), "~/projects");
+  assert.equal(tildePath("/home/me", "/home/me"), "~");
+  assert.equal(tildePath("/home/meow", "/home/me"), "/home/meow");
+  assert.equal(tildePath("/srv", "/home/me"), "/srv");
+});

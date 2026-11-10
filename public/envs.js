@@ -3,7 +3,8 @@
 // the "Workspaces" box at the top, opens the picker: search, Local and SSH groups, a check on the
 // picked one, × to remove one, and + New environment — a dialog with Local / SSH tabs, a name,
 // (SSH) the computer, and a folder: + Add opens a list to search, with your recent folders (or the
-// ones in ~/projects over SSH) and Choose…, this computer's own folder window.
+// ones in ~/projects over SSH) and Choose…: this computer's own folder window, or for SSH a
+// "Select remote folder" window that lists the folders there one level at a time.
 // The page names an environment id; the server builds what runs (server/envs.mjs). Never from
 // the phone.
 (function () {
@@ -241,7 +242,7 @@
     } else if (drop.items) {
       list = `<div class="env-suggest-msg">${drop.q.trim() ? `No folder named like “${esc(drop.q.trim())}”.` : "No folders yet — search, or Choose…"}</div>`;
     } else list = "";
-    const choose = f.kind === "local" && drop.canChoose ? `<div class="env-drop-sep"></div><button type="button" class="env-drop-item env-drop-choose" data-choose>${folderIcon}<span>Choose…</span></button>` : "";
+    const choose = (f.kind === "ssh" ? f.host.trim() : drop.canChoose) ? `<div class="env-drop-sep"></div><button type="button" class="env-drop-item env-drop-choose" data-choose>${folderIcon}<span>Choose…</span></button>` : "";
     return `<div class="env-drop" role="dialog" aria-label="Pick a folder">
       <input class="env-drop-search" type="search" value="${esc(drop.q)}" placeholder="${f.kind === "ssh" ? "Search folders there, or type ~/path" : "Search folders, or paste a full path"}" aria-label="Search folders" spellcheck="false" autocomplete="off">
       <div class="env-drop-list">${list}</div>${choose}
@@ -453,6 +454,13 @@
       if (x) useFolder(x.path, x.name);
       return;
     }
+    if (t.closest("[data-choose]") && f.kind === "ssh") {
+      readFields();
+      drop.open = false;
+      rerender();
+      openBrowser();
+      return;
+    }
     if (t.closest("[data-choose]")) {
       readFields();
       const btn = t.closest("[data-choose]");
@@ -500,6 +508,143 @@
     }
   });
 
+  /* ── Select remote folder (Choose… on the SSH tab) ── */
+
+  const rbEl = document.createElement("div");
+  rbEl.className = "env-overlay env-rb-overlay";
+  rbEl.hidden = true;
+  document.body.append(rbEl);
+  // path: the folder shown (absolute once listed); tilde: the same with ~; input: the path box.
+  const rb = { host: "", path: "~", tilde: "", home: "", input: "", folders: [], filter: "", loading: false, error: "", seq: 0 };
+  const homeIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5M6.5 10v9h11v-9"/></svg>`;
+  const parentOf = (p) => (p === "/" ? "" : p.replace(/\/[^/]+$/, "") || "/");
+
+  function crumbsHtml() {
+    if (!rb.path.startsWith("/")) return "";
+    const parts = rb.path.split("/").filter(Boolean);
+    const links = parts.map((name, i) => {
+      const to = `/${parts.slice(0, i + 1).join("/")}`;
+      return i === parts.length - 1 ? `<span class="env-rb-here">${esc(name)}</span>` : `<button type="button" class="env-rb-crumb" data-rb-go="${esc(to)}">${esc(name)}</button>`;
+    });
+    return `<nav class="env-rb-crumbs" aria-label="Where you are">
+      <button type="button" class="env-rb-crumb env-rb-home" data-rb-go="~" title="Home folder (${esc(rb.home || "~")})" aria-label="Home folder">${homeIcon}</button>
+      <button type="button" class="env-rb-crumb" data-rb-go="/" title="/">/</button>${links.map((l) => `<span class="env-rb-sep">›</span>${l}`).join("")}</nav>`;
+  }
+
+  function renderBrowser() {
+    const q = rb.filter.trim().toLowerCase();
+    const shown = rb.folders.filter((n) => !q || n.toLowerCase().includes(q));
+    const up = parentOf(rb.path);
+    let list;
+    if (rb.loading) list = `<div class="env-suggest-msg">Looking on ${esc(rb.host)}…</div>`;
+    else {
+      const rows = [];
+      if (up && rb.path.startsWith("/") && !q) rows.push(`<button type="button" class="env-drop-item env-rb-item" data-rb-go="${esc(up)}">${folderIcon}<span>..</span></button>`);
+      for (const n of shown) {
+        const to = `${rb.path === "/" ? "" : rb.path}/${n}`;
+        rows.push(`<button type="button" class="env-drop-item env-rb-item" data-rb-go="${esc(to)}" title="Open ${esc(n)}">${folderIcon}<span>${esc(n)}</span></button>`);
+      }
+      if (!shown.length && !rb.error) rows.push(`<div class="env-suggest-msg">${q ? "No folder here matches." : "No folders in here."}</div>`);
+      list = rows.join("");
+    }
+    rbEl.innerHTML = `<div class="env-dialog env-rb" role="dialog" aria-modal="true" aria-labelledby="env-rb-title">
+      <div class="env-dlg-head"><h2 id="env-rb-title">Select remote folder</h2>
+        <button type="button" class="icon-btn env-dlg-x" data-rb-close aria-label="Close" title="Close">✕</button></div>
+      <form class="env-rb-pathrow" data-rb-form>
+        <input class="env-drop-search env-rb-path" name="rbpath" value="${esc(rb.input)}" aria-label="Folder path on ${esc(rb.host)}" spellcheck="false" autocomplete="off">
+        <button type="submit" class="btn">Go</button>
+      </form>
+      ${crumbsHtml()}
+      <input class="env-drop-search env-rb-filter" type="search" value="${esc(rb.filter)}" placeholder="Filter folders" aria-label="Filter folders" spellcheck="false" autocomplete="off">
+      ${rb.error ? `<p class="env-form-msg">${esc(rb.error)}</p>` : ""}
+      <div class="env-drop-list env-rb-list">${list}</div>
+      <div class="env-dlg-foot">
+        <button type="button" class="btn" data-rb-close>Cancel</button>
+        <button type="button" class="btn primary" data-rb-select${rb.loading || !rb.tilde ? " disabled" : ""}>Select folder</button>
+      </div>
+    </div>`;
+  }
+
+  async function browse(path) {
+    const seq = ++rb.seq;
+    rb.loading = true;
+    rb.error = "";
+    rb.filter = "";
+    renderBrowser();
+    rbEl.querySelector(".env-rb-filter")?.focus();
+    try {
+      const params = new URLSearchParams({ host: rb.host, path });
+      const res = await fetch(`/api/envs/remote-dir?${params}`, { cache: "no-store", headers: page });
+      const out = await res.json().catch(() => ({}));
+      if (seq !== rb.seq) return;
+      if (!res.ok) throw new Error(out.error || `HTTP ${res.status}`);
+      Object.assign(rb, { path: out.path, tilde: out.tilde, home: out.home, input: out.path, folders: out.folders });
+    } catch (err) {
+      if (seq !== rb.seq) return;
+      rb.error = err.message; // keep showing the last good folder
+      rb.input = path;
+    }
+    rb.loading = false;
+    if (!rbEl.hidden) {
+      renderBrowser();
+      rbEl.querySelector(".env-rb-filter")?.focus();
+    }
+  }
+
+  function openBrowser() {
+    Object.assign(rb, { host: f.host.trim(), path: "~", tilde: "", home: "", input: f.path || "~", folders: [], filter: "", error: "" });
+    rbEl.hidden = false;
+    void browse(f.path || "~");
+  }
+
+  function closeBrowser() {
+    rb.seq++;
+    rb.loading = false;
+    rbEl.hidden = true;
+    rbEl.innerHTML = "";
+    overlay.querySelector("[data-add-folder]")?.focus();
+  }
+
+  rbEl.addEventListener("click", (event) => {
+    const t = event.target;
+    if (t === rbEl || t.closest("[data-rb-close]")) {
+      closeBrowser();
+      return;
+    }
+    const go = t.closest("[data-rb-go]");
+    if (go && !rb.loading) {
+      void browse(go.dataset.rbGo);
+      return;
+    }
+    if (t.closest("[data-rb-select]") && rb.tilde) {
+      const path = rb.tilde;
+      closeBrowser();
+      useFolder(path, path === "~" ? "" : path.split("/").pop());
+    }
+  });
+  rbEl.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const v = rbEl.querySelector(".env-rb-path")?.value.trim();
+    if (v) void browse(v);
+  });
+  rbEl.addEventListener("input", (event) => {
+    if (event.target.classList.contains("env-rb-path")) rb.input = event.target.value;
+    if (!event.target.classList.contains("env-rb-filter")) return;
+    rb.filter = event.target.value;
+    const caret = event.target.selectionStart;
+    renderBrowser();
+    const box = rbEl.querySelector(".env-rb-filter");
+    box.focus();
+    box.setSelectionRange(caret, caret);
+  });
+  rbEl.addEventListener("keydown", (event) => {
+    // Enter in the filter opens the first folder that matches.
+    if (event.key === "Enter" && event.target.classList.contains("env-rb-filter")) {
+      event.preventDefault();
+      if (rb.filter.trim()) rbEl.querySelector(".env-rb-item")?.click();
+    }
+  });
+
   /* ── closing ── */
 
   document.addEventListener(
@@ -513,7 +658,8 @@
   );
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
-    if (!overlay.hidden) {
+    if (!rbEl.hidden) closeBrowser();
+    else if (!overlay.hidden) {
       if (drop.open) {
         drop.open = false;
         rerender();

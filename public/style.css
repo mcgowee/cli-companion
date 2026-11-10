@@ -661,6 +661,22 @@ body.resizing { cursor: col-resize; user-select: none; }
 .env-form-msg { margin: 0; font-size: 12.5px; color: var(--bad); }
 .env-form-msg:empty { display: none; }
 .env-dlg-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+/* Select remote folder (Choose… on the SSH tab): path + Go, breadcrumb, filter, folder list. */
+.env-rb-overlay { z-index: 61; }
+.env-rb { display: flex; flex-direction: column; gap: 10px; width: min(560px, 100%); }
+.env-rb .env-dlg-head { margin-bottom: 0; }
+.env-rb-pathrow { display: flex; gap: 8px; }
+.env-rb-pathrow .env-drop-search { flex: 1; min-width: 0; }
+.env-rb-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; font-size: 13px; color: var(--muted); }
+.env-rb-crumb { all: unset; cursor: pointer; padding: 2px 5px; border-radius: 5px; }
+.env-rb-crumb:hover, .env-rb-crumb:focus-visible { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--text); }
+.env-rb-home svg { width: 15px; height: 15px; vertical-align: -3px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linejoin: round; stroke-linecap: round; }
+.env-rb-sep { padding: 0 1px; }
+.env-rb-here { padding: 2px 5px; color: var(--text); font-weight: 600; }
+.env-rb-list { height: min(320px, 45vh); max-height: none; border: 1px solid var(--line); border-radius: 9px; }
+.env-rb-item { flex-direction: row; align-items: center; gap: 9px; }
+.env-rb-item svg { width: 16px; height: 16px; flex: none; fill: none; stroke: var(--muted); stroke-width: 1.8; stroke-linejoin: round; }
+.env-rb-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The Open / Copy menu */
 .launch-menu { position: fixed; z-index: 50; width: min(380px, calc(100vw - 16px)); padding: 6px; border: 1px solid var(--line);
   border-radius: 10px; background: var(--panel); box-shadow: 0 10px 30px rgb(0 0 0 / 0.28); font-size: 12.5px; }

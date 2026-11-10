@@ -20,7 +20,7 @@ import { groupByWorkspace, workspaceKey } from "./session-index.mjs";
 import { lastExchange, localModels, ollamaUrl, SuggestError, suggestionCache, suggestReplies } from "./suggest.mjs";
 import { addFavorite, FavoriteError, loadFavorites, removeFavorite } from "./favorites.mjs";
 import { ColorError, loadColors, setColor } from "./colors.mjs";
-import { addEnv, checkHost, checkQuery, EnvError, loadEnvs, localRoots, parseRemoteSearch, pickEnv, recentFolders, remoteListScript, remoteSearchScript, removeEnv, searchLocal, sshPiCommand, windowsFolderDialogScript } from "./envs.mjs";
+import { addEnv, checkHost, checkQuery, EnvError, loadEnvs, localRoots, parseRemoteDir, parseRemoteSearch, pickEnv, recentFolders, remoteDirScript, remoteListScript, remoteSearchScript, removeEnv, searchLocal, sshPiCommand, tildePath, windowsFolderDialogScript } from "./envs.mjs";
 import { APP_FILE_HEADERS, APP_MIME, exchangeText, fileKind, findApps, resolveAppFile, urlName } from "./apps.mjs";
 import { createReadStream, existsSync as fileExists } from "node:fs";
 import { addDashboard, DashboardError, isLoopbackUrl, loadDashboards, removeDashboard, setDashboardStart } from "./dashboards.mjs";
@@ -653,10 +653,15 @@ function sshExe() {
  * q, or (no q) the ones in ~/projects. Never prompts (BatchMode).
  */
 function remoteFolderSearch(host, q) {
-  return new Promise((resolveList, reject) => {
+  return runRemote(host, q ? remoteSearchScript(q) : remoteListScript()).then(parseRemoteSearch);
+}
+
+/** Run one of envs.mjs's fixed scripts on an SSH computer; resolves with what it printed. Never prompts. */
+function runRemote(host, script) {
+  return new Promise((resolveRun, reject) => {
     execFile(
       sshExe(),
-      ["-o", "BatchMode=yes", "-o", "ConnectTimeout=8", checkHost(host), q ? remoteSearchScript(q) : remoteListScript()],
+      ["-o", "BatchMode=yes", "-o", "ConnectTimeout=8", checkHost(host), script],
       { encoding: "utf8", timeout: 20000, windowsHide: true, maxBuffer: 1024 * 1024 },
       (error, stdout, stderr) => {
         if (error) {
@@ -664,7 +669,7 @@ function remoteFolderSearch(host, q) {
           reject(new EnvError(`Couldn't reach ${host} over SSH${why ? ` (${why})` : ""}. Check that \`ssh ${host}\` works in a terminal without asking for a password.`));
           return;
         }
-        resolveList(parseRemoteSearch(stdout));
+        resolveRun(stdout);
       },
     );
   });
@@ -1668,6 +1673,22 @@ const server = createServer(async (req, res) => {
         const from = start && isAbsolute(start) && (await stat(start).catch(() => null))?.isDirectory() ? start : homedir();
         const path = await chooseFolder(from);
         sendJson(res, 200, path ? { path } : { cancelled: true });
+      } catch (error) {
+        sendJson(res, error instanceof EnvError ? 400 : 500, { error: error.message });
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/envs/remote-dir") {
+      // Select remote folder: one folder's subfolders on the SSH computer being added
+      // (?host=&path=, path ~ by default). Page header: it runs ssh. Computer only (remote.mjs).
+      if (req.headers["x-pi-companion-page"] !== "1") {
+        res.writeHead(403).end();
+        return;
+      }
+      try {
+        const out = parseRemoteDir(await runRemote(url.searchParams.get("host") ?? "", remoteDirScript(url.searchParams.get("path") || "~")));
+        sendJson(res, out.error ? 404 : 200, { ...out, tilde: out.path ? tildePath(out.path, out.home) : "" });
       } catch (error) {
         sendJson(res, error instanceof EnvError ? 400 : 500, { error: error.message });
       }
