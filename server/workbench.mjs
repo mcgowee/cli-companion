@@ -8,9 +8,9 @@ import { execFile } from "node:child_process";
 import { mkdir, open, readdir, realpath, stat } from "node:fs/promises";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-const MAX_TEXT_BYTES = 1024 * 1024;
+export const MAX_TEXT_BYTES = 1024 * 1024;
 const MAX_DIFF_BYTES = 2 * 1024 * 1024;
-const IMAGE_TYPES = {
+export const IMAGE_TYPES = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
@@ -19,7 +19,7 @@ const IMAGE_TYPES = {
   ".svg": "image/svg+xml",
   ".bmp": "image/bmp",
 };
-const HIDDEN_NAMES = new Set([".git"]);
+export const HIDDEN_NAMES = new Set([".git"]);
 
 export class WorkbenchError extends Error {
   constructor(status, message) {

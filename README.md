@@ -63,7 +63,8 @@ next to it:
   reverse tunnel (`-R <port>:127.0.0.1:<this companion's port>`, the port fixed per computer,
   31000–31899) and starts Pi with `CLI_COMPANION_PORT` set to it, so Pi's companion extension
   there reports here: the session shows in **Active** with the computer's name, live, and you can
-  send to it; its history is read over ssh (kept in memory). It shows while the ssh connection is
+  send to it; its history is read over ssh (kept in memory), and its Files tab lists and opens its
+  folder there over ssh (read-only, inside that folder; Review and New folder aren't there yet). It shows while the ssh connection is
   open (it goes 60 s after Pi falls silent). Through the tunnel only the bridge (`/ingest`,
   `/bridge/*`) answers, with this computer's key, which New session and the Copy button (beside
   New session: the same line, to paste into a terminal yourself) put on that computer first.

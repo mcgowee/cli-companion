@@ -35,6 +35,7 @@ import { classifyRequest, loadRemote, remoteAllowed, saveRemote, serveOff, serve
 import { loadSettings, readSettingsStrict, saveSettings, SettingsError, settingsStamp, sourceEnv, validateSettings } from "./settings.mjs";
 import { execFile, execFileSync, spawn } from "node:child_process";
 import { parseEntries } from "./session-file.mjs";
+import { parseRemoteFile, parseRemoteList, remoteFileMax, remoteFileScript, remoteListScript as remoteFilesScript } from "./remote-files.mjs";
 import { isProcessAlive } from "./fsutil.mjs";
 import { createSources, describeSources, nativeId, sourceForId } from "./sources/index.mjs";
 import { APP_ID, accessKey, companionPort, ensureServer, isPortUp, migrateStateFile, removeRuntimeFile, shutdownPlan, stateDir, writeRuntimeFile } from "./start.mjs";
@@ -718,6 +719,28 @@ function remoteFolderSearch(host, q) {
   return runRemote(host, q ? remoteSearchScript(q) : remoteListScript()).then(parseRemoteSearch);
 }
 
+/** Files (list, read) for a session on an SSH computer; Review and New folder aren't there yet. */
+async function remoteWorkbench(res, url, host, root, path) {
+  const run = (script) =>
+    runRemoteBuffer(host, script).catch((error) => {
+      throw new WorkbenchError(502, error.message);
+    });
+  if (url.pathname === "/api/files") {
+    sendJson(res, 200, { root, entries: parseRemoteList(await run(remoteFilesScript(root, path))) });
+  } else if (url.pathname === "/api/file") {
+    const view = parseRemoteFile(await run(remoteFileScript(root, path, remoteFileMax(path))), path);
+    if (view.kind === "image" && url.searchParams.get("raw") === "1") {
+      res.writeHead(200, { "content-type": view.mimeType, "cache-control": "no-cache" });
+      res.end(view.bytes);
+    } else {
+      const { bytes, ...rest } = view;
+      sendJson(res, 200, rest);
+    }
+  } else {
+    throw new WorkbenchError(501, `Not available yet for sessions running on ${host}.`);
+  }
+}
+
 /** port -> SSH computer, for the environments' tunnels (re-read from environments.json every few seconds). */
 let tunnelHosts = new Map();
 let tunnelsReadAt = 0;
@@ -1317,6 +1340,8 @@ const server = createServer(async (req, res) => {
         return;
       }
       try {
+        const remoteHost = sessions.get(url.searchParams.get("id") ?? "")?.via;
+        if (remoteHost) throw new WorkbenchError(501, `New folder isn't available yet for sessions running on ${remoteHost}.`);
         const root = await workspaceRootFor(url.searchParams.get("id") ?? "");
         const body = JSON.parse(await readBody(req));
         sendJson(res, 201, { path: await makeFolder(root, body?.parent ?? "", body?.name) });
@@ -1476,6 +1501,12 @@ const server = createServer(async (req, res) => {
         const root = await workspaceRootFor(url.searchParams.get("id") ?? "");
         const path = url.searchParams.get("path") ?? "";
         const scope = url.searchParams.get("scope") === "branch" ? "branch" : "uncommitted";
+        const via = sessions.get(url.searchParams.get("id") ?? "")?.via;
+        if (via) {
+          // A session on an SSH computer (through the tunnel): its folder is there, read over ssh.
+          await remoteWorkbench(res, url, via, root, path);
+          return;
+        }
         if (url.pathname === "/api/files") {
           sendJson(res, 200, { root, entries: await listDir(root, path) });
         } else if (url.pathname === "/api/file") {

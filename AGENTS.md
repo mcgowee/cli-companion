@@ -21,6 +21,7 @@ Pi package (`pi install git:github.com/mcgowee/cli-companion`) and a standalone
 | `server/session-file.mjs` | Pi session JSONL → transcript items (active branch = leaf→root chain). |
 | `server/session-index.mjs` | Workspace/session list; reads only head+tail of huge files, cached on mtime/size. |
 | `server/workbench.mjs` | Right panel: path-guarded file browsing and read-only git review (`WorkbenchError` carries the HTTP status). |
+| `server/remote-files.mjs` | The Files tab for a session on an SSH computer (through the tunnel): fixed list/read scripts over ssh, paths single-quoted, `..` refused, inside-the-folder checked again there after following links. |
 | `server/commands.mjs`, `slash-commands.mjs` | What the composer may send to a running CLI (paste), and its `/` command lookup. |
 | `server/settings.mjs`, `dashboards.mjs`, `usage.mjs`, `launch.mjs`, `fsutil.mjs` | Settings (`~/.cli-companion/settings.json`, written only from the Settings page), user dashboards (http(s) links only, plus an optional start command run detached by POST /api/dashboards/start under the same runCommands gate as the Terminal tab), usage stats from the index, opening workspaces/sessions in a terminal (the page names an action, never a command/path), shared file/process helpers. |
 | `bin/cli-companion.mjs` | Standalone launcher: start the server if needed and open the window, without Pi. |
