@@ -266,7 +266,7 @@
         }
         <div class="env-folder">
           <div class="env-folder-head"><span><b>Folder</b> <span class="env-opt">(optional)</span></span>
-            <button type="button" class="btn small" data-add-folder aria-expanded="${drop.open}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> ${f.path ? "Change" : "Add"}</button></div>
+            <button type="button" class="btn small" data-add-folder aria-expanded="${drop.open}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> ${f.kind === "ssh" ? "Choose…" : f.path ? "Change" : "Add"}</button></div>
           ${folderBoxHtml()}
           ${dropHtml()}
         </div>
@@ -428,6 +428,21 @@
       Object.assign(drop, { open: false, q: "", items: null, error: "" });
       renderDialog();
       overlay.querySelector(f.kind === "ssh" ? '[name="host"]' : '[name="name"]')?.focus();
+      return;
+    }
+    if (t.closest("[data-add-folder]") && f.kind === "ssh") {
+      // SSH: straight to Select remote folder — click through the folders there, no typing.
+      readFields();
+      drop.open = false;
+      if (!f.host.trim()) {
+        error = "Fill in Computer first; the folders come from there.";
+        rerender();
+        overlay.querySelector('[name="host"]')?.focus();
+        return;
+      }
+      error = "";
+      rerender();
+      openBrowser();
       return;
     }
     if (t.closest("[data-add-folder]")) {
