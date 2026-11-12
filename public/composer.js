@@ -1,5 +1,6 @@
-// Bottom composer: write or collect text and put it into the running Pi's input box (you press
-// Enter in the terminal; Ctrl+Shift+Enter also sends it). The bridge extension does the work
+// Bottom composer: write or collect text and put it into the running Pi's input box (Enter;
+// Settings decides whether that also sends it, Ctrl+Shift+Enter does the other; Ctrl+Enter or
+// Shift+Enter is a new line, and Enter too on a phone keyboard). The bridge extension does the work
 // inside Pi: paste — add text to the input box; submit — send the input box, like Enter.
 // For a CLI the page can't type into (Claude Code, …) it copies the text instead.
 // Also handles every Copy / Add button on the page.
@@ -133,10 +134,10 @@
     sendEl.title =
       why ??
       (copyOnly()
-        ? `Copy this text, then paste it into ${src().label} with Ctrl+V or right-click (Ctrl+Enter)`
+        ? `Copy this text, then paste it into ${src().label} with Ctrl+V or right-click (Enter). Ctrl+Enter is a new line.`
         : autoEnter()
-          ? "Put this text in Pi's input and press Enter (Ctrl+Enter). Ctrl+Shift+Enter only puts it in. Change in Settings."
-          : "Put this text in Pi's input box (Ctrl+Enter). Ctrl+Shift+Enter also presses Enter for you. Change in Settings.");
+          ? "Put this text in Pi's input and press Enter (Enter). Ctrl+Enter is a new line; Ctrl+Shift+Enter only puts it in. Change in Settings."
+          : "Put this text in Pi's input box (Enter). Ctrl+Enter is a new line; Ctrl+Shift+Enter also presses Enter for you. Change in Settings.");
     if (why && !busy() && !statusEl.dataset.sticky) setStatus(why, "muted");
     else if (!why && statusEl.dataset.kind === "muted") setStatus("");
   }
@@ -357,11 +358,30 @@
         return;
       }
     }
-    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+    // Enter sends (what the button does); Ctrl+Enter or Shift+Enter is a new line;
+    // Ctrl+Shift+Enter does the button's other choice. On a phone keyboard Enter stays a new line.
+    if (event.key !== "Enter" || event.isComposing || event.altKey) return;
+    if (event.ctrlKey || event.metaKey) {
       event.preventDefault();
-      put(event.shiftKey ? !autoEnter() : autoEnter());
+      if (event.shiftKey) put(!autoEnter());
+      else newLine();
+      return;
     }
+    if (event.shiftKey || touchKeyboard()) return; // the textarea's own new line
+    event.preventDefault();
+    put(autoEnter());
   });
+
+  /** Ctrl+Enter: a textarea adds nothing by itself, so put the line break in (undoable). */
+  function newLine() {
+    if (document.execCommand?.("insertText", false, "\n")) return; // fires "input" itself
+    textEl.setRangeText("\n", textEl.selectionStart, textEl.selectionEnd, "end");
+    textEl.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  function touchKeyboard() {
+    return window.matchMedia?.("(pointer: coarse)").matches === true;
+  }
   $("composer-clear").addEventListener("click", () => {
     if (textEl.value) state.lastSent = textEl.value;
     textEl.value = "";

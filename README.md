@@ -126,9 +126,10 @@ next to it:
   then send or copy it as usual. Only local models can be picked, so the conversation never
   leaves the computer. The first suggestion after a while waits for the model to load.
 - **Send text to Pi (bottom composer)**: write or collect text, then **Put in Pi's input**
-  (**Ctrl+Enter**). It lands in the running Pi CLI's prompt box, with a short notice in the
+  (**Enter**). It lands in the running Pi CLI's prompt box, with a short notice in the
   terminal; press Enter there to send it. **Ctrl+Shift+Enter** puts the text in and sends it
-  in one go. If
+  in one go. **Ctrl+Enter** (or Shift+Enter) starts a new line; on a phone keyboard Enter is a
+  new line too, and the button sends. If
   Pi is busy, the message waits until it finishes. `/` commands and `!` shell lines are left
   for you to send from the terminal.
   **Images**: paste one (Ctrl+V), drop it on the composer, or click **Image**. It is saved in the
@@ -225,7 +226,8 @@ next to it:
   - **Settings**: show or hide each CLI (Pi, Claude Code, Codex), change where its folder is,
     pick the terminal **Open** uses, and switch on suggested replies with a local Ollama model.
     For Pi, **Composer button** chooses whether the composer only puts text in Pi's input (you
-    press Enter, the default) or also presses Enter; Ctrl+Shift+Enter does the other one. Claude
+    press Enter, the default) or also presses Enter; the composer's Enter does the same, and
+    Ctrl+Shift+Enter does the other one. Claude
     Code and Codex stay copy-and-paste. Saved in `~/.cli-companion/settings.json`; changes apply at once.
     **Appearance**: theme (match this computer, light or dark), 12- or 24-hour times (or this
     computer's choice), and switches for cost estimates and

@@ -119,8 +119,9 @@
 
       <h2>Shortcuts</h2>
       <dl class="about-grid">
-        <dt><kbd>Ctrl+Enter</kbd></dt><dd>Put the composer text in Pi's input, or copy it for Claude</dd>
-        <dt><kbd>Ctrl+Shift+Enter</kbd></dt><dd>Put it in Pi's input and send it</dd>
+        <dt><kbd>Enter</kbd></dt><dd>Composer: put the text in Pi's input (and send it, if Settings says so), or copy it for Claude</dd>
+        <dt><kbd>Ctrl+Enter</kbd></dt><dd>Composer: new line (Shift+Enter works too)</dd>
+        <dt><kbd>Ctrl+Shift+Enter</kbd></dt><dd>Composer: the other choice (send, or only put it in)</dd>
         <dt><kbd>/</kbd></dt><dd>At the start of a composer line: slash commands for the selected CLI</dd>
         <dt><kbd>Ctrl+K</kbd></dt><dd>Command palette: the session's CLI commands (/compact…), sessions, actions</dd>
         <dt><kbd>Ctrl+Shift+F</kbd></dt><dd>Search all sessions</dd>
